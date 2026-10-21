@@ -14,6 +14,9 @@ ROW_WRAPPERS = {q('table:table-header-rows'), q('table:table-rows'), q('table:ta
 BLOCK_WRAPPERS = {q('text:section'), q('text:list'), q('text:list-item'),
                   q('text:list-header'), q('text:numbered-paragraph'),
                   q('text:index-body'), q('text:table-of-content')}
+DRAW_STORIES = {q('draw:frame'), q('draw:text-box'), q('draw:g'), q('draw:a')}
+HEADER_FOOTER = {q('style:' + name) for name in (
+    'header', 'footer', 'header-left', 'footer-left', 'header-first', 'footer-first')}
 INLINE = {q('text:span'), q('text:a'), q('text:meta'), q('text:meta-field'), q('text:ruby-base')}
 # Stored display text only: never resolve variables, refresh dates, or run formulas.
 CACHED_FIELDS = {q('text:' + name) for name in (
@@ -38,6 +41,10 @@ SKIP = {q('office:annotation'), q('office:annotation-end'), q('text:tracked-chan
         q('draw:image'), q('draw:page-thumbnail'), q('text:ruby-text')}
 
 
+def hidden_section(element):
+    return element.tag == q('text:section') and element.get(q('text:display')) == 'none'
+
+
 def positive(element, name, maximum):
     raw = element.get(q(name), '1')
     if not re.fullmatch(r'\+?[0-9]+', raw):
@@ -56,10 +63,12 @@ def positive(element, name, maximum):
 class _Parser:
     def __init__(self, doc, budget, roots):
         self.doc, self.budget = doc, budget
+        self.roots = roots
         self.limits = budget.limits
         self.max_rows = cap(self.limits, 'max_rows', 1_048_576)
         self.max_columns = cap(self.limits, 'max_columns', 16_384)
         self.notes = {"footnote": [], "endnote": []}
+        self.stories = {**self.notes, "textboxes": [], "headers_footers": []}
         self.in_note = False
         self.styles = {}
         for root in roots:
@@ -99,6 +108,8 @@ class _Parser:
                 if child.tag in INLINE or child.tag in CACHED_FIELDS:
                     if child.get(q('text:display')) != 'none' and child.get(q('text:is-hidden')) not in {'true', '1'}:
                         walk(child)
+                elif self.doc.format == 'odt' and child.tag in DRAW_STORIES:
+                    self.drawing(child)
                 elif child.tag == q('text:note'):
                     self.note(child)
                 elif child.tag == q('text:ruby'):
@@ -146,12 +157,19 @@ class _Parser:
         if self.doc.format != 'odt' or self.in_note or kind not in self.notes or len(bodies) != 1:
             self.unsupported(element)
             return
-        blocks = []
         self.in_note = True
         try:
-            self.blocks(bodies[0], blocks)
+            self.story(bodies[0], self.notes[kind])
         finally:
             self.in_note = False
+
+    def story(self, element, destination):
+        # Reserve encounter order before extracting any nested frames. They are
+        # routed to their own story, never flattened into this story's text.
+        index = len(destination)
+        destination.append('')
+        blocks = []
+        self.blocks(element, blocks)
         parts = []
         charged = 0
         for block in blocks:
@@ -166,13 +184,209 @@ class _Parser:
         value = '\n\n'.join(parts)
         if value:
             # Blocks already charged their text; also bound all rendered separators.
-            self.budget.text(len(value) - charged + (2 if self.notes[kind] else 0))
-            self.notes[kind].append(value)
+            self.budget.text(len(value) - charged + (2 if any(destination) else 0))
+            destination[index] = value
+        else:
+            del destination[index]
+
+    def drawing(self, element):
+        if element.tag == q('draw:text-box'):
+            self.warn('ODF text boxes pooled without anchor, chain, or layout identities.')
+            self.story(element, self.stories['textboxes'])
+            return
+        for child in element:
+            if child.tag in DRAW_STORIES:
+                self.drawing(child)
+            else:
+                # Do not scrape image/object replacements, descriptions or extensions.
+                self.unsupported(child)
+
+    def used_masters(self, body):
+        """Select evidenced main-flow masters, not every stored page template.
+
+        ODF 1.3: 19.501, 19.503.2, 19.510 and 5.2. No layout/overflow
+        inference: next-style links require a represented page transition.
+        """
+        masters, common, automatic, defaults = {}, {}, {}, {}
+
+        def insert(index, key, element):
+            # Ambiguous names never silently select either definition.
+            index[key] = None if key in index else element
+
+        for root in self.roots:
+            if root is None:
+                continue
+            for e in root.findall(q('office:master-styles') + '/' + q('style:master-page')):
+                insert(masters, e.get(q('style:name')), e)
+            for e in root.findall(q('office:styles') + '/' + q('style:style')):
+                insert(common, (e.get(q('style:family')), e.get(q('style:name'))), e)
+            for e in root.findall(q('office:styles') + '/' + q('style:default-style')):
+                insert(defaults, e.get(q('style:family')), e)
+        # styles.xml automatic styles belong to its stories, not the main body.
+        for e in self.roots[-1].findall(q('office:automatic-styles') + '/' + q('style:style')):
+            insert(automatic, (e.get(q('style:family')), e.get(q('style:name'))), e)
+        if not masters:
+            return []
+        cache = {}
+        fo = '{urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0}'
+
+        def style_properties(family, name):
+            key = (family, name)
+            if key in cache:
+                return cache[key]
+            values, visited = {}, set()
+            index = automatic if key in automatic else common
+            while name:
+                lookup = (family, name)
+                marker = (id(index), name)
+                e = index.get(lookup)
+                if e is None or marker in visited or e.find(q('style:map')) is not None:
+                    self.warn('ODF master selection is ambiguous (missing, duplicate, cyclic, '
+                              'or conditional style); affected page stories omitted.')
+                    cache[key] = None
+                    return None
+                if len(visited) >= min(self.limits.max_depth, 256):
+                    raise LimitExceededError('ODF style inheritance depth limit exceeded')
+                visited.add(marker)
+                if q('style:master-page-name') in e.attrib:
+                    values.setdefault('master', e.get(q('style:master-page-name')))
+                prop = e.find(q('style:' + family + '-properties'))
+                if prop is not None:
+                    for attr in ('break-before', 'break-after'):
+                        if fo + attr in prop.attrib:
+                            values.setdefault(attr, prop.get(fo + attr))
+                name = e.get(q('style:parent-style-name'))
+                index = common  # A parent cannot be an automatic style (19.510).
+            if family in defaults:
+                default = defaults[family]
+                if default is None:
+                    self.warn('ODF default style is ambiguous; affected page stories omitted.')
+                    cache[key] = None
+                    return None
+                prop = default.find(q('style:' + family + '-properties'))
+                if prop is not None:
+                    for attr in ('break-before', 'break-after'):
+                        if fo + attr in prop.attrib:
+                            values.setdefault(attr, prop.get(fo + attr))
+            cache[key] = values
+            return values
+
+        selected, current = {}, None
+        next_chain = set()
+
+        def select(name):
+            nonlocal current
+            current = name
+            e = masters.get(name)
+            if not name or e is None:
+                self.warn('ODF master reference is missing or ambiguous; '
+                          'affected page stories omitted.')
+                current = None
+                return
+            selected.setdefault(name, e)
+            next_name = e.get(q('style:next-style-name'))
+            if next_name and next_name != name:
+                self.warn('ODF automatic pagination is not computed; next master pages '
+                          'are selected only at recorded or explicit page breaks.')
+
+        sequences = body.findall(q('text:page-sequence'))
+        pages = sequences[0].findall(q('text:page')) if len(sequences) == 1 else []
+        if sequences:
+            self.warn('ODF page-sequence selection uses its initial master and recorded '
+                      'page transitions; automatic pagination is not computed.')
+        page_index = 0
+
+        def advance():
+            nonlocal page_index
+            page_index += 1
+            if page_index < len(pages):
+                select(pages[page_index].get(q('text:master-page-name')))
+            elif current is not None:
+                e = masters[current]
+                target = e.get(q('style:next-style-name')) or current
+                next_chain.add(current)
+                next_chain.add(target)
+                if len(next_chain) > min(self.limits.max_depth, 256):
+                    raise LimitExceededError('ODF next master chain depth limit exceeded')
+                select(target)
+
+        def flow(parent):
+            for e in parent:
+                if e.tag in PARAS or e.tag == q('table:table'):
+                    yield e
+                elif e.tag in BLOCK_WRAPPERS and not hidden_section(e):
+                    yield from flow(e)
+                # No references from notes, frames, deleted text, or cell paragraphs.
+
+        def soft_breaks(e):
+            for child in e:
+                if child.tag == q('text:soft-page-break'):
+                    yield child
+                elif child.tag in (INLINE | CACHED_FIELDS | PARAS | BLOCK_WRAPPERS |
+                                   ROW_WRAPPERS | {q('table:table-row'), q('table:table-cell')}):
+                    if (child.get(q('text:display')) != 'none' and
+                            child.get(q('text:is-hidden')) not in {'true', '1'}):
+                        yield from soft_breaks(child)
+
+        def initial():
+            if len(sequences) > 1:
+                self.warn('ODF initial page sequence is ambiguous; page stories omitted.')
+            elif pages:
+                select(pages[0].get(q('text:master-page-name')))
+            else:
+                self.warn('ODF initial master is unspecified; using the first stored '
+                          'master as an implementation-defined fallback.')
+                select(next(iter(masters)))
+
+        started, pending_break = False, False
+        for e in flow(body):
+            family = 'paragraph' if e.tag in PARAS else 'table'
+            name = e.get(q('text:style-name') if family == 'paragraph' else q('table:style-name'))
+            props = style_properties(family, name)
+            if props is None:
+                current = None
+                started, pending_break = True, False
+                continue
+            explicit = props.get('master')
+            if explicit:
+                next_chain.clear()
+                select(explicit)
+            elif not started:
+                initial()
+            elif pending_break or props.get('break-before') == 'page':
+                advance()
+            started = True
+            for _ in soft_breaks(e):
+                self.warn('ODF cached soft page breaks used for master selection; '
+                          'pagination is not recomputed.')
+                advance()
+            pending_break = props.get('break-after') == 'page'
+        if not started:
+            initial()
+        return list(selected.values())
+
+    def masters(self, body):
+        for master in self.used_masters(body):
+            for child in master:
+                if child.tag in HEADER_FOOTER:
+                    if child.get(q('style:display')) in {'false', '0'}:
+                        self.warn('ODF disabled header/footer omitted.')
+                        continue
+                    self.warn('ODF headers/footers pooled from selected master-page variants; '
+                              'page anchors and variant identities are not retained.')
+                    self.story(child, self.stories['headers_footers'])
+                else:
+                    self.unsupported(child)
 
     def paragraphs(self, element):
         for child in element:
+            if self.doc.format == 'odt' and hidden_section(child):
+                self.warn('ODF hidden section omitted.')
+                continue
             if child.tag in PARAS:
                 yield self.inline(child)
+            elif self.doc.format == 'odt' and child.tag in DRAW_STORIES:
+                self.drawing(child)
             elif child.tag in BLOCK_WRAPPERS or child.tag in {
                 q('draw:frame'), q('draw:text-box'), q('draw:g'), q('draw:custom-shape'),
                 q('draw:rect'), q('draw:ellipse'), q('draw:a'), q('presentation:notes')}:
@@ -210,16 +424,16 @@ class _Parser:
             yield e, column, repeat, rs, cs
             column += repeat
 
-    def repeat_notes(self, starts, copies, cells):
-        """Clone note bodies along with repeated table content, in reading order."""
+    def repeat_stories(self, starts, copies, cells):
+        """Clone detached stories with repeated table content, in reading order."""
         if not copies:
             return
         self.budget.cell(cells * copies)
         for kind, start in starts.items():
-            values = self.notes[kind][start:]
+            values = self.stories[kind][start:]
             # Every cloned nonempty body follows an existing body of this kind.
             self.budget.text(sum(len(value) + 2 for value in values) * copies)
-            self.notes[kind].extend(values * copies)
+            self.stories[kind].extend(values * copies)
 
     def table(self, element):
         result = Table()
@@ -233,19 +447,19 @@ class _Parser:
             # Empty ODT rows still allocate a row object.
             self.budget.cell(max(width, 1) * repeat)
             template = []
-            row_notes = {kind: len(values) for kind, values in self.notes.items()}
+            row_stories = {kind: len(values) for kind, values in self.stories.items()}
             row_cells = self.budget.cells
             for e, column, cr, rs, cs in specs:
                 if row_index + repeat + rs - 2 > self.max_rows:
                     raise LimitExceededError('ODF row span limit exceeded')
                 covered = e.tag == q('table:covered-table-cell')
-                cell_notes = {kind: len(values) for kind, values in self.notes.items()}
+                cell_stories = {kind: len(values) for kind, values in self.stories.items()}
                 cell_count = self.budget.cells
                 value = '' if covered else self.cell_text(e)
-                self.repeat_notes(cell_notes, cr - 1, self.budget.cells - cell_count)
+                self.repeat_stories(cell_stories, cr - 1, self.budget.cells - cell_count)
                 self.budget.text(len(value) * cr * repeat)
                 template.extend(Cell(value, rs, cs, covered) for _ in range(cr))
-            self.repeat_notes(row_notes, repeat - 1, self.budget.cells - row_cells)
+            self.repeat_stories(row_stories, repeat - 1, self.budget.cells - row_cells)
             for _ in range(repeat):
                 result.rows.append([Cell(c.text, c.row_span, c.col_span, c.covered) for c in template])
             row_index += repeat
@@ -255,12 +469,17 @@ class _Parser:
         if destination is None:
             destination = self.doc.blocks
         for e in parent:
+            if hidden_section(e):
+                self.warn('ODF hidden section omitted.')
+                continue
             if e.tag in PARAS:
                 value = self.inline(e)
                 self.budget.text(len(value))
                 destination.append(Paragraph(value))
             elif e.tag == q('table:table'):
                 destination.append(self.table(e))
+            elif self.doc.format == 'odt' and e.tag in DRAW_STORIES:
+                self.drawing(e)
             elif e.tag in BLOCK_WRAPPERS:
                 self.blocks(e, destination)
             else:
@@ -452,12 +671,18 @@ def parse_odf_bytes(data: bytes, limits: Limits, expected_format: str | None = N
         parser.warn('ODF manifest missing; package encryption declarations could not be checked.')
     for style_root in (styles, root):
         if style_root is not None:
+            if fmt == 'odt':
+                continue
             for master in style_root.iter(q('style:master-page')):
                 if len(master):
                     parser.warn('ODF master-page content is not rendered.')
                     break
     {'odt': parser.blocks, 'ods': parser.sheets, 'odp': parser.slides}[fmt](body)
+    if fmt == 'odt':
+        parser.masters(body)
     doc.footnotes = '\n\n'.join(parser.notes['footnote'])
     doc.endnotes = '\n\n'.join(parser.notes['endnote'])
+    doc.textboxes = '\n\n'.join(parser.stories['textboxes'])
+    doc.headers_footers = '\n\n'.join(parser.stories['headers_footers'])
     _check_visible_text(doc, limits)
     return doc
