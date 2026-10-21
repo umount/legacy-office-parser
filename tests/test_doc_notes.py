@@ -1,5 +1,6 @@
 """Independent authored DOCX, raw BIFF-like DOC PLC bytes, and bounded note model tests."""
 from pathlib import Path
+from io import BytesIO
 import os
 import struct
 import sys
@@ -15,6 +16,11 @@ from legacy_office_parser.limits import Limits
 
 FIXTURE = Path(__file__).parent / 'fixtures/doc_notes'
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+MC = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+WPS = 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape'
+WP = '{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}'
+A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+V = '{urn:schemas-microsoft-com:vml}'
 
 
 def reference_plc(cps, flags=None, sentinel=0xffffffff):
@@ -285,11 +291,47 @@ def resolve(doc, path):
     return result
 
 
+def compatible_xml(raw):
+    """Fixture consumer: understands WPS Choice, otherwise uses one Fallback."""
+    namespaces = {}
+    for _, (prefix, uri) in ET.iterparse(BytesIO(raw), events=('start-ns',)):
+        assert prefix not in namespaces or namespaces[prefix] == uri
+        namespaces[prefix] = uri
+    root = ET.fromstring(raw)
+
+    def select(parent):
+        for node in list(parent):
+            if node.tag == MC+'AlternateContent':
+                choices = node.findall(MC+'Choice')
+                fallbacks = node.findall(MC+'Fallback')
+                assert choices and len(fallbacks) <= 1
+                assert list(node) == choices + fallbacks
+                selected = None
+                for choice in choices:
+                    requires = choice.get('Requires', '').split()
+                    assert requires
+                    if selected is None and all(namespaces.get(p) == WPS for p in requires):
+                        selected = choice
+                if selected is None:
+                    assert len(fallbacks) == 1
+                    selected = fallbacks[0]
+                select(selected)
+                position = list(parent).index(node)
+                parent.remove(node)
+                for child in list(selected):
+                    parent.insert(position, child)
+                    position += 1
+            else:
+                select(node)
+    select(root)
+    return root
+
+
 def xml_note_oracle(path, kind):
     """Independent OOXML ID links, container paths and complete body structure."""
     with ZipFile(path) as archive:
-        main = ET.fromstring(archive.read('word/document.xml'))
-        notes = ET.fromstring(archive.read(f'word/{kind}s.xml'))
+        main = compatible_xml(archive.read('word/document.xml'))
+        notes = compatible_xml(archive.read(f'word/{kind}s.xml'))
     parents = {child: node for node in main.iter() for child in node}
 
     def blocks(node):
@@ -297,7 +339,34 @@ def xml_note_oracle(path, kind):
 
     def paragraph_text(node):
         # Field instructions and drawing payloads are not visible paragraph text.
-        return ''.join(n.text or '' for n in node.iter() if n.tag in (W+'t', W+'delText'))
+        def text(n):
+            if n.tag in (W+'drawing', W+'pict', W+'object', W+'txbxContent'):
+                return ''
+            if n.tag in (W+'t', W+'delText'):
+                return n.text or ''
+            return ''.join(text(c) for c in n)
+        return text(node)
+
+    def signatures(node):
+        result = []
+        for child in blocks(node):
+            result.append(signature(child))
+            if child.tag == W+'p':
+                # Textbox content is separate from the host paragraph, never
+                # concatenated with it or counted in both alternate branches.
+                parent_map = {c: p for p in child.iter() for c in p}
+                for box in child.iter(W+'txbxContent'):
+                    chain, current = [], box
+                    while current is not child:
+                        chain.append(current.tag)
+                        current = parent_map[current]
+                    assert list(reversed(chain)) in (
+                        [W+'r', W+'drawing', WP+'anchor', A+'graphic', A+'graphicData',
+                         '{'+WPS+'}wsp', '{'+WPS+'}txbx', W+'txbxContent'],
+                        [W+'r', W+'pict', V+'rect', V+'textbox', W+'txbxContent'],
+                    )
+                    result.append(('textbox', signatures(box)))
+        return tuple(result)
 
     def signature(node):
         if node.tag == W+'p':
@@ -308,7 +377,7 @@ def xml_note_oracle(path, kind):
             cells = []
             for cell in row.findall(W+'tc'):
                 children = blocks(cell)
-                cells.append(tuple(signature(c) for c in children) if any(c.tag == W+'tbl' for c in children)
+                cells.append(signatures(cell) if any(c.tag == W+'tbl' for c in children)
                              else '\n'.join(paragraph_text(c) for c in children))
             rows.append(tuple(cells))
         return ('table', tuple(rows))
@@ -325,7 +394,7 @@ def xml_note_oracle(path, kind):
             return anchor(parent)  # Simple cells project their paragraphs into Cell.text.
         return anchor(parent) + ['blocks', blocks(parent).index(node)]
 
-    bodies = {n.get(W+'id'): tuple(signature(c) for c in blocks(n))
+    bodies = {n.get(W+'id'): signatures(n)
               for n in notes if n.get(W+'type') is None}
     result = []
     for reference in main.iter(W+kind+'Reference'):
@@ -377,14 +446,38 @@ def signature_words(signature):
     for kind, value in signature:
         if kind == 'p':
             parts.extend(value.split())
+        elif kind == 'textbox':
+            parts.extend(signature_words(value))
         else:
+            assert kind == 'table'
             for row in value:
                 for cell in row:
                     parts.extend(cell.split() if isinstance(cell, str) else signature_words(cell))
     return parts
 
 
-def assert_generated_note_model(doc, raw, roundtrip):
+def assert_authored_table_export(kind, ordinal, source, model, xml, authored):
+    """Only the evidenced note-4 1x1-table -> floating textbox conversion."""
+    assert authored is not None and kind == 'footnote' and ordinal == 4
+    assert source == '\x02 Note table.\rNoteTableCell\7\7\rNoteTail\r'
+    table = ('table', (('NoteTableCell',),))
+    assert model == (('p', ' Note table.'), table, ('p', ''), ('p', 'NoteTail'))
+    assert xml == (('p', ' Note table.'), ('p', ''),
+                   ('textbox', (('p', 'NoteTableCell'),)), ('p', 'NoteTail'))
+    original = xml_note_oracle(authored, 'footnote')
+    assert len(original) == 6
+    assert original[3][1] == (('p', ' Note table.'), table, ('p', 'NoteTail'))
+    with ZipFile(authored) as archive:
+        root = ET.fromstring(archive.read('word/footnotes.xml'))
+    authored_tables = list(root.iter(W+'tbl'))
+    assert len(authored_tables) == 1
+    grid = authored_tables[0].find(W+'tblGrid')
+    assert grid is not None and len(grid.findall(W+'gridCol')) == 1
+    assert not list(authored_tables[0].iter(W+'gridSpan'))
+    assert not list(authored_tables[0].iter(W+'vMerge'))
+
+
+def assert_generated_note_model(doc, raw, roundtrip, authored=None):
     """No production PLC decoder and no offsets from another producer version."""
     counts, units, plcs = raw
     expected_total = 0
@@ -418,25 +511,11 @@ def assert_generated_note_model(doc, raw, roundtrip):
             assert note.body.story == story and note.body.block_start == end
             assert note.body.block_end > end
             body = doc.story_blocks[story][end:note.body.block_end]
+            model = model_body_signature(body)
             source = units[(base + boundaries[i])*2:(base + boundaries[i+1])*2].decode('utf-16le')
-            actual_signature = model_body_signature(body)
-            if actual_signature != signature:
-                with ZipFile(roundtrip) as archive:
-                    main_xml = ET.fromstring(archive.read('word/document.xml'))
-                    note_xml = ET.fromstring(archive.read(f'word/{kind}s.xml'))
-                reference_id = list(main_xml.iter(W+kind+'Reference'))[i].get(W+'id')
-                note_xml = next(n for n in note_xml if n.get(W+'id') == reference_id)
-                leaves = []
-                def describe(node, ancestors=()):
-                    path = ancestors + (node.tag.rsplit('}', 1)[-1],)
-                    if node.tag in (W+'t', W+'delText'):
-                        leaves.append(('/'.join(path), node.text))
-                    for child in node:
-                        describe(child, path)
-                describe(note_xml)
-                raise AssertionError(f'Note oracle mismatch: {kind} {i+1}; raw={source!r}; '
-                            f'model={actual_signature!r}; xml={signature!r}; leaves={leaves!r}')
             assert source.endswith('\r')
+            if model != signature:
+                assert_authored_table_export(kind, i + 1, source, model, signature, authored)
             assert raw_body_words(source) == signature_words(signature)
             if flags[i]:
                 assert units[cps[i]*2:cps[i]*2+2] == b'\x02\0'
@@ -755,7 +834,8 @@ def test_independent_live_note_roundtrip(tmp_path):
     finally:
         sys.path.pop(0)
     doc = parse_doc(tmp_path/'authored.doc')
-    assert_generated_note_model(doc, raw_fixture(tmp_path/'authored.doc'), tmp_path/'roundtrip.docx')
+    assert_generated_note_model(doc, raw_fixture(tmp_path/'authored.doc'), tmp_path/'roundtrip.docx',
+                                tmp_path/'authored.docx')
     for kind in ('footnote', 'endnote'):
         source = xml_relationships(tmp_path/'authored.docx', kind)
         exported = xml_relationships(tmp_path/'roundtrip.docx', kind)
@@ -763,3 +843,105 @@ def test_independent_live_note_roundtrip(tmp_path):
         # The source reference contexts/flags must survive; exporter-dependent
         # body structure is checked against this run's binary and roundtrip.
         assert [(r[0], *r[2:]) for r in source] == [(r[0], *r[2:]) for r in exported]
+
+
+def floating_note_evidence(tmp_path, corruption=None):
+    """Reproduce CI's exact raw body and XML ancestor paths, without an exporter."""
+    from copy import deepcopy
+    from legacy_office_parser import Cell, Paragraph, Table, parse_doc
+    counts, units, plcs = raw_fixture()
+    counts, plcs = list(counts), dict(plcs)
+    boundaries = list(struct.unpack('<8I', plcs[3]))
+    replacement = '\x02 Note table.\rNoteTableCell\7\7\rNoteTail\r'
+    if corruption == 'raw_row_marker':
+        replacement = replacement.replace('\7\7', '\7\r')
+    begin, end = counts[0] + boundaries[3], counts[0] + boundaries[4]
+    delta = len(replacement) - (end - begin)
+    units = units[:begin*2] + replacement.encode('utf-16le') + units[end*2:]
+    counts[1] += delta
+    for index in range(4, len(boundaries)):
+        boundaries[index] += delta
+    plcs[3] = struct.pack('<8I', *boundaries)
+    doc = parse_doc(FIXTURE/'authored.doc')
+    doc.story_blocks['footnotes'][3:6] = [Paragraph(' Note table.'), Table([[Cell('NoteTableCell')]]),
+                                         Paragraph(''), Paragraph('NoteTail')]
+    doc.notes[3].body.block_end += 1
+    for note in doc.notes[4:6]:
+        note.body.block_start += 1
+        note.body.block_end += 1
+    if corruption == 'model_cell':
+        doc.story_blocks['footnotes'][4].rows[0][0].text = 'Wrong'
+    elif corruption == 'model_grid':
+        doc.story_blocks['footnotes'][4].rows[0].append(Cell(''))
+    elif corruption == 'model_flattened':
+        doc.story_blocks['footnotes'][4] = Paragraph('NoteTableCell')
+    elif corruption == 'body_association':
+        doc.notes[3].source_cp = doc.notes[2].source_cp
+
+    for prefix, uri in [('w', W[1:-1]), ('mc', MC[1:-1]), ('wps', WPS),
+                        ('wp', WP[1:-1]), ('a', A[1:-1]), ('v', V[1:-1])]:
+        ET.register_namespace(prefix, uri)
+    declaration = ('xmlns:w="'+W[1:-1]+'" xmlns:mc="'+MC[1:-1]+'" xmlns:wps="'+WPS
+                   +'" xmlns:wp="'+WP[1:-1]+'" xmlns:a="'+A[1:-1]+'" xmlns:v="'+V[1:-1]+'"')
+    box = '<w:txbxContent><w:p><w:r><w:t>NoteTableCell</w:t></w:r></w:p></w:txbxContent>'
+    host = ET.fromstring('<w:p '+declaration+'><w:r><mc:AlternateContent><mc:Choice Requires="wps">'
+                         '<w:drawing><wp:anchor><a:graphic><a:graphicData><wps:wsp><wps:txbx>'+box
+                         +'</wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing>'
+                         '</mc:Choice><mc:Fallback><w:pict><v:rect><v:textbox>'+box
+                         +'</v:textbox></v:rect></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>')
+    if corruption == 'drawing_text':
+        host.find('.//'+MC+'Choice//'+W+'t').text = 'Wrong'
+    elif corruption == 'fallback_different':
+        host.find('.//'+MC+'Fallback//'+W+'t').text = 'Unselected alternative'
+    elif corruption == 'missing_box':
+        host = ET.Element(W+'p')
+    elif corruption == 'duplicate_box':
+        run = host.find(W+'r')
+        run.append(deepcopy(run[0]))
+    elif corruption == 'host_text':
+        run = ET.SubElement(host, W+'r')
+        ET.SubElement(run, W+'t').text = 'Unrelated'
+
+    with ZipFile(FIXTURE/'roundtrip.docx') as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    root = ET.fromstring(files['word/footnotes.xml'])
+    notes = [n for n in root if n.get(W+'type') is None]
+    # Saved note 4 is p/empty-p/tail; replace only its empty host paragraph.
+    notes[3].remove(notes[3][1])
+    notes[3].insert(1, host)
+    if corruption == 'wrong_note_box':
+        notes[3].remove(host)
+        notes[3].insert(1, ET.Element(W+'p'))
+        notes[4].append(host)
+    files['word/footnotes.xml'] = ET.tostring(root)
+    roundtrip = tmp_path/'floating-roundtrip.docx'
+    with ZipFile(roundtrip, 'w') as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    authored = FIXTURE/'authored.docx'
+    if corruption == 'authored_grid':
+        with ZipFile(authored) as archive:
+            source_files = {name: archive.read(name) for name in archive.namelist()}
+        root = ET.fromstring(source_files['word/footnotes.xml'])
+        ET.SubElement(root.find('.//'+W+'tblGrid'), W+'gridCol', {W+'w': '7200'})
+        source_files['word/footnotes.xml'] = ET.tostring(root)
+        authored = tmp_path/'wrong-source.docx'
+        with ZipFile(authored, 'w') as archive:
+            for name, content in source_files.items():
+                archive.writestr(name, content)
+    return doc, (counts, units, plcs), roundtrip, authored
+
+
+@pytest.mark.parametrize('corruption', [None, 'fallback_different', 'raw_row_marker', 'model_cell',
+                                       'model_grid', 'model_flattened', 'body_association', 'drawing_text',
+                                       'missing_box', 'duplicate_box', 'host_text', 'wrong_note_box', 'authored_grid'])
+def test_evidenced_note_table_textbox_equivalence_is_narrow(tmp_path, corruption):
+    args = floating_note_evidence(tmp_path, corruption)
+    if corruption in (None, 'fallback_different'):
+        assert_generated_note_model(*args)
+        signature = xml_note_oracle(args[2], 'footnote')[3][1]
+        assert signature == (('p', ' Note table.'), ('p', ''),
+                             ('textbox', (('p', 'NoteTableCell'),)), ('p', 'NoteTail'))
+    else:
+        with pytest.raises(AssertionError):
+            assert_generated_note_model(*args)

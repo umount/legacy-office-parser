@@ -207,3 +207,37 @@ blocks fail. The saved binary also passes this oracle independently.
 Actual validation: **93 passed, 1 skipped** normally; **94 passed** with local
 LibreOffice 7.4 conversion; Ruff passed. The newer CI converter must still be
 rerun. No blanket structural exception or missing-note allowance was introduced.
+
+### Confirmed newer-export representation (CI 049e488)
+
+Subsequent CI supplied the exact fourth-footnote body:
+`\x02 Note table.\rNoteTableCell\x07\x07\rNoteTail\r`.
+The model preserves a paragraph, a 1x1 table, an empty paragraph, and `NoteTail`.
+Roundtrip DOCX instead contains a floating plaintext textbox in a host paragraph:
+Choice uses drawing/anchor/graphic/graphicData/wsp/txbx/txbxContent, and Fallback
+uses pict/rect/textbox/txbxContent. Both contained `NoteTableCell`. The old oracle
+incorrectly concatenated both alternatives into the host paragraph.
+
+The XML fixture consumer now selects the first understood WPS Choice, otherwise
+one Fallback, and records textbox blocks separately from direct paragraph text.
+Only for footnote 4 of this authored fixture, a mismatching representation may
+pass after all these independent checks: exact raw body and cell/row terminators;
+the original source's exact 1x1 table, single-column grid and surrounding text;
+the exact four-block model with no covered/omitted/merged cells; and the same
+note's exact three-paragraph XML host structure containing exactly one selected
+textbox with one paragraph `NoteTableCell`. Other bodies still require exact
+structural equality. No parser Table is flattened, and no arbitrary table/textbox
+equivalence is inferred.
+
+Regressions reconstructed from the supplied raw bytes and XML ancestor paths
+reject wrong model cells/grid, flattened tables, wrong source CP, wrong drawing
+text, missing/duplicate boxes, extra host text, boxes in another note, altered raw
+row markers and an altered authored grid. An unselected differing fallback does
+not contribute text. The saved LO 7.4 lost-table case and literal tests remain
+unchanged. This establishes the specific export transformation, not full table
+parity with LibreOffice.
+
+Actual validation after this correction: **106 passed, 1 skipped** normally;
+**107 passed** with local LO 7.4 live conversion; Ruff passed. The newer CI case
+is covered by the evidence-based synthetic regression; the real newer CI rerun
+remains pending. Only the notes tests and this research file changed.

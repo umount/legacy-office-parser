@@ -1,4 +1,4 @@
-"""Research-only proof of active stored comments; no production comment decoder."""
+"""Independent wire and LibreOffice oracles for active stored comments."""
 import hashlib
 import json
 import os
