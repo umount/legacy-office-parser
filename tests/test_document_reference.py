@@ -166,10 +166,10 @@ def test_nested_table_is_not_flattened_into_outer_cell_or_body_tables():
     result = compare(Document('doc', blocks=[Table([[Cell('outer')]])]),
                      tbl(tr(tc(content=p('outer') + tbl(tr(tc('nested secret')))))))
     assert result['body']['reference_tables'] == 1
-    assert result['unsupported_scopes']['nested_tables'] == 1
-    assert not result['body']['table_checks'][0]['complete']
+    assert result['unsupported_scopes'] == {}
+    assert result['body']['table_checks'][0]['complete']
     assert not result['body']['table_checks'][0]['equal']
-    assert not result['body']['equal'] and not result['complete']
+    assert not result['body']['equal'] and result['complete']
 
 
 def test_notes_are_separate_and_separators_are_excluded():

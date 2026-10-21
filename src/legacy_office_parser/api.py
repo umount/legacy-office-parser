@@ -24,13 +24,23 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
     from .models import Paragraph
     total = 0
     cells = 0
-    for block in doc.blocks:
+    stack = [(block, 1) for block in doc.blocks]
+    while stack:
+        block, depth = stack.pop()
+        if depth > limits.max_depth:
+            raise LimitExceededError('output table nesting depth limit exceeded')
         if isinstance(block, Paragraph):
             total += len(block.text)
         else:
             for row in block.rows:
                 cells += len(row)
-                total += sum(len(c.text) for c in row)
+                for cell in row:
+                    total += len(cell.text)
+                    stack.extend((child, depth + 1) for child in cell.blocks)
+        if cells > limits.max_cells:
+            raise LimitExceededError('table cell limit exceeded')
+        if total > limits.max_text_chars:
+            raise LimitExceededError('output text size limit exceeded')
     for slide in doc.slides:
         total += len(slide.title) + len(slide.text) + len(slide.notes)
     if len(doc.sheets) > limits.max_sheets:

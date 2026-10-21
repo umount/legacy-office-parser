@@ -15,7 +15,7 @@ be mapped to section/first/even/default stories. Textboxes are likewise unpaired
 Notes compare pooled text in XML order, not note identity or anchor positions.
 Note tables use row-major text with explicit cell/row separators, not structure.
 Omitted grid coordinates are absent, not empty or covered cells; the dense model
-cannot express interior omissions. Legacy hMerge and nested tables are unsupported.
+cannot express interior omissions. Legacy hMerge is unsupported. Cell tables compare recursively in reading order.
 This is a developer oracle for trusted converted files, not a hardened ZIP reader.
 """
 from __future__ import annotations
@@ -53,7 +53,7 @@ def _read_part(archive, path, root_tag):
 
 def _note_text(element, unsupported):
     if element.tag == _W + 'tbl':
-        rows, widths = _table(element, unsupported)
+        rows, widths = _table(element, unsupported, nested=False)
         return '\n'.join('\t'.join(row[c].text if c in row else ''
                                     for c in range(width))
                          for row, width in zip(rows, widths))
@@ -105,7 +105,20 @@ def _number(parent, path, default, unsupported, minimum=0):
         return default
 
 
-def _table(root, unsupported):
+class _ReferenceTable:
+    def __init__(self, rows, widths, complete):
+        self.rows = rows
+        self.widths = widths
+        self.complete = complete
+
+
+def _projection(table):
+    return '\n'.join('\t'.join(row[c].text if c in row else ''
+                               for c in range(width))
+                     for row, width in zip(table.rows, table.widths))
+
+
+def _table(root, unsupported, nested=True):
     rows = []
     widths = []
     active = {}
@@ -128,15 +141,26 @@ def _table(root, unsupported):
             span = _number(tc, f'{_W}tcPr/{_W}gridSpan', 1, unsupported, 1)
             if tc.find(f'{_W}tcPr/{_W}hMerge') is not None:
                 unsupported['horizontal_merge'] += 1
-            pieces = []
+            pieces, blocks = [], []
             for item in tc:
-                if item.tag != _W + 'tcPr':
-                    pieces.append(_text(item, unsupported))
+                if item.tag == _W + 'tcPr':
+                    continue
+                if item.tag == _W + 'tbl' and nested:
+                    local = Counter()
+                    child_rows, child_widths = _table(item, local)
+                    child = _ReferenceTable(child_rows, child_widths, not local)
+                    unsupported.update(local)
+                    blocks.append(child)
+                    pieces.append(_projection(child))
+                else:
+                    value = _text(item, unsupported)
+                    blocks.append(Paragraph(value))
+                    pieces.append(value)
             value = '\n'.join(pieces)
             merge = tc.find(f'{_W}tcPr/{_W}vMerge')
             mode = merge.get(_W + 'val', 'continue') if merge is not None else ''
             key = (col, span)
-            cell = Cell(value, col_span=span)
+            cell = Cell(value, col_span=span, blocks=blocks)
             if mode == 'continue':
                 cell.covered = True
                 cell.col_span = 1  # Spans belong to anchors, not covered coordinates.
@@ -164,8 +188,21 @@ def _table(root, unsupported):
     return rows, widths
 
 
-def _table_check(model, reference, number):
-    expected, widths, complete = reference
+def _segments(blocks):
+    segments, tables = [''], []
+    for block in blocks:
+        if isinstance(block, (Table, _ReferenceTable)):
+            tables.append(block)
+            segments.append('')
+        elif isinstance(block, Paragraph):
+            segments[-1] += '\n' + block.text
+    return segments, tables
+
+
+def _table_check(model, reference, number, path=None):
+    expected, widths, complete = reference.rows, reference.widths, reference.complete
+    path = [number] if path is None else path
+    nested_checks = []
     actual = [{i: c for i, c in enumerate(row)} for row in model.rows]
     mismatches = []
     for r in range(max(len(actual), len(expected))):
@@ -180,11 +217,26 @@ def _table_check(model, reference, number):
                      'covered_equal': present and a.covered == b.covered,
                      'col_span_equal': present and a.col_span == b.col_span,
                      'row_span_equal': present and a.row_span == b.row_span}
-            if not all(check[k] for k in ('text_equal', 'covered_equal',
+            if present:
+                # Empty blocks mean a simple cell, never inferred nested structure.
+                a_segments, a_tables = _segments(a.blocks or [Paragraph(a.text)])
+                b_segments, b_tables = _segments(b.blocks or [Paragraph(b.text)])
+                children = [_table_check(x, y, i + 1, path + [r + 1, col + 1, i + 1])
+                            for i, (x, y) in enumerate(zip(a_tables, b_tables))]
+                nested_checks.extend(children)
+                check['blocks_equal'] = (
+                    len(a_tables) == len(b_tables) and
+                    list(map(_normal, a_segments)) == list(map(_normal, b_segments)) and
+                    all(child['equal'] is True for child in children))
+            else:
+                check['blocks_equal'] = False
+            check['path'] = path + [r + 1, col + 1]
+            if not all(check[k] for k in ('text_equal', 'covered_equal', 'blocks_equal',
                                           'col_span_equal', 'row_span_equal')):
                 mismatches.append(check)
     dimensions = len(actual) == len(expected) and [len(r) for r in model.rows] == widths
-    return {'number': number, 'model_rows': len(actual), 'reference_rows': len(expected),
+    return {'number': number, 'path': path, 'nested_table_checks': nested_checks,
+            'model_rows': len(actual), 'reference_rows': len(expected),
             'model_cells': sum(map(len, actual)), 'reference_cells': sum(map(len, expected)),
             'reference_omitted_cells': sum(widths) - sum(map(len, expected)),
             'dimensions_equal': dimensions, 'cell_mismatches': mismatches,
@@ -199,7 +251,7 @@ def _body(root, unsupported):
         if child.tag == _W + 'tbl':
             local = Counter()
             rows, widths = _table(child, local)
-            tables.append((rows, widths, not local))
+            tables.append(_ReferenceTable(rows, widths, not local))
             unsupported.update(local)
             segments.append('')
         elif child.tag == _W + 'sectPr':
@@ -209,6 +261,35 @@ def _body(root, unsupported):
     return segments, tables
 
 
+def _model_counts(blocks, unsupported):
+    tables = cells = 0
+    pending = list(blocks)
+    while pending:
+        block = pending.pop()
+        if isinstance(block, Table):
+            tables += 1
+            for row in block.rows:
+                for cell in row:
+                    cells += 1
+                    pending.extend(cell.blocks)
+        elif not isinstance(block, Paragraph):
+            unsupported['model_blocks'] += 1
+    return tables, cells
+
+
+def _reference_counts(tables):
+    count = cells = 0
+    pending = list(tables)
+    while pending:
+        table = pending.pop()
+        count += 1
+        for row in table.rows:
+            for cell in row.values():
+                cells += 1
+                pending.extend(b for b in cell.blocks if isinstance(b, _ReferenceTable))
+    return count, cells
+
+
 def _compare_document(doc, zipfile) -> dict:
     """Compare DOC/RTF/ODT Document with an open DOCX ZipFile, without text leaks.
 
@@ -216,6 +297,13 @@ def _compare_document(doc, zipfile) -> dict:
     requires equal notes and no unsupported scopes anywhere. Inspect ``complete``
     before interpreting partial text metrics. No XML, filenames, hashes, model
     warnings, note IDs or exception messages are copied to the report.
+
+    Table paths are [body_table, row, column, nested_table, ...], all 1-based;
+    cell mismatch paths append row and column. Nested table ordinals are local
+    to the containing cell. body total counts include every nested/covered cell;
+    existing model_tables/reference_tables and per-table counts remain local.
+    Consecutive cell paragraphs normalize like body paragraphs, while intervening
+    tables and their row/cell boundaries must match recursively.
     """
     if doc.format not in {'doc', 'rtf', 'odt'}:
         raise ValueError('Unsupported document format')
@@ -233,8 +321,8 @@ def _compare_document(doc, zipfile) -> dict:
             actual_segments.append('')
         elif isinstance(block, Paragraph):
             actual_segments[-1] += '\n' + block.text
-        else:
-            unsupported['model_blocks'] += 1
+    model_count, model_cells = _model_counts(doc.blocks, unsupported)
+    reference_count, reference_cells = _reference_counts(tables)
     checks = [_table_check(a, b, i + 1)
               for i, (a, b) in enumerate(zip(actual_tables, tables))]
     text_equal = (len(actual_segments) == len(segments) and
@@ -242,6 +330,8 @@ def _compare_document(doc, zipfile) -> dict:
     body_complete = not unsupported
     report = {'body': {
         'model_tables': len(actual_tables), 'reference_tables': len(tables),
+        'model_total_tables': model_count, 'reference_total_tables': reference_count,
+        'model_total_cells': model_cells, 'reference_total_cells': reference_cells,
         'table_count_equal': len(actual_tables) == len(tables),
         'text_equal': text_equal, 'table_checks': checks, 'complete': body_complete,
         'equal': ((text_equal and len(actual_tables) == len(tables)

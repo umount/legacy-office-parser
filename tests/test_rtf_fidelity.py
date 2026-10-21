@@ -144,7 +144,11 @@ def test_recovery_and_nested_rows_do_not_guess_merges():
     d = parse(r'\trowd\clmgf\cellx100\clmrg\cellx200 A\cell B\cell')
     assert d.blocks[0].rows == [[Cell('A'), Cell('B')]]
     d = parse(r'\trowd\clmgf\cellx100\clmrg\cellx200\itap2 A\cell B\cell\row')
-    assert d.blocks[0].rows == [[Cell('A'), Cell('B')]]
+    # Recover the unterminated nested row in its parent cell, without guessing
+    # a merge or duplicating the visible text projection.
+    assert d.blocks[0].rows == [[
+        Cell('A', blocks=[Table([[Cell('A')]])]), Cell('B')]]
+    assert d.text == 'A\tB'
     assert any('Nested' in w for w in d.warnings)
 
 

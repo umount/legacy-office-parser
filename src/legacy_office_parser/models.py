@@ -15,6 +15,8 @@ class Cell:
     col_span: int = 1
     # Covered coordinates are retained so columns never silently shift.
     covered: bool = False
+    # Ordered content for cells containing nested tables; text is its plain projection.
+    blocks: list[Block] = field(default_factory=list)
 
 @dataclass(slots=True)
 class Table:
@@ -101,4 +103,31 @@ class Document:
         return '\n\n'.join(p for p in parts if p)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        def compatible_cells(items):
+            result = dict(items)
+            if 'row_span' in result and not result.get('blocks'):
+                result.pop('blocks', None)
+            return result
+        return asdict(self, dict_factory=compatible_cells)
+
+
+def _clone_cell(source: Cell) -> Cell:
+    """Copy a nested cell iteratively; repeated source rows must not share trees."""
+    result = Cell(source.text, source.row_span, source.col_span, source.covered)
+    pending = [(source.blocks, result.blocks)]
+    while pending:
+        src, dst = pending.pop()
+        for block in src:
+            if isinstance(block, Paragraph):
+                dst.append(Paragraph(block.text))
+            else:
+                table = Table()
+                dst.append(table)
+                for row in block.rows:
+                    copied = []
+                    table.rows.append(copied)
+                    for cell in row:
+                        item = Cell(cell.text, cell.row_span, cell.col_span, cell.covered)
+                        copied.append(item)
+                        pending.append((cell.blocks, item.blocks))
+    return result

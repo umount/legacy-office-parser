@@ -26,7 +26,7 @@ bkmkstart bkmkend xe tc txe rxe pn pntxta pntxtb
 ftnsep ftnsepc ftncn aftnsep aftnsepc aftncn
 userprops docvar template nextfile htmltag mhtmltag xmlopen xmlclose
 xmlattrname xmlattrvalue mmath mmathPict moMath moMathPara
-nesttableprops nonesttables
+nonesttables
 """.split())
 _SHAPE_CONTAINERS = {'shp', 'shpinst', 'shpgrp'}
 _HEADERS = set('header headerl headerr headerf footer footerl footerr footerf'.split())
@@ -139,6 +139,8 @@ class _State:
     target: int = 0
     upr: bool = False
     children: int = 0
+    depth: int = 1
+    nested_properties: bool = False
 
 
 class _Sink:
@@ -147,6 +149,7 @@ class _Sink:
         self.story = story
         self.blocks: list[Paragraph | Table] = []
         self.parts: list[str] = []
+        self.paragraph_ends: list[int] = []
         self.row: list[Cell] | None = None
         self.expected = 0
         self.table: Table | None = None
@@ -154,21 +157,101 @@ class _Sink:
         self.horizontal = self.vertical = ''
         self.left = 0
         self.nested = False
+        self.cell_blocks: list[Paragraph | Table] = []
+        self.child: _Sink | None = None
+        self.level = 1
+        self.previous_definitions = None
         self.vertical_anchors: dict[tuple[int, int, int, int], Cell] = {}
+
+    def at_depth(self, depth: int):
+        current = self
+        while depth > current.level:
+            if depth > current.level + 1 and current.child is None:
+                raise InvalidDocumentError('RTF nested table depth skips a parent level')
+            if current.row is None:
+                raise InvalidDocumentError('RTF nested table has no containing row')
+            if current.child is None:
+                current.flush_cell_paragraphs()
+                current.nested = True
+                self.parser.has_nested = True
+                current.child = _Sink(self.parser)
+                current.child.level = current.level + 1
+                current.child.row = []
+            current = current.child
+        current.close_child()
+        return current
+
+    def flush_cell_paragraphs(self):
+        # Keep actual paragraph boundaries separate from \line text. A final
+        # \par terminates the last paragraph; a final \line remains in its text.
+        start = 0
+        for end in self.paragraph_ends:
+            self.cell_blocks.append(Paragraph(''.join(self.parts[start:end - 1])))
+            start = end
+        if start < len(self.parts):
+            self.cell_blocks.append(Paragraph(''.join(self.parts[start:])))
+        self.parts.clear()
+        self.paragraph_ends.clear()
+
+    def close_child(self):
+        # Iterative postorder avoids Python recursion on caller-raised limits.
+        parents = []
+        current = self
+        while current.child is not None:
+            parents.append(current)
+            current = current.child
+        for parent in reversed(parents):
+            child = parent.child
+            child.finish()
+            parent.cell_blocks.extend(child.blocks)
+            parent.child = None
+
+    def projected_cell(self):
+        self.close_child()
+        if not self.cell_blocks:
+            return Cell(''.join(self.parts))
+        self.flush_cell_paragraphs()
+        # Charge every stored projection before constructing it, including
+        # repeated descendant text at each ancestor and all delimiters.
+        size = max(0, len(self.cell_blocks) - 1)
+        for block in self.cell_blocks:
+            if isinstance(block, Paragraph):
+                size += len(block.text)
+            else:
+                size += max(0, len(block.rows) - 1)
+                for row in block.rows:
+                    size += sum(len(c.text) for c in row) + max(0, len(row) - 1)
+        self.parser.charge(size)
+        fragments = [b.text if isinstance(b, Paragraph) else
+                     '\n'.join('\t'.join(c.text for c in row) for row in b.rows)
+                     for b in self.cell_blocks]
+        cell = Cell('\n'.join(fragments), blocks=self.cell_blocks)
+        self.cell_blocks = []
+        return cell
 
     def text(self, text: str):
         if text:
+            if self.level > 1 and self.row is None:
+                self.row = []
             self.parser.charge(len(text))
             self.parts.append(text)
 
     def paragraph(self, force: bool = False):
+        if self.level > 1 and self.row is None:
+            self.row = []
         if self.row is not None:
             self.text('\n')
+            self.paragraph_ends.append(len(self.parts))
         elif self.parts or force:
             self.blocks.append(Paragraph(''.join(self.parts)))
             self.parts.clear()
             self.table = None
             self.vertical_anchors.clear()
+
+    def check_definitions(self):
+        if ((self.level > 1 or self.nested) and self.previous_definitions is not None and
+                self.previous_definitions != (self.left, self.definitions)):
+            self.parser.warn('Conflicting RTF row properties; final properties used, text retained.')
 
     def start_row(self):
         # Writers may repeat row properties after cell content, before \row.
@@ -176,6 +259,8 @@ class _Sink:
         if self.row is None:
             self.paragraph()
             self.row = []
+        self.check_definitions()
+        self.previous_definitions = (self.left, self.definitions[:]) if self.definitions else None
         self.expected = 0
         self.definitions.clear()
         self.horizontal = self.vertical = ''
@@ -250,19 +335,28 @@ class _Sink:
 
     def cell(self):
         if self.row is None:
-            self.parser.warn('Table cell without row definition recovered.')
+            if self.level == 1:
+                self.parser.warn('Table cell without row definition recovered.')
             self.row = []
         self.parser.cells += 1
         if self.parser.cells > self.parser.limits.max_cells:
             raise LimitExceededError('RTF cell limit exceeded')
-        self.row.append(Cell(''.join(self.parts)))
+        self.row.append(self.projected_cell())
         self.parts.clear()
+        self.paragraph_ends.clear()
 
     def end_row(self, recovered: bool = False):
         if self.row is None:
             self.start_row()
-        if self.parts or not self.row:
+        self.close_child()
+        if self.level > 1:
+            if self.parts or self.cell_blocks:
+                self.parser.warn('Nested cell terminator missing; text retained.')
+            if not self.expected:
+                self.parser.warn('Nested row properties missing; cells retained.')
+        if self.parts or self.cell_blocks or not self.row:
             self.cell()
+        self.check_definitions()
         complete = bool(self.expected) and len(self.row) == self.expected
         while len(self.row) < self.expected:
             self.cell()
@@ -278,12 +372,15 @@ class _Sink:
         self.definitions.clear()
         self.horizontal = self.vertical = ''
         self.nested = False
+        self.previous_definitions = None
 
     def finish(self):
         if self.row is not None:
-            self.parser.warn('Incomplete table row recovered.')
+            self.parser.warn('Nested table row incomplete; recovered.' if self.level > 1 else
+                             'Incomplete table row recovered.')
             self.end_row(recovered=True)
-        self.paragraph()
+        if self.level == 1:
+            self.paragraph()
 
 
 class _Parser:
@@ -302,6 +399,7 @@ class _Parser:
         self.chars = 0
         self.cells = 0
         self.definitions = 0
+        self.has_nested = False
 
     def warn(self, message: str):
         if message not in self.document.warnings:
@@ -314,7 +412,7 @@ class _Parser:
 
     @property
     def sink(self):
-        return self.sinks[self.state.target]
+        return self.sinks[self.state.target].at_depth(self.state.depth)
 
     def visible(self):
         return not (self.state.skip or self.state.font_table or self.state.shape_container
@@ -403,6 +501,10 @@ class _Parser:
                 self.warn('Pictures, objects, shapes or equations omitted.')
             elif word == 'annotation':
                 self.warn('Annotations omitted.')
+        elif word == 'nesttableprops':
+            if s.depth < 2:
+                raise InvalidDocumentError('RTF nested properties outside a nested table')
+            s.nested_properties = True
         elif word == 'fonttbl':
             s.font_table = True
         elif s.font_table:
@@ -421,6 +523,8 @@ class _Parser:
                 'footnotes' if word == 'footnote' else 'textboxes')
             self.sinks.append(_Sink(self, story))
             s.target = len(self.sinks) - 1
+            s.depth = 1
+            s.nested_properties = False
             s.shape_container = False
             if word != 'shptxt':
                 s.hidden = False
@@ -450,7 +554,7 @@ class _Parser:
                         self.warn('Unsupported font charset or symbol font; using document code page.')
                 self.fonts[s.font] = charset, explicit
             return
-        if word in _SKIP or word in _SHAPE_CONTAINERS or word == 'fonttbl':
+        if word in _SKIP or word in _SHAPE_CONTAINERS or word in {'fonttbl', 'nesttableprops'}:
             self.destination(word)
         elif s.shape_container:
             # Shape controls/stray text cannot modify the surrounding story.
@@ -494,8 +598,36 @@ class _Parser:
             elif word in {'par', 'sect', 'page'}:
                 self.high_end()
                 self.sink.paragraph(force=True)
+            elif word == 'intbl' and number != 0:
+                # Late outer definitions are legal too. Do not resolve/reset
+                # nesting here: writers emit pard/intbl/itap2 between cells.
+                root = self.sinks[s.target]
+                if s.depth == 1 and root.row is None:
+                    root.row = []
+            elif word == 'pard':
+                if s.nested_properties:
+                    raise InvalidDocumentError('Paragraph reset inside RTF nested properties')
+                self.high_end()
+                s.depth = 1
+            elif word == 'itap':
+                if number is None or number < 0:
+                    raise InvalidDocumentError('Invalid RTF table nesting depth')
+                if number > self.limits.max_depth:
+                    raise LimitExceededError('RTF table nesting depth limit exceeded')
+                if s.nested_properties and number != s.depth:
+                    raise InvalidDocumentError('Conflicting depth inside RTF nested properties')
+                self.high_end()
+                if number == 0 and self.sinks[s.target].row is not None:
+                    self.warn('RTF depth zero inside unfinished table; parent cell retained.')
+                s.depth = max(1, number)
+                if s.depth > 1:
+                    self.sinks[s.target].at_depth(s.depth)
             elif word == 'trowd':
                 self.high_end()
+                # Outside nesttableprops, Word repeats the outer row defaults
+                # even while the last paragraph still carries itap2.
+                if not s.nested_properties:
+                    s.depth = 1
                 self.sink.start_row()
             elif word == 'cellx':
                 self.definitions += 1
@@ -505,21 +637,34 @@ class _Parser:
             elif word == 'trleft':
                 self.sink.left = number if number is not None else 0
             elif word == 'cell':
+                if s.nested_properties:
+                    raise InvalidDocumentError('Outer cell terminator inside RTF nested properties')
                 self.high_end()
+                s.depth = 1
                 self.sink.cell()
             elif word == 'row':
+                if s.nested_properties:
+                    raise InvalidDocumentError('Outer row terminator inside RTF nested properties')
                 self.high_end()
+                s.depth = 1
                 self.sink.end_row()
             elif word in {'clmgf', 'clmrg', 'clvmgf', 'clvmrg'}:
                 if word in {'clmgf', 'clmrg'}:
+                    if self.sink.level > 1 and self.sink.horizontal not in {'', word}:
+                        self.warn('Conflicting nested cell merge properties; final flag used.')
                     self.sink.horizontal = word
                 else:
+                    if self.sink.level > 1 and self.sink.vertical not in {'', word}:
+                        self.warn('Conflicting nested cell merge properties; final flag used.')
                     self.sink.vertical = word
-            elif word in {'nestcell', 'nestrow'} or (word == 'itap' and number and number > 1):
-                self.sink.nested = True
-                self.warn('Nested table structure flattened; cell spans not reconstructed.')
-                if word in {'nestcell', 'nestrow'}:
-                    self.emit('\t' if word == 'nestcell' else '\n')
+            elif word in {'nestcell', 'nestrow'}:
+                self.high_end()
+                if s.depth < 2:
+                    raise InvalidDocumentError('RTF nested terminator outside a nested table')
+                if word == 'nestcell':
+                    self.sink.cell()
+                else:
+                    self.sink.end_row()
 
     def parse(self, data: bytes, start: int) -> Document:
         closed = False
@@ -552,7 +697,7 @@ class _Parser:
                 parent = self.stack.pop()
                 if parent.target != self.state.target:
                     self.high_end()
-                    self.sink.finish()
+                    self.sinks[self.state.target].finish()
                 self.state = parent
                 if not self.stack:
                     closed = True
@@ -602,6 +747,24 @@ class _Parser:
                 extras.setdefault(sink.story, []).append(text)
         for story, parts in extras.items():
             setattr(self.document, story, '\n'.join(parts))
+        if self.has_nested:
+            # Bound the public text projection too, without allocating it. The
+            # retained parent/child strings were already charged while built.
+            lengths = []
+            for block in self.document.blocks:
+                if isinstance(block, Paragraph):
+                    size = len(block.text)
+                else:
+                    size = max(0, len(block.rows) - 1)
+                    size += sum(sum(len(c.text) for c in row) + max(0, len(row) - 1)
+                                for row in block.rows)
+                if size:
+                    lengths.append(size)
+            lengths.extend(len(getattr(self.document, story)) for story in
+                           ('footnotes', 'endnotes', 'headers_footers', 'textboxes')
+                           if getattr(self.document, story))
+            if sum(lengths) + 2 * max(0, len(lengths) - 1) > self.limits.max_text_chars:
+                raise LimitExceededError('RTF output projection text limit exceeded')
         return self.document
 
 

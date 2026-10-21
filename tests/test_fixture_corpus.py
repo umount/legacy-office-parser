@@ -1,5 +1,5 @@
 """Independent, hand-authored expectations for original binary Office fixtures."""
-from dataclasses import asdict, is_dataclass
+from dataclasses import is_dataclass
 import importlib
 import json
 from pathlib import Path
@@ -36,7 +36,7 @@ def test_public_parser_matches_original_fixture(name, extension, source_extensio
     result = parse(FIXTURES / f'{name}.{extension}')
     assert is_dataclass(result)
     expected = json.loads((FIXTURES / f'{name}.expected.json').read_text(encoding='utf-8'))
-    actual = asdict(result)
+    actual = result.to_dict()
     # Empty layout paragraphs added by Writer carry no semantic content. Retain all
     # table cells and slides: filtering those would hide the target regressions.
     actual['blocks'] = [block for block in actual['blocks']

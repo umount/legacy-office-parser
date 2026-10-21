@@ -1,5 +1,4 @@
 """End-to-end tests against authored content, never parser-generated goldens."""
-from dataclasses import asdict
 from decimal import Decimal
 import importlib
 import json
@@ -35,7 +34,7 @@ def expected_document(name, fmt):
 
 
 def semantic_document(document):
-    actual = asdict(document)
+    actual = document.to_dict()
     assert all(isinstance(w, str) for w in actual.pop('warnings'))
     # Writer/RTF may carry empty layout paragraphs, but never discard table cells.
     actual['blocks'] = [b for b in actual['blocks'] if b['kind'] != 'paragraph' or b['text'] != '']

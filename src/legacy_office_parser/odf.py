@@ -7,7 +7,7 @@ import re
 from ._odf_package import Budget, cap, q, read_package
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
-from .models import Cell, CellRange, Document, Paragraph, Sheet, Slide, SpreadsheetCell, Table
+from .models import _clone_cell, Cell, CellRange, Document, Paragraph, Sheet, Slide, SpreadsheetCell, Table
 
 PARAS = {q('text:p'), q('text:h')}
 ROW_WRAPPERS = {q('table:table-header-rows'), q('table:table-rows'), q('table:table-row-group')}
@@ -400,6 +400,36 @@ class _Parser:
             raise LimitExceededError('ODF cell text limit exceeded')
         return text
 
+    def cell_content(self, element):
+        def nested(parent):
+            for child in parent:
+                if hidden_section(child):
+                    continue
+                if child.tag == q('table:table'):
+                    return True
+                if child.tag in BLOCK_WRAPPERS and nested(child):
+                    return True
+            return False
+        if self.doc.format != 'odt' or not nested(element):
+            return self.cell_text(element), []
+        blocks = []
+        self.blocks(element, blocks)
+        # Check the projection before joining; table() charges it including repeats.
+        size = max(0, len(blocks) - 1)
+        for block in blocks:
+            if isinstance(block, Paragraph):
+                size += len(block.text)
+            else:
+                size += max(0, len(block.rows) - 1)
+                for row in block.rows:
+                    size += sum(len(cell.text) for cell in row) + max(0, len(row) - 1)
+        if self.budget.output_chars + size > self.budget.limits.max_text_chars:
+            raise LimitExceededError('ODF expanded text limit exceeded')
+        value = '\n'.join(block.text if isinstance(block, Paragraph) else
+                          '\n'.join('\t'.join(cell.text for cell in row) for row in block.rows)
+                          for block in blocks)
+        return value, blocks
+
     def rows(self, table):
         for child in table:
             if child.tag == q('table:table-row'):
@@ -455,13 +485,14 @@ class _Parser:
                 covered = e.tag == q('table:covered-table-cell')
                 cell_stories = {kind: len(values) for kind, values in self.stories.items()}
                 cell_count = self.budget.cells
-                value = '' if covered else self.cell_text(e)
+                value, children = ('', []) if covered else self.cell_content(e)
                 self.repeat_stories(cell_stories, cr - 1, self.budget.cells - cell_count)
                 self.budget.text(len(value) * cr * repeat)
-                template.extend(Cell(value, rs, cs, covered) for _ in range(cr))
+                prototype = Cell(value, rs, cs, covered, children)
+                template.extend(_clone_cell(prototype) for _ in range(cr))
             self.repeat_stories(row_stories, repeat - 1, self.budget.cells - row_cells)
             for _ in range(repeat):
-                result.rows.append([Cell(c.text, c.row_span, c.col_span, c.covered) for c in template])
+                result.rows.append([_clone_cell(c) for c in template])
             row_index += repeat
         return result
 

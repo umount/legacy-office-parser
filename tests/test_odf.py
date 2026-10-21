@@ -270,7 +270,7 @@ def test_raw_whitespace_across_spans_and_explicit_boundaries():
     assert [p.text for p in d.blocks] == ['A B', '  X  ']
 
 
-def test_unknown_content_and_nested_table_not_scraped():
+def test_unknown_content_omitted_but_nested_table_retained():
     d = parse('<text:p>visible<text:note><text:note-body><text:p>PRIVATE</text:p>'
               '</text:note-body></text:note>end</text:p>'
               '<text:tracked-changes><text:p>DELETED</text:p></text:tracked-changes>'
@@ -278,7 +278,8 @@ def test_unknown_content_and_nested_table_not_scraped():
               '<table:table><table:table-row><table:table-cell><text:p>NESTED</text:p>'
               '</table:table-cell></table:table-row></table:table>'
               '</table:table-cell></table:table-row></table:table>')
-    assert d.text == 'visibleend\n\nouter'
+    assert d.text == 'visibleend\n\nouter\nNESTED'
+    assert d.blocks[1].rows[0][0].blocks[1].rows[0][0].text == 'NESTED'
     assert any('Unsupported' in w for w in d.warnings)
 
 
