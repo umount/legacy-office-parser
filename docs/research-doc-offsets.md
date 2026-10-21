@@ -30,9 +30,12 @@ The comparison reports this difference explicitly. The result is not adjusted
 to match that representation.
 
 Differences remain in the private corpus compared with the DOCX geometry
-produced by LibreOffice. Complete agreement is not claimed. Preferred widths,
-automatic layout, and conditional styles are not evaluated. Grouping adjacent
-tables does not yet account for all positioning and table-identity properties.
+produced by LibreOffice. Complete agreement is not claimed. Preferred widths and
+automatic layout are not evaluated. A bounded subset of conditional table-style
+CFVanish is supported; see [conditional styles](research-doc-conditional-styles.md).
+Adjacent-table grouping includes verified identity and first-paragraph frame
+properties, but does not cover all positioning rules; see
+[frame identity](research-doc-frame-identity.md).
 
 ## Basis
 

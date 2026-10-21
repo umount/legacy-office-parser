@@ -273,8 +273,8 @@ require separate evidence and are listed in `EXTRACTION_GAPS.md`.
 
 ### Source-owned comments and display semantics (0.17)
 
-Add DOC comments with shared bodies, authors and verified source anchors;
-preserve raw XLS values behind supported hidden displays; extract a narrow,
+Added DOC comments with shared bodies, authors and verified source anchors;
+preserved raw XLS values behind supported hidden displays; extracted a narrow,
 explicitly enabled RTF WordArt subset. Each change has independent expected
 results, malformed-input and budget checks, and original reference fixtures.
 RTF fallback-only ownership remains unresolved rather than being guessed.

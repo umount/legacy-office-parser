@@ -62,11 +62,14 @@ The underlying investigations and upstream links are in [RESEARCH.md](RESEARCH.m
 
 ## Version 0.17 follow-up
 
-The next verified step adds DOC comments with authors and source ownership,
+Version 0.17 added DOC comments with authors and source ownership,
 empty XLS display sections without losing typed values, and a conservative
 literal RTF WordArt subset. The combined local suite passed 3,804 tests (51
 optional skips), 9,500 mutations and 11 resource checks. New original fixtures
 were also checked with LibreOffice; see [validation details](TESTING.md).
+The WordArt overflow correction passed independent re-review, and
+[CI passed](https://github.com/umount/legacy-office-parser/actions/runs/39678107409)
+on Python 3.11–3.13 and the LibreOffice reference job.
 These additions extend measured coverage, not the claim to arbitrary documents.
 
 ## Recorded 0.16 evidence behind the extraction claim

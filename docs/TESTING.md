@@ -46,7 +46,8 @@ directory or a single file.
 For DOC/RTF/ODT, additional checks cover main-text order, tables, coordinates,
 spans, covered cells, and separate note stories. Only whitespace is normalized.
 Unsupported scopes yield `equal: null`, not a successful check. Headers/footers
-and textboxes are not yet compared by this structural oracle.
+and textboxes receive pooled recoverable-text comparisons. Unresolved ordering,
+structure or ownership remains incomplete or unknown, rather than equivalent.
 For PPT/ODP, each slide's text, notes, and visibility are checked; order comes
 from presentation.xml relationships, not ZIP member names.
 
@@ -65,7 +66,8 @@ A separate CI job installs LibreOffice solely as a development reference.
 
 - DOC: Cyrillic, UTF-16 and compressed pieces, multiple pieces in a different
   physical order; actual table properties, empty/multiparagraph cells,
-  horizontal and vertical merges, warnings for unsupported nesting;
+  horizontal and vertical merges, supported nested tables, malformed nesting
+  and depth-limit checks;
   separate text stories.
 - PPT: empty slides do not shift numbering; notes are linked by identifier;
   shape text is retained when outline text is present; the current save chain

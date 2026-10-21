@@ -70,9 +70,16 @@ our parser's expectations. The next step for the deferred features is a second
 independent reader or a reproducible successful import into these document types,
 not following package references as a workaround.
 
-## Exact current paths and risks
+## Historical baseline paths and risks
 
-Locations in the reviewed source (line numbers can move):
+The following observations describe the pre-0.14 source reviewed for this
+investigation, not the current implementation. Since then, ODT ordinary shapes
+have been routed consistently into detached stories, and 0.15 added ODS
+`table:shapes` through `sheet_drawings()`. `Document.text` includes sheet drawings
+after cell text. See `test_odf_shapes.py` and `test_ods_floating_text.py`.
+Image-attached text and inline ODS/ODP text objects remain deferred.
+
+Locations in that historical source (line numbers have moved):
 
 * `odf.py:17`, `inline():119`, `blocks():639`, `drawing():280`: `DRAW_STORIES`
   accepts frames/textboxes/groups/links, excluding ordinary shapes and images.
