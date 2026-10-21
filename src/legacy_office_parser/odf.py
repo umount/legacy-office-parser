@@ -69,6 +69,14 @@ class _Parser:
         self.max_columns = cap(self.limits, 'max_columns', 16_384)
         self.notes = {"footnote": [], "endnote": []}
         self.stories = {**self.notes, "textboxes": [], "headers_footers": []}
+        # Additional retained text not already charged by the extraction budget.
+        # Original stories already charge descendant cell projections; copies
+        # charge only their legacy string until repeat_stories preflights them.
+        self.retained_story_text = {kind: 0 for kind in self.stories}
+        self.structured_stories = set()
+        # Charges attributable to completed detached stories (including copies).
+        # A containing story subtracts this delta to isolate its own block cost.
+        self.story_budget_text = 0
         self.in_note = False
         self.styles = {}
         for root in roots:
@@ -164,12 +172,32 @@ class _Parser:
             self.in_note = False
 
     def story(self, element, destination):
+        budget_start = self.budget.output_chars
+        stories_start = self.story_budget_text
         # Reserve encounter order before extracting any nested frames. They are
         # routed to their own story, never flattened into this story's text.
         index = len(destination)
-        destination.append('')
         blocks = []
+        destination.append(('', blocks))
         self.blocks(element, blocks)
+        # table() charges parent projections for repeats, but descendant blocks
+        # can have been charged only for their template. Count this story's
+        # actual retained tree once, before it can become a repeat template.
+        # Detached nested stories are disjoint trees and have their own charges.
+        full_text = 0
+        pending = list(blocks)
+        while pending:
+            block = pending.pop()
+            if isinstance(block, Paragraph):
+                full_text += len(block.text)
+            else:
+                for row in block.rows:
+                    for cell in row:
+                        full_text += len(cell.text)
+                        pending.extend(cell.blocks)
+        own_charge = (self.budget.output_chars - budget_start -
+                      (self.story_budget_text - stories_start))
+        self.budget.text(max(0, full_text - own_charge))
         parts = []
         charged = 0
         for block in blocks:
@@ -184,10 +212,18 @@ class _Parser:
         value = '\n\n'.join(parts)
         if value:
             # Blocks already charged their text; also bound all rendered separators.
-            self.budget.text(len(value) - charged + (2 if any(destination) else 0))
-            destination[index] = value
-        else:
-            del destination[index]
+            self.budget.text(len(value) - charged + (2 if any(text for text, _ in destination) else 0))
+            destination[index] = (value, blocks)
+        # Include the legacy projection adjustment, but not nested stories a
+        # second time. The outer story can now isolate its own budget delta.
+        self.story_budget_text += (self.budget.output_chars - budget_start -
+                                   (self.story_budget_text - stories_start))
+        kind = next(kind for kind, stories in self.stories.items() if stories is destination)
+        self.retained_story_text[kind] += charged
+        if any(isinstance(block, Table) for block in blocks):
+            self.structured_stories.add(kind)
+        # Keep empty blocks too: an empty table still carries structure, and an
+        # empty paragraph must survive if this pooled key contains a table.
 
     def drawing(self, element):
         if element.tag == q('draw:text-box'):
@@ -465,11 +501,50 @@ class _Parser:
         if not copies:
             return
         self.budget.cell(cells * copies)
+        batches = {}
+        copied_text = {}
+        legacy_text = records = 0
         for kind, start in starts.items():
             values = self.stories[kind][start:]
+            batches[kind] = values
             # Every cloned nonempty body follows an existing body of this kind.
-            self.budget.text(sum(len(value) + 2 for value in values) * copies)
-            self.stories[kind].extend(values * copies)
+            legacy_text += sum(len(value) + 2 for value, _ in values if value) * copies
+            # Count every descendant projection, as _validate_result does, not
+            # just the top-level cells represented by the legacy string.
+            text = 0
+            records += len(values) * copies
+            pending = [block for _, blocks in values for block in blocks]
+            while pending:
+                block = pending.pop()
+                records += copies
+                if isinstance(block, Paragraph):
+                    text += len(block.text)
+                else:
+                    records += len(block.rows) * copies
+                    for row in block.rows:
+                        records += len(row) * copies
+                        for cell in row:
+                            text += len(cell.text)
+                            pending.extend(cell.blocks)
+            copied_text[kind] = text * copies
+        # Preflight ALL story kinds before cloning any of them. Keep this
+        # separate from Budget.output_chars: that already includes the original
+        # descendant projections, and XML source text has its own budget.
+        retained = sum(self.retained_story_text[kind] + copied_text[kind]
+                       for kind in self.structured_stories)
+        self.budget.text(legacy_text)
+        self.story_budget_text += legacy_text
+        if self.budget.output_chars + retained > self.limits.max_text_chars:
+            raise LimitExceededError('ODF retained story text limit exceeded')
+        self.budget.nodes += records
+        if self.budget.nodes > self.limits.max_records:
+            raise LimitExceededError('ODF expanded story record limit exceeded')
+        for kind, values in batches.items():
+            self.retained_story_text[kind] += copied_text[kind]
+            for _ in range(copies):
+                for value, blocks in values:
+                    cloned = _clone_cell(Cell(blocks=blocks)).blocks
+                    self.stories[kind].append((value, cloned))
 
     def table(self, element):
         result = Table()
@@ -719,9 +794,18 @@ def parse_odf_bytes(data: bytes, limits: Limits, expected_format: str | None = N
     {'odt': parser.blocks, 'ods': parser.sheets, 'odp': parser.slides}[fmt](body)
     if fmt == 'odt':
         parser.masters(body)
-    doc.footnotes = '\n\n'.join(parser.notes['footnote'])
-    doc.endnotes = '\n\n'.join(parser.notes['endnote'])
-    doc.textboxes = '\n\n'.join(parser.stories['textboxes'])
-    doc.headers_footers = '\n\n'.join(parser.stories['headers_footers'])
+    for kind, stories in parser.stories.items():
+        field = {'footnote': 'footnotes', 'endnote': 'endnotes'}.get(kind, kind)
+        setattr(doc, field, '\n\n'.join(value for value, _ in stories if value))
+        # Opt in per pooled key, retaining all occurrences in encounter order.
+        # No note identities, frame anchors, or page placement are inferred.
+        if any(isinstance(block, Table) for _, blocks in stories for block in blocks):
+            doc.story_blocks[field] = [block for _, blocks in stories for block in blocks]
     _check_visible_text(doc, limits)
+    if doc.story_blocks:
+        # Retained structure and its legacy projection are separate allocations.
+        # Use the shared traversal for recursive cells, text, and depth budgets,
+        # including callers of this byte-level entry point.
+        from .api import _validate_result
+        _validate_result(doc, limits)
     return doc
