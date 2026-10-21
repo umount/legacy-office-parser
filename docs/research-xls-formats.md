@@ -3,6 +3,10 @@
 Research and implementation: 2026-10-21. Baseline: main, version 0.6.0,
 commit d891de7. No dependencies added.
 
+This records the original 0.7 subset. Version 0.9 adds explicit quoted/escaped
+prefixes and suffixes; see [literal labels](research-xls-literals.md). The
+original rejection list below describes 0.7, not the current literal support.
+
 ## Primary references consulted before implementation
 
 - [MS-XLS 2.4.126 Format](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/300280fd-e4fe-4675-a924-4d383af48d3b)
