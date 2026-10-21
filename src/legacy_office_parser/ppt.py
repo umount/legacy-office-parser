@@ -7,7 +7,8 @@ EscherTextboxWrapper (https://github.com/apache/poi/tree/trunk/poi-scratchpad/sr
 No code copied from POI or sharepoint2text. No repair scan or stale-text fallback.
 
 Extracts outline and native drawing text, including grouped shapes/table cells.
-Does not render layouts, inherit master text, OCR pictures, or extract embedded
+Includes ordinary text shapes from referenced masters when objects are inherited.
+Does not render layouts, evaluate master placeholders, OCR pictures, or extract embedded
 objects, comments or version-specific extension text. Stored WordArt geometry
 text is extracted from live shapes; alternate XML representations are not merged.
 """
@@ -50,6 +51,8 @@ class _Parser:
         self.text_chars = 0
         self.persist: dict[int, int] = {}
         self.warnings: list[str] = []
+        self.masters: dict[int, _Entry] = {}
+        self.master_cache: dict[int, tuple[list[tuple[int, str]], int]] = {}
 
     def charge(self, count: int = 1) -> None:
         self.records += count
@@ -258,6 +261,44 @@ class _Parser:
             raise InvalidDocumentError('unclaimed OfficeArt complex property bytes')
         return value
 
+    def master_shape_allowed(self, shape: _Record) -> bool:
+        """Ordinary master objects only, never template or header/footer fields.
+
+        MS-PPT 2.7.3/2.7.8 and MS-ODRAW 2.2.40. Inspect metadata before
+        decoding text, since client data need not precede the text box.
+        """
+        allowed = True
+        for rec in self.children(shape):
+            if rec.type == 0xf00a:
+                self.size(rec, 8, exact=True)
+                if rec.version != 2:
+                    raise InvalidDocumentError('invalid master OfficeArtFSP version')
+                if self.u32(rec, 4) & 0x408:  # deleted or background
+                    allowed = False
+            elif rec.type in (0xf00b, 0xf122):
+                if rec.version != 3 or rec.instance * 6 > rec.end - rec.start:
+                    raise InvalidDocumentError('invalid master OfficeArt property table')
+                self.charge(rec.instance)
+                for pos in range(rec.start, rec.start + rec.instance * 6, 6):
+                    pid, value = unpack_from('<HI', self.data, pos)
+                    if pid & 0x3fff in (0x33f, 0x3bf):
+                        if pid & 0xc000:
+                            raise InvalidDocumentError('invalid master visibility property')
+                        if pid == 0x3bf and value & 0x20002 == 0x20002:
+                            allowed = False  # explicit fUsefHidden + fHidden
+                        if pid == 0x33f and value & 0x10001 == 0x10001:
+                            allowed = False  # explicit background shape
+            elif rec.type == 0xf011:
+                if rec.version != 15:
+                    raise InvalidDocumentError('invalid master OfficeArtClientData version')
+                for atom in self.children(rec):
+                    if atom.type == 3011:
+                        self.size(atom, 8, exact=True)
+                        # Even position=-1 can carry a conditional footer/date
+                        # placementId. Do not guess its slide-specific value.
+                        allowed = False
+        return allowed
+
     def shape_text(self, shape: _Record, outline: list[tuple[int, str]]) -> list[tuple[int, str]]:
         blocks: list[tuple[int, str]] = []
         geometry = None
@@ -284,7 +325,8 @@ class _Parser:
             blocks.append((1, geometry))
         return blocks
 
-    def drawing_text(self, drawing: _Record, outline: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    def drawing_text(self, drawing: _Record, outline: list[tuple[int, str]],
+                     inherited: bool = False) -> list[tuple[int, str]]:
         blocks: list[tuple[int, str]] = []
         stack = [iter(self.children(drawing))]
         while stack:
@@ -295,9 +337,69 @@ class _Parser:
                 if rec.version != 15:
                     raise InvalidDocumentError('invalid OfficeArt container')
                 if rec.type == 0xf004:
-                    blocks.extend(self.shape_text(rec, outline))
+                    if not inherited or self.master_shape_allowed(rec):
+                        blocks.extend(self.shape_text(rec, outline))
                 else:
-                    stack.append(iter(self.children(rec)))
+                    children = iter(self.children(rec))
+                    if inherited and rec.type == 0xf003:
+                        # First shape is the group itself. A deleted group must
+                        # not leak text from otherwise ordinary child shapes.
+                        first = next(children, None)
+                        if first is None or first.type != 0xf004 or first.version != 15:
+                            raise InvalidDocumentError('invalid master OfficeArt group')
+                        if not self.master_shape_allowed(first):
+                            continue
+                        blocks.extend(self.shape_text(first, outline))
+                    stack.append(children)
+        return blocks
+
+    def master_text(self, master_id: int) -> list[tuple[int, str]]:
+        """Follow only active inheritance edges; cache each master's own text."""
+        blocks: list[tuple[int, str]] = []
+        seen: set[int] = set()
+        while master_id:
+            self.charge()  # cached edges still consume work budget
+            if master_id in seen:
+                raise InvalidDocumentError('cyclic PPT master inheritance')
+            seen.add(master_id)
+            if len(seen) > self.limits.max_depth:
+                raise LimitExceededError('PPT master inheritance depth limit exceeded')
+            if master_id not in self.master_cache:
+                entry = self.masters.get(master_id)
+                if entry is None or entry.persist_id not in self.persist:
+                    raise InvalidDocumentError('unresolved PPT master reference')
+                rec = self.record(self.persist[entry.persist_id], len(self.data))
+                if rec.type not in (1006, 1016) or rec.version != 15:
+                    raise InvalidDocumentError('PPT master reference has incorrect object type')
+                own: list[tuple[int, str]] = []
+                parent = None
+                for child in self.children(rec):
+                    if child.type == 1007:
+                        if parent is not None:
+                            raise InvalidDocumentError('duplicate PPT master slide atom')
+                        self.size(child, 24, exact=True)
+                        target = self.u32(child, 12)
+                        if rec.type == 1016 and target:
+                            raise InvalidDocumentError('PPT main master has a parent')
+                        follows_objects = bool(self.data[child.start + 20] & 1)
+                        if rec.type == 1006 and follows_objects and not target:
+                            raise InvalidDocumentError('unresolved PPT master reference')
+                        parent = target if follows_objects else 0
+                    elif child.type == 1036:
+                        # Master lists carry no presentation outline text.
+                        own.extend(self.drawing_text(child, [], inherited=True))
+                    elif child.type == 5000:
+                        self.warn('PPT master extension records are not extracted; extension-only content may be omitted.')
+                if parent is None:
+                    raise InvalidDocumentError('missing PPT master slide atom')
+                # Inherited title-kind text is still ordinary master artwork,
+                # not the title of the presentation slide.
+                self.master_cache[master_id] = ([(1, text) for _, text in own if text], parent)
+            own, master_id = self.master_cache[master_id]
+            # Cached text still costs a visit per block on every slide. Charge
+            # before extending, not after the repeated allocation/iteration.
+            self.charge(len(own))
+            blocks.extend(own)
         return blocks
 
     def sheet(self, entry: _Entry, typ: int) -> tuple[list[tuple[int, str]], int, bool]:
@@ -306,12 +408,17 @@ class _Parser:
         blocks = list(outline)
         link = None
         hidden = False
+        master_id = 0
         for child in self.children(rec):
             if child.type == (1007 if typ == 1006 else 1009):
                 if link is not None:
                     raise InvalidDocumentError('duplicate PPT slide/notes atom')
                 self.size(child, 24 if typ == 1006 else 8, exact=True)
                 link = self.u32(child, 16 if typ == 1006 else 0)
+                if typ == 1006 and self.data[child.start + 20] & 1:
+                    master_id = self.u32(child, 12)
+                    if not master_id:
+                        raise InvalidDocumentError('unresolved PPT master reference')
             elif child.type == 1036:
                 blocks.extend(self.drawing_text(child, outline))
             elif child.type == 1017:
@@ -322,16 +429,19 @@ class _Parser:
                     self.warn('PPT extension records are not extracted; extension-only content may be omitted.')
         if link is None:
             raise InvalidDocumentError('missing PPT slide/notes atom')
+        if master_id:
+            blocks.extend(self.master_text(master_id))
         return blocks, link, hidden
 
     def parse(self, edit_offset: int) -> Document:
         root = self.resolve(self.directory(edit_offset), 1000)
         lists: dict[int, list[_Entry]] = {}
         for rec in self.children(root):
-            if rec.type == 4080 and rec.instance in (0, 2):
+            if rec.type == 4080 and rec.instance in (0, 1, 2):
                 if rec.instance in lists:
                     raise InvalidDocumentError('duplicate PPT slide/notes list')
                 lists[rec.instance] = self.entries(rec)
+        self.masters = {e.slide_id: e for e in lists.get(1, [])}
         notes = {e.slide_id: e for e in lists.get(2, [])}
         document = Document(format='ppt')
         emitted_chars = 0
@@ -362,7 +472,7 @@ def parse_ppt_bytes(data: bytes, limits: Limits) -> Document:
     """Extract active slides in presentation order, retaining empty slides.
 
     Malformed live structures fail closed. Inactive persist objects, old edits'
-    text, masters and unreferenced notes are never scanned for fallback content.
+    text, unused masters and unreferenced notes are never scanned for fallback content.
     """
     with open_ole(data, limits) as ole:
         if ole.exists('EncryptedPackage') or ole.exists('EncryptionInfo'):
