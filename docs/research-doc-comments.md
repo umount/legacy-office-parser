@@ -179,9 +179,11 @@ contains field delimiters; ranges splitting surrogate pairs are also unpublished
 Reject nonzero
 annotation BKC.fCol, and use the fCol=0 bookmark rules rather than the rules
 for table-column bookmarks.
-Cross-paragraph, overlapping, and nested-table selections need independent
-regressions before exact selection support is claimed. The fixture below only
-proves two ordinary ten-character ranges and one point.
+The original 0.17 fixture below proves two ordinary ten-character ranges and
+one point. Version 0.19 adds verified ordinary cross-paragraph and same-cell
+multi-paragraph spans, including overlaps; see
+[cross-paragraph selection evidence](research-doc-comment-selections.md).
+Nested-table and cross-cell selections remain outside the supported subset.
 
 PLC slots, authors, tag maps, body descriptors, and published paths consume the
 aggregate record budget before allocation. Bound bytes by
@@ -299,8 +301,8 @@ Independent decoder, integration, and real-CFB tests cover:
 Supported scope is text, author, verified reference-container ownership, and
 bounded ordinary selection spans. Full comment layout, revision acceptance,
 resolved-state inference, reply rendering, and ink remain outside this phase.
-Arbitrary overlapping/cross-paragraph selections retain source reference
-ownership but may have no published selection span. The original fixture does
+Selections outside the verified ordinary paragraph/source-cell regions retain
+source reference ownership but may have no published selection span. The original fixture does
 not establish ink, replies, nonempty initials, or body-table conversion fidelity;
 those applicable record/structure cases are covered by independent synthetic
 tests, not claimed as LibreOffice parity.

@@ -337,7 +337,7 @@ def test_reference_paths_follow_final_table_partition(monkeypatch, boundary):
 
 @pytest.mark.parametrize('main,start,end,expected', [
     ('😀Text\x05\r', 2, 6, (2, 6)),
-    ('First\rSecond\x05\r', 0, 12, (None, None)),
+    ('First\rSecond\x05\r', 0, 12, (0, 12)),
     ('A\x13CMD\x14X\x15B\x05\r', 0, 1, (None, None)),
     ('😀Text\x05\r', 1, 6, (None, None)),
 ])

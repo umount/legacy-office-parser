@@ -1,0 +1,127 @@
+{
+  "story_counts": [
+    69,
+    0,
+    0,
+    55,
+    0,
+    0,
+    0
+  ],
+  "main": "Lead 😀 Alpha\r\rBeta 🚀\u0005 tail.\rTableBarrier\u0007\u0007After Gamma\rDelta\u0005 done.\r",
+  "comment_story": "\u0005Across empty paragraph.\r\u0005Across ordinary paragraphs.\r\r",
+  "owners": [
+    "Ada Range",
+    "Ben Range"
+  ],
+  "reference_sentinel": 70,
+  "text_cps": [
+    0,
+    25,
+    54,
+    55
+  ],
+  "comments": [
+    {
+      "source_cp": 22,
+      "source_unit": 5,
+      "initials": "",
+      "owner_index": 0,
+      "tag": 0,
+      "body_cps": [
+        0,
+        25
+      ],
+      "body": "\u0005Across empty paragraph.\r",
+      "selection_cps": [
+        8,
+        22
+      ],
+      "selection": "Alpha\r\rBeta 🚀"
+    },
+    {
+      "source_cp": 61,
+      "source_unit": 5,
+      "initials": "",
+      "owner_index": 1,
+      "tag": 1,
+      "body_cps": [
+        25,
+        54
+      ],
+      "body": "\u0005Across ordinary paragraphs.\r",
+      "selection_cps": [
+        50,
+        61
+      ],
+      "selection": "Gamma\rDelta"
+    }
+  ],
+  "marker_chpx": [
+    {
+      "cp": 22,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 61,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 69,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 94,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    }
+  ],
+  "raw_parts_hex": {
+    "4": "160000003d00000046000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000001000000",
+    "5": "00000000190000003600000037000000",
+    "36": "09004100640061002000520061006e00670065000900420065006e002000520061006e0067006500",
+    "37": "ffff02000a000000000100000000ffffffff0000000101000000ffffffff",
+    "42": "0800000032000000460000000000000001000000",
+    "43": "160000003d00000046000000",
+    "112": "000be18700000000000000000000000000000013e1a70000000000000000000000000000"
+  },
+  "source_xml": [
+    {
+      "author": "Ada Range",
+      "body": [
+        "Across empty paragraph."
+      ],
+      "selection": "Alpha\r\rBeta 🚀"
+    },
+    {
+      "author": "Ben Range",
+      "body": [
+        "Across ordinary paragraphs."
+      ],
+      "selection": "Gamma\rDelta"
+    }
+  ],
+  "lo_readback_xml": [
+    {
+      "author": "Ada Range",
+      "body": [
+        "Across empty paragraph."
+      ],
+      "selection": "Alpha\r\rBeta 🚀"
+    },
+    {
+      "author": "Ben Range",
+      "body": [
+        "Across ordinary paragraphs."
+      ],
+      "selection": "Gamma\rDelta"
+    }
+  ]
+}

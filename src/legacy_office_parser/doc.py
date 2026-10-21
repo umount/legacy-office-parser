@@ -863,19 +863,35 @@ class _Doc:
                 raise InvalidDocumentError('DOC comment body final paragraph is inside a table')
 
     def _comment_selection_ranges(self, paragraphs):
-        # One scan of paragraph contents, then logarithmic source-coordinate
-        # lookup per range; no per-comment rescanning or normalized text offsets.
-        self.budget.record(2 * len(paragraphs))
+        # Prefix counts and source regions make overlapping range validation
+        # O(log paragraphs) each, without walking each selected paragraph again.
+        # Regions break only on explicit cell/row/section marks or depth changes;
+        # they never infer table identity, output-grid positions, or page layout.
+        self.budget.record(4 * len(paragraphs) + 1)
         starts = [p[0] for p in paragraphs]
-        safe = []
+        unsafe = [0]
+        regions = []
+        completed_cells = set()
+        region, previous_depth, boundary = 0, None, False
         fields = False
-        for begin, end, _, mark_cp, _, _, known in paragraphs:
-            ordinary = known and self._comment_paragraph_known(mark_cp)
+        for begin, end, mark, mark_cp, props, _, known in paragraphs:
+            depth = props.depth or (1 if props.in_table else 0)
+            if boundary or depth != previous_depth:
+                region += 1
+            regions.append(region)
+            covered = known and self._comment_paragraph_known(mark_cp)
+            ordinary = covered
             for cp in range(begin, end):
                 unit = self.text[cp * 2] | self.text[cp * 2 + 1] << 8
                 fields |= unit in (19, 20, 21)
                 ordinary &= unit >= 32 or unit in (5, 9)
-            safe.append(ordinary)
+            unsafe.append(unsafe[-1] + (not ordinary))
+            if covered and ((depth == 1 and mark == 7 and not props.row_end)
+                            or (depth > 1 and mark == 13 and props.inner_cell and not props.inner_ttp)):
+                completed_cells.add(region)
+            boundary = (mark != 13 or props.row_end or props.inner_cell or props.inner_ttp
+                        or mark_cp in self.section_ends)
+            previous_depth = depth
         for source in self.comment_ranges:
             begin, end = source.selection_start, source.selection_end
             if begin is None:
@@ -884,9 +900,21 @@ class _Doc:
                 self.comment_selections[source.source_cp] = (begin, end)
                 continue
             i = bisect_right(starts, begin) - 1
-            if (not fields and i >= 0 and safe[i] and end <= paragraphs[i][1]
-                    and not 0xdc00 <= _u16(self.text, begin * 2) <= 0xdfff
-                    and not 0xd800 <= _u16(self.text, (end - 1) * 2) <= 0xdbff):
+            j = bisect_right(starts, end - 1) - 1
+            proven = not fields and i >= 0 and j >= i
+            if proven:
+                _, last_end, mark, mark_cp, props, _, _ = paragraphs[j]
+                # Ordinary paragraph CR may be selected. Cell/TTP/section marks
+                # require further selection rules and are never included here.
+                include_cr = (mark == 13 and not (props.row_end or props.inner_cell or props.inner_ttp)
+                              and mark_cp not in self.section_ends)
+                depth = props.depth or (1 if props.in_table else 0)
+                proven = (regions[i] == regions[j] and unsafe[j + 1] == unsafe[i]
+                          and (i == j or not depth or regions[i] in completed_cells)
+                          and end <= last_end + include_cr
+                          and not 0xdc00 <= _u16(self.text, begin * 2) <= 0xdfff
+                          and not 0xd800 <= _u16(self.text, (end - 1) * 2) <= 0xdbff)
+            if proven:
                 self.comment_selections[source.source_cp] = (begin, end)
             else:
                 self.warn('DOC comment selection validity is unproven; source selection bounds are omitted.')

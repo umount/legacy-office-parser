@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.2" office:mimetype="application/vnd.oasis.opendocument.text">
+<office:body><office:text>
+<text:p>Lead 😀 <office:annotation office:name="cross-a"><dc:creator>Ada Range</dc:creator><dc:date>2026-01-01T12:00:00</dc:date><text:p>Across empty paragraph.</text:p></office:annotation>Alpha</text:p>
+<text:p/>
+<text:p>Beta 🚀<office:annotation-end office:name="cross-a"/> tail.</text:p>
+<table:table table:name="Barrier"><table:table-column/><table:table-row><table:table-cell office:value-type="string"><text:p>TableBarrier</text:p></table:table-cell></table:table-row></table:table>
+<text:p>After <office:annotation office:name="cross-b"><dc:creator>Ben Range</dc:creator><dc:date>2026-01-02T12:00:00</dc:date><text:p>Across ordinary paragraphs.</text:p></office:annotation>Gamma</text:p>
+<text:p>Delta<office:annotation-end office:name="cross-b"/> done.</text:p>
+</office:text></office:body></office:document>
