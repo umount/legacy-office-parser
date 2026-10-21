@@ -82,7 +82,7 @@ def test_timeout_kills_descendants(tmp_path):
         stat = Path(f'/proc/{pid}/stat')
         try:
             state = stat.read_text().split()[2]
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
             break  # init may reap the child at any point during observation.
         if state == 'Z':
             break

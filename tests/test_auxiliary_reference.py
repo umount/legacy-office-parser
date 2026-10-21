@@ -220,8 +220,13 @@ def test_optional_libreoffice_roundtrip_of_authored_fixture(tmp_path, fmt):
     assert report['endnotes']['equal'] is True
     assert report['textboxes']['equal'] is True
     if len(nonempty_parts) == 1:
-        assert check['equal'] is True
-        assert report['equal'] is True
+        # DOC can store separate identical header variants which a subsequent
+        # DOCX export coalesces. A pooled string has no variant IDs: preserve
+        # this multiplicity difference instead of teaching the oracle to dedupe.
+        same_multiplicity = tokens == authored
+        assert check['equal'] is same_multiplicity
+        assert check['token_multiset_equal'] is same_multiplicity
+        assert report['equal'] is same_multiplicity
     else:
         assert check['equal'] is None and not check['order_comparable']
         assert not check['complete'] and report['equal'] is None
