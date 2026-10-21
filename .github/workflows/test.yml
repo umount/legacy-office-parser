@@ -2,8 +2,9 @@ name: tests
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         python-version: ['3.11', '3.12', '3.13']
     steps:
@@ -13,7 +14,19 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e '.[dev]'
       - run: ruff check src tests tools
-      - run: python -m pytest -q
+      - name: Run tests with failure annotations
+        run: |
+          python - <<'PYTEST'
+          import subprocess
+          import sys
+          result = subprocess.run([sys.executable, '-m', 'pytest', '-q'],
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+          print(result.stdout, end='')
+          if result.returncode:
+              detail = result.stdout[-24000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=Pytest failure::' + detail)
+          raise SystemExit(result.returncode)
+          PYTEST
       - name: Sample malformed public fixtures
         run: timeout 120s python tools/check_mutations.py --seed 143 --cases-per-format 500
       - name: Check bounded parsing and repeated allocations
@@ -25,7 +38,7 @@ jobs:
           /tmp/legacy-wheel-check/bin/python -m pip install dist/*.whl
           /tmp/legacy-wheel-check/bin/python -I tools/check_wheel.py tests/fixtures
   libreoffice-reference:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
