@@ -100,6 +100,11 @@ def read_package(data, budget, expected):
             entries = archive.infolist()
             if len(entries) > cap(budget.limits, 'max_archive_entries', 4096):
                 raise LimitExceededError('ODF archive entry limit exceeded')
+            # zipfile adjusts local offsets relative to the central directory.
+            # A forged directory offset can produce negative seeks (ValueError)
+            # even though the directory itself was successfully decoded.
+            if any(not 0 <= e.header_offset <= len(data) - 30 for e in entries):
+                raise InvalidDocumentError('ODF ZIP local header outside package bounds')
             if len({e.filename for e in entries}) != len(entries):
                 raise InvalidDocumentError('Duplicate ODF ZIP member')
             if any(e.flag_bits & 1 for e in entries):
