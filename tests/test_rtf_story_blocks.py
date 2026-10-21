@@ -111,8 +111,7 @@ def test_original_fixture_libreoffice_tables(tmp_path):
     ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
     with ZipFile(tmp_path / 'auxiliary_tables.docx') as archive:
         notes = ET.fromstring(archive.read('word/footnotes.xml'))
-        headers = [ET.fromstring(archive.read(name)) for name in archive.namelist()
-                   if name.startswith('word/header') and name.endswith('.xml')]
+        headers = _active_headers(archive)
     def tables(elements):
         return [[[''.join(c.itertext()) for c in row.findall('w:tc', ns)]
                  for row in table.findall('w:tr', ns)]
@@ -120,9 +119,60 @@ def test_original_fixture_libreoffice_tables(tmp_path):
     # This source header applies to every page. LibreOffice versions may emit
     # separate identical first/default/even parts; check each whole variant.
     assert headers
-    assert all(tables([header]) == [[['A', 'B']]] for header in headers)
+    actual_headers = [tables([header]) for header in headers]
+    assert all(value == [[['A', 'B']]] for value in actual_headers), actual_headers
     assert tables([notes]) == [[['C', 'D']]]
     doc = parse_rtf(source)
     for key, expected in [('headers_footers', [['A', 'B']]), ('footnotes', [['C', 'D']])]:
         table, = [b for b in doc.story_blocks[key] if isinstance(b, Table)]
         assert [[c.text for c in row] for row in table.rows] == expected
+
+
+def _active_headers(archive):
+    """Resolve the authored single section, excluding inactive template parts."""
+    import posixpath
+    import xml.etree.ElementTree as ET
+    w = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+    rel = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+    document = ET.fromstring(archive.read('word/document.xml'))
+    settings = ET.fromstring(archive.read('word/settings.xml'))
+    section, = document.findall('.//' + w + 'sectPr')
+    def enabled(element):
+        return element is not None and element.get(w + 'val', 'true') not in ('0', 'false', 'off')
+    active = {'default'}
+    if enabled(section.find(w + 'titlePg')):
+        active.add('first')
+    if enabled(settings.find(w + 'evenAndOddHeaders')):
+        active.add('even')
+    relationships = {r.get('Id'): r for r in
+        ET.fromstring(archive.read('word/_rels/document.xml.rels'))}
+    headers = []
+    for reference in section.findall(w + 'headerReference'):
+        if reference.get(w + 'type') not in active:
+            continue
+        target = relationships[reference.get(rel + 'id')]
+        assert target.get('TargetMode', 'Internal') == 'Internal'
+        assert target.get('Type').endswith('/header')
+        name = posixpath.normpath(posixpath.join('word', target.get('Target')))
+        headers.append(ET.fromstring(archive.read(name)))
+    return headers
+
+
+@pytest.mark.parametrize('title_enabled,expected', [('0', ['A']), ('1', ['A', ''])])
+def test_reference_oracle_ignores_only_inactive_first_header(title_enabled, expected):
+    from io import BytesIO
+    from zipfile import ZipFile
+    w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    with ZipFile(BytesIO(), 'w') as archive:
+        archive.writestr('word/document.xml', f'<w:document xmlns:w="{w}" xmlns:r="{r}">'
+            '<w:body><w:sectPr><w:headerReference w:type="default" r:id="a"/>'
+            '<w:headerReference w:type="first" r:id="b"/>'
+            f'<w:titlePg w:val="{title_enabled}"/></w:sectPr></w:body></w:document>')
+        archive.writestr('word/settings.xml', f'<w:settings xmlns:w="{w}"/>')
+        archive.writestr('word/_rels/document.xml.rels', '<Relationships>'
+            f'<Relationship Id="a" Type="{r}/header" Target="header1.xml"/>'
+            f'<Relationship Id="b" Type="{r}/header" Target="header2.xml"/></Relationships>')
+        archive.writestr('word/header1.xml', f'<w:hdr xmlns:w="{w}"><w:p><w:r><w:t>A</w:t></w:r></w:p></w:hdr>')
+        archive.writestr('word/header2.xml', f'<w:hdr xmlns:w="{w}"><w:p/></w:hdr>')
+        assert [''.join(header.itertext()) for header in _active_headers(archive)] == expected
