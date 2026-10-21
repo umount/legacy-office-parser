@@ -5,6 +5,22 @@ from ._doc_table import FrameIdentity, frame_change
 from .errors import InvalidDocumentError, LimitExceededError, UnsupportedFormatError
 
 
+# MS-DOC 2.9.336 UpxChpx: all ten explicitly forbidden SPRMs. Shared
+# by paragraph, character and table styles; CCnf has a separate kind rule.
+_UPX_CHPX_FORBIDDEN = frozenset((
+    0x0818,  # CFSpecVanish
+    0x4A30,  # CIstd
+    0xCA31,  # CIstdPermute
+    0x2A33,  # CPlain
+    0xCA47,  # CMajority
+    0xCA62,  # CDispFldRMark
+    0x4867,  # CIdslRMarkDel
+    0x2879,  # CLbcCRJ
+    0x6887,  # CPbiIBullet
+    0x4888,  # CPbiGrf
+))
+
+
 class Styles:
     def __init__(self, doc, span, u16):
         self.doc = doc
@@ -57,7 +73,7 @@ class Styles:
                 raise InvalidDocumentError('invalid DOC style UPX count')
             hidden = ()
             frame = {}
-            if kind in (1, 2):
+            if kind in (1, 2, 3):
                 if kind == 1:
                     if u16(groups[0]) != index:
                         raise InvalidDocumentError('DOC style PAPX index mismatch')
@@ -71,10 +87,18 @@ class Styles:
                         if change is not None:
                             frame[change[0]] = change[1]
                 operations = []
-                for op, arg in doc._sprms(groups[1 if kind == 1 else 0]):
-                    if (op >> 10) & 7 != 2 or op in (
-                            0x0800, 0x0801, 0x0802, 0x0855, 0x6A09,
-                            0x0818, 0x4A30, 0xCA31, 0x2A33, 0xCA47, 0xCA85):
+                for op, arg in doc._sprms(groups[{1: 1, 2: 0, 3: 2}[kind]],
+                                           allow_padding=kind != 3):
+                    if kind == 3 and op == 0xCA85:
+                        # The complete length-delimited operand is opaque here;
+                        # never promote conditional CFVanish to an unconditional one.
+                        if len(arg) < 3:
+                            raise InvalidDocumentError('short DOC conditional character style operand')
+                        doc.warn('Conditional table style character formatting is not evaluated.')
+                        continue
+                    if ((op >> 10) & 7 != 2 or op in _UPX_CHPX_FORBIDDEN
+                            or op in (0x0800, 0x0801, 0x0802, 0x0855, 0x6A09,
+                                      0xCA85)):
                         raise InvalidDocumentError('forbidden DOC character style property')
                     if op == 0x083C:
                         if arg[0] not in (0, 1, 128, 129):
@@ -87,6 +111,22 @@ class Styles:
                 self.frame_overrides[index] = frame
         if pos != len(data):
             raise InvalidDocumentError('unexpected DOC stylesheet trailing bytes')
+
+    def table_hidden(self, index=None):
+        """Unconditional visibility only; None means no table style is applied.
+
+        Normalize a TIstd selection as in MS-DOC 2.6.3, but validate the
+        selected style's parent graph strictly. No outer-table inheritance.
+        """
+        if index is None:
+            return False
+        if (index < 0 or index >= len(self.styles) or self.styles[index] is None
+                or self.styles[index][0] != 3):
+            index = 11
+        if (index >= len(self.styles) or self.styles[index] is None
+                or self.styles[index][0] != 3):
+            return False
+        return self.hidden(index, 3)
 
     def frame(self, index):
         """Resolve paragraph frame inheritance, bounded by existing style limits."""

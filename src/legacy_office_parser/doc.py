@@ -87,6 +87,7 @@ class _Piece:
 @dataclass(slots=True)
 class _Props:
     style: int = 0
+    applied_table_style: int | None = None
     in_table: bool = False
     row_end: bool = False
     depth: int = 0
@@ -360,13 +361,14 @@ class _Doc:
                     raise UnsupportedFormatError('DOC paragraph style permutation/increment is unsupported')
                 elif op == 0x563A:
                     table_style = _u16(arg)
+                    props.applied_table_style = table_style
                     styles = self.styles.styles
                     # MS-DOC 2.6.3: invalid/non-table references mean Normal Table.
                     if (table_style >= len(styles) or styles[table_style] is None
                             or styles[table_style][0] != 3):
                         table_style = 11
                     props.identity = replace(props.identity, style=table_style)
-                    self.warn('Table styles and conditional table style formatting are not evaluated.')
+                    self.warn('Table styles: only unconditional hidden text is evaluated; other table-style formatting is not modeled.')
                 elif op == 0x2416:
                     props.in_table = bool(arg[0])
                 elif op == 0x2417:
@@ -563,7 +565,7 @@ class _Doc:
             raise InvalidDocumentError('DOC symbol references a missing font')
         return self.symbol_fonts[index]
 
-    def _character_props(self, cp, paragraph_style):
+    def _character_props(self, cp, paragraph_style, table_hidden=False):
         piece = self.pieces[bisect_right(self.cps, cp) - 1]
         operations = self._symbol_chpx(piece.fc + (cp - piece.cp) * piece.width)
         if piece.prm not in self.symbol_prms:
@@ -576,10 +578,10 @@ class _Doc:
                 if op is not None:
                     group = struct.pack('<HB', op, piece.prm >> 8)
             self.symbol_prms[piece.prm] = self._symbol_modifiers(group)
-        key = paragraph_style, operations, piece.prm
+        key = paragraph_style, table_hidden, operations, piece.prm
         if self.character_cache is not None and self.character_cache[0] == key:
             return self.character_cache[1]
-        para_hidden = self.styles.hidden(paragraph_style, 1)
+        para_hidden = self.styles.hidden(paragraph_style, 1, table_hidden)
         style_hidden = para_hidden
         props = {'hidden': para_hidden}
         char_style = 10
@@ -630,11 +632,11 @@ class _Doc:
             self.warn('Symbol control code is retained literally, not interpreted as a DOC delimiter.')
         return chr(code)
 
-    def clean(self, start, end, mark_cp=None):
+    def clean(self, start, end, mark_cp=None, *, table_hidden=False, table_known=True):
         paragraph_style = self.properties(end if mark_cp is None else mark_cp).style
-        self.styles.hidden(paragraph_style, 1)  # Also validate empty paragraphs.
+        self.styles.hidden(paragraph_style, 1, table_hidden)  # Also validate empty paragraphs.
         if mark_cp is None:
-            mark_props = self._character_props(end, paragraph_style)
+            mark_props = self._character_props(end, paragraph_style, table_hidden)
             if any(mark_props.get(name) for name in ('hidden', 'deleted', 'field_hidden')):
                 self.warn('Hidden or deleted paragraph/cell marks retain their structural boundaries; revision merging is not modeled.')
         self.paragraph_anchors = []
@@ -650,13 +652,13 @@ class _Doc:
             cp = next_cp
             next_cp += 2 if ord(ch) > 0xFFFF else 1
             if cp in self.note_references:
-                props = self._character_props(cp, paragraph_style)
+                props = self._character_props(cp, paragraph_style, table_hidden)
                 flags = [name for name in ('hidden', 'deleted') if props.get(name)]
                 if props.get('field_hidden'):
                     flags.append('field_hidden')
                 if self.fields and not all(self.fields):
                     flags.append('field_instruction')
-                if not self.character_coverage_known or not self.styles.present:
+                if not self.character_coverage_known or not self.styles.present or not table_known:
                     flags.append('unknown')
                 automatic = self.note_references[cp] == 'automatic'
                 if automatic and ch != '\x02':
@@ -688,7 +690,7 @@ class _Doc:
                 continue
             if self.fields and not all(self.fields):
                 continue
-            props = self._character_props(cp, paragraph_style)
+            props = self._character_props(cp, paragraph_style, table_hidden)
             if any(props.get(name) for name in ('hidden', 'deleted', 'field_hidden')):
                 continue
             if ch == '(':
@@ -715,17 +717,57 @@ class _Doc:
         return ''.join(out)
 
     def paragraphs(self, start, count):
+        # Structural prepass only: TTP follows its cell text, so effective row
+        # context must be established before clean observes text or note flags.
+        # Each CP is scanned once; retained metadata is per paragraph, not CP.
+        paragraphs = []
+        pending = []
+
+        def close_incomplete():
+            row = pending.pop()
+            if row:
+                self.warn('Incomplete table row has no proven table-style context; available text is retained.')
+
+        def add(begin, end, mark, mark_cp):
+            props = self.properties(mark_cp)
+            depth = props.depth or (1 if props.in_table else 0)
+            if props.inner and depth < 2:
+                raise InvalidDocumentError('DOC inner table marker has no nested table depth')
+            if depth > self.limits.max_depth:
+                raise LimitExceededError('DOC table depth limit exceeded')
+            while len(pending) > depth:
+                close_incomplete()
+            while len(pending) < depth:
+                self.budget.record()
+                pending.append([])
+            self.budget.record()
+            entry = [begin, end, mark, mark_cp, props, False, not depth]
+            paragraphs.append(entry)
+            if depth:
+                self.budget.record()
+                pending[-1].append(entry)
+                row_end = props.row_end if depth == 1 else props.inner_ttp
+                if row_end:
+                    hidden = self.styles.table_hidden(props.applied_table_style)
+                    for item in pending[-1]:
+                        item[5], item[6] = hidden, True
+                    pending[-1].clear()
+
         begin = start
         for cp in range(start, start + count):
             unit = self.text[cp * 2] | self.text[cp * 2 + 1] << 8
             if unit in (7, 13) or cp in self.section_ends:
-                self.budget.record()
-                yield self.clean(begin, cp), cp, unit
+                add(begin, cp, unit, cp)
                 begin = cp + 1
         if begin < start + count:
-            self.budget.record()
             self.warn('A DOC story has no final paragraph mark; trailing text is retained.')
-            yield self.clean(begin, start + count, start + count - 1), start + count - 1, 0
+            add(begin, start + count, 0, start + count - 1)
+        while pending:
+            close_incomplete()
+        for begin, end, mark, mark_cp, props, hidden, known in paragraphs:
+            self.paragraph_cache = mark_cp, props
+            yield self.clean(begin, end, mark_cp if mark == 0 else None,
+                             table_hidden=hidden, table_known=known), mark_cp, mark
 
     def _prepare_notes(self):
         self.note_ranges = {}

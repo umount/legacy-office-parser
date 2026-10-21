@@ -1,0 +1,65 @@
+{
+  "version": "LibreOffice 7.4.7.2 40(Build:2)",
+  "files": {
+    "visible": {
+      "sha256": "61edd51542d3c3efe6411143ede93eb322ef688ac70827d8dc40e266381e6b9f",
+      "stored_table_text": [
+        {
+          "A1": "Key",
+          "B1": "Value",
+          "C1": "Примечание",
+          "A2": "alpha beta",
+          "B2": "",
+          "C2": "два слова",
+          "A3": "",
+          "B3": "42",
+          "C3": "English and русский"
+        }
+      ],
+      "pdf_visible_text": "Synthetic document / Синтетический документ\n                              Value           Примечание\nalpha beta                                    два слова\n                              42              English and русский\nAfter table / После таблицы\n\f",
+      "PrintHiddenText": false,
+      "ShowHiddenCharacters": false,
+      "ShowHiddenParagraphs": false
+    },
+    "inherited": {
+      "sha256": "02d11f514584efd8e8ac08536f3a86167551de76a4cf4def5344dfea66cfe7a6",
+      "stored_table_text": [
+        {
+          "A1": "Key",
+          "B1": "Value",
+          "C1": "Примечание",
+          "A2": "alpha beta",
+          "B2": "",
+          "C2": "два слова",
+          "A3": "",
+          "B3": "42",
+          "C3": "English and русский"
+        }
+      ],
+      "pdf_visible_text": "Synthetic document / Синтетический документ\n                              Value           Примечание\nalpha beta                                    два слова\n                              42              English and русский\nAfter table / После таблицы\n\f",
+      "PrintHiddenText": false,
+      "ShowHiddenCharacters": false,
+      "ShowHiddenParagraphs": false
+    },
+    "child_show": {
+      "sha256": "9d94f35ac65ac7ce1e7029f95d053799e9a0d844d82f15a25ce0decbc70f08de",
+      "stored_table_text": [
+        {
+          "A1": "Key",
+          "B1": "Value",
+          "C1": "Примечание",
+          "A2": "alpha beta",
+          "B2": "",
+          "C2": "два слова",
+          "A3": "",
+          "B3": "42",
+          "C3": "English and русский"
+        }
+      ],
+      "pdf_visible_text": "Synthetic document / Синтетический документ\n                              Value           Примечание\nalpha beta                                    два слова\n                              42              English and русский\nAfter table / После таблицы\n\f",
+      "PrintHiddenText": false,
+      "ShowHiddenCharacters": false,
+      "ShowHiddenParagraphs": false
+    }
+  }
+}
