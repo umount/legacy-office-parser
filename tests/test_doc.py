@@ -414,3 +414,11 @@ def test_vertical_merge_matches_edges_across_different_physical_grids(monkeypatc
     assert table.rows[0][0].row_span == 2
     assert table.rows[0][0].col_span == 2
     assert all(c.covered for c in table.rows[1])
+
+
+@pytest.mark.parametrize('flag,expected', [(0x1000, False), (0x4000, True)])
+def test_far_east_flag_is_distinct_from_required_ext_char(monkeypatch, flag, expected):
+    streams = fixture([('text\r', True)])
+    mutate(streams, 'WordDocument', 10, u16(0x200 | flag))
+    result = parse(monkeypatch, streams)
+    assert any('Far East' in w for w in result.warnings) is expected

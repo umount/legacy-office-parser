@@ -136,7 +136,8 @@ class _Doc:
             raise InvalidDocumentError('invalid DOC cbMac')
         self.word = memoryview(self.word)[:cbmac]
         self.table_name = '1Table' if flags & 0x0200 else '0Table'
-        if flags & 0x1000:
+        # MS-DOC FibBase: bit 12 is fExtChar; fFarEast is bit 14.
+        if flags & 0x4000:
             self.warn('Far East DOC flag is set; language-specific legacy encoding is not interpreted.')
 
     def pair(self, index):
