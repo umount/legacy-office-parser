@@ -54,6 +54,7 @@ jobs:
         env:
           RTF_FIDELITY_LO: '1'
           RTF_NESTED_LO: '1'
+          RTF_LEGACY_LO: '1'
           ODF_NOTES_LIBREOFFICE: '1'
           ODF_STORIES_LIBREOFFICE: '1'
           ODF_INLINE_LO_ORACLE: '1'
@@ -71,7 +72,7 @@ jobs:
                 'tests/test_doc_nested.py', 'tests/test_doc_sections.py', 'tests/test_auxiliary_reference.py',
                 'tests/test_doc_external_ole.py', 'tests/test_xls_formats_ole.py', 'tests/test_xls_literals_ole.py',
                 'tests/test_xls_sections_ole.py', 'tests/test_rtf_story_blocks.py', 'tests/test_xls_conditions.py',
-                'tests/test_odf_inline_objects.py'], None),
+                'tests/test_odf_inline_objects.py', 'tests/test_rtf_legacy_textboxes.py'], None),
               ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures', '--libreoffice',
                 '--fail-on-difference'], 'reference-report.json'),
               ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures/doc_nested', '--libreoffice',

@@ -20,7 +20,7 @@ hlinkbase creatim revtim printim buptim
 colortbl stylesheet info filetbl revtbl rsidtbl listtable listoverridetable
 latentstyles generator xmlnstbl datastore themedata colorschememapping
 pict object objdata objclass objname objalias result shppict nonshppict
-shprslt sp sn sv background do private datafield fontemb fontfile
+shprslt sp sn sv background private datafield fontemb fontfile
 fldinst fldtype formfield annotation atnauthor atnid atndate
 bkmkstart bkmkend xe tc txe rxe pn pntxta pntxtb
 ftnsep ftnsepc ftncn aftnsep aftnsepc aftncn
@@ -129,6 +129,10 @@ class _State:
     skip: bool = False
     font_table: bool = False
     shape_container: bool = False
+    legacy_container: bool = False
+    # Ancestry survives entry into visible textbox text; suppression does not.
+    shape_ancestor: bool = False
+    legacy_ancestor: bool = False
     font: int | None = None
     encoding: str = 'cp1252'
     uc: int = 1
@@ -416,6 +420,7 @@ class _Parser:
 
     def visible(self):
         return not (self.state.skip or self.state.font_table or self.state.shape_container
+                    or self.state.legacy_container
                     or self.state.hidden or self.state.deleted)
 
     def high_end(self):
@@ -495,6 +500,15 @@ class _Parser:
         s = self.state
         if s.skip:
             return
+        # Guard destinations before their handlers can mutate document state or
+        # validate table controls. Visible text keeps its drawing ancestry.
+        drawing = s.shape_ancestor or s.legacy_ancestor
+        if (drawing and word in _HEADERS | {'footnote', 'fonttbl'}
+                or (s.shape_container or s.legacy_container) and word == 'nesttableprops'
+                or s.shape_ancestor and word == 'do'
+                or s.legacy_ancestor and word in _SHAPE_CONTAINERS | {'shptxt'}):
+            s.skip = True
+            return
         if word in _SKIP:
             s.skip = True
             if word in {'pict', 'object', 'mmath', 'moMath', 'moMathPara'}:
@@ -509,15 +523,23 @@ class _Parser:
             s.font_table = True
         elif s.font_table:
             return
+        elif word == 'do':
+            # Standalone legacy drawings only; modern alternatives are not a
+            # proven fallback source. Hard-skipped ancestors returned above.
+            self.high_end()
+            s.legacy_container = True
+            s.legacy_ancestor = True
+            self.warn('Legacy drawing and layout omitted.')
+        elif word == 'dptxbxtext' and not s.legacy_container:
+            s.skip = True
         elif word in _SHAPE_CONTAINERS:
             # Traverse only recognized shape containers, never reopen a skipped
             # ancestor. Property values and the legacy rendering are hard skips.
             self.high_end()
             s.shape_container = True
+            s.shape_ancestor = True
             self.warn('Shape drawing and layout omitted.')
-        elif s.shape_container and word in _HEADERS | {'footnote'}:
-            s.skip = True
-        elif word in _HEADERS or word in {'footnote', 'shptxt'}:
+        elif word in _HEADERS or word in {'footnote', 'shptxt', 'dptxbxtext'}:
             self.high_end()
             story = 'headers_footers' if word in _HEADERS else (
                 'footnotes' if word == 'footnote' else 'textboxes')
@@ -526,7 +548,10 @@ class _Parser:
             s.depth = 1
             s.nested_properties = False
             s.shape_container = False
-            if word != 'shptxt':
+            s.legacy_container = False
+            if word == 'shptxt':
+                s.shape_ancestor = True
+            if word not in {'shptxt', 'dptxbxtext'}:
                 s.hidden = False
                 s.deleted = False
         elif s.starred and word not in {'fldrslt', 'ud'}:
@@ -554,9 +579,9 @@ class _Parser:
                         self.warn('Unsupported font charset or symbol font; using document code page.')
                 self.fonts[s.font] = charset, explicit
             return
-        if word in _SKIP or word in _SHAPE_CONTAINERS or word in {'fonttbl', 'nesttableprops'}:
+        if word in _SKIP or word in _SHAPE_CONTAINERS or word in {'fonttbl', 'nesttableprops', 'do'}:
             self.destination(word)
-        elif s.shape_container:
+        elif s.shape_container or s.legacy_container:
             # Shape controls/stray text cannot modify the surrounding story.
             return
         elif word == 'upr':
