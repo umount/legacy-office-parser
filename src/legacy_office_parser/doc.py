@@ -79,11 +79,18 @@ class _Props:
     in_table: bool = False
     row_end: bool = False
     depth: int = 0
-    inner: bool = False
+    inner_cell: bool = False
+    inner_ttp: bool = False
+    bidi: bool = False
+    bidi90: bool = False
     edges: list[int] = field(default_factory=list)
     flags: list[int] = field(default_factory=list)
     merges: list[tuple[int, int]] = field(default_factory=list)
     vmerges: dict[int, int] = field(default_factory=dict)
+
+    @property
+    def inner(self):
+        return self.inner_cell or self.inner_ttp
 
 
 class _Doc:
@@ -294,12 +301,21 @@ class _Doc:
                     props.in_table = bool(arg[0])
                 elif op == 0x2417:
                     props.row_end = bool(arg[0])
-                elif op == 0x6649:
-                    props.depth = _u32(arg)
+                elif op in (0x6649, 0x664A):
+                    value = struct.unpack('<i', arg)[0]
+                    props.depth = value if op == 0x6649 else props.depth + value
+                    if props.depth < 0:
+                        raise InvalidDocumentError('negative DOC table depth')
                     if props.depth > self.limits.max_depth:
                         raise LimitExceededError('DOC table depth limit exceeded')
-                elif op in (0x244B, 0x244C):
-                    props.inner |= bool(arg[0])
+                elif op == 0x244B:
+                    props.inner_cell = bool(arg[0])
+                elif op == 0x244C:
+                    props.inner_ttp = bool(arg[0])
+                elif op == 0x560B:
+                    props.bidi = bool(_u16(arg))
+                elif op == 0x5664:
+                    props.bidi90 = bool(_u16(arg))
                 elif op == 0x6646:  # sprmPHugePapx: grpprl in Data, prefixed by cb u16.
                     offset = _u32(arg)
                     if offset in seen:
@@ -332,7 +348,7 @@ class _Doc:
                     if len(arg) != 3:
                         raise InvalidDocumentError('invalid DOC vertical merge operand')
                     props.vmerges[arg[1]] = arg[2]
-                elif op in (0x7621, 0x5622, 0x5625, 0xD606):
+                elif op in (0x7621, 0x5622, 0x7623, 0x5625, 0xD606):
                     self.warn('Legacy or incremental table geometry is unsupported; explicit cell marks are retained.')
             else:
                 return
@@ -453,6 +469,7 @@ class _Tables:
         self.paras = []
         self.vertical = {}
         self.row_edges = []
+        self.direction = False
 
     def cell(self):
         self.doc.budget.cell()
@@ -460,6 +477,16 @@ class _Tables:
         self.paras = []
 
     def row(self, props):
+        direction = props.bidi or props.bidi90
+        if self.table.rows and direction != self.direction:
+            # Row properties arrive at the TTP, after its cells are buffered.
+            # Close only the completed rows; keep this pending row intact.
+            self._normalize_grid()
+            self.table = Table()
+            self.doc.document.blocks.append(self.table)
+            self.vertical = {}
+            self.row_edges = []
+        self.direction = direction
         if props.edges and len(props.edges) - 1 != len(self.cells):
             self.doc.warn('Table definition and cell marks disagree; observed cells are retained without inferred cells.')
         self._merge(props)
@@ -558,11 +585,12 @@ class _Tables:
             self.doc.warn('Table ends without a row terminator; the incomplete row is retained.')
             if self.paras:
                 self.cell()
-            self.row(_Props())
+            self.row(_Props(bidi=self.direction))
         self._normalize_grid()
         self.table = None
         self.vertical = {}
         self.row_edges = []
+        self.direction = False
 
     def _normalize_grid(self):
         # A wide physical cell can span boundaries introduced by other rows.
