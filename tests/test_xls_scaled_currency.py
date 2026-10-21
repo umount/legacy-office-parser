@@ -76,7 +76,7 @@ def test_scaled_integer_records(kind):
     '0.##', '0.#0', '0.0#0', '0.0#%', '0.0#E+00', '0.0#"x"#',
     '0.' + '0' * 15 + '#', '0.0' + '#' * 15,
     '0.0,,"unfinished', '0.0,,\\', '0.0,,"x"0',
-    '0.0;;0', '0;0;0;[$$-409]@', '0.0;[$-407]0',
+    '0;0;0;[$$-409]@', '0.0;[$-407]0',
 ])
 def test_unsupported_or_malformed_retains_raw_and_warns(code):
     assert render_number(.125, code) is None

@@ -10,7 +10,7 @@ import struct
 from datetime import datetime, timedelta
 
 from ._ole import open_ole, read_stream
-from ._xls_formats import BUILTIN_NUMERIC, render_number, simple_date_format
+from ._xls_formats import BUILTIN_NUMERIC, hides_text, render_number, simple_date_format
 from ._xls_strings import Segments, shared_strings
 from .errors import EncryptedDocumentError, InvalidDocumentError, LimitExceededError, UnsupportedFormatError
 from .limits import Limits
@@ -181,6 +181,13 @@ class _Parser:
             text = '' if value is None else str(value)
         if not charged:
             self.text_budget(len(text))
+        # Charge retained raw strings before suppressing their display. LABEL
+        # and formula STRING were charged while decoding; SST references are
+        # charged above on each use, as for visible strings.
+        if kind == 'string' and xf < len(self.xfs):
+            custom = self.formats.get(self.xfs[xf])
+            if custom is not None and hides_text(custom):
+                text = ''
         sheet.cells.append(SpreadsheetCell(row=row + 1, column=col + 1, value=value,
                                            value_type=kind, text=text, formula=None,
                                            is_formula=formula))

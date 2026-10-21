@@ -131,14 +131,14 @@ def _split_sections(code: str) -> list[str] | None:
             pos += 2
         elif char == ';':
             sections.append(code[start:pos])
-            if not sections[-1] or len(sections) == 4:
+            if len(sections) == 4:
                 return None
             pos += 1
             start = pos
         else:
             pos += 1
     sections.append(code[start:])
-    return sections if sections[-1] else None
+    return sections
 
 
 def _with_affixes(text: str, prefix: str, suffix: str) -> str:
@@ -160,11 +160,16 @@ def render_number(value: int | float, code: str) -> str | None:
     if sections is None:
         return None
     if len(sections) == 4:
-        if sections.pop() != '@':
+        if sections.pop() not in ('', '@'):
             return None
+    has_empty = '' in sections
     parsed = []
     conditions = []
     for index, section in enumerate(sections):
+        if section == '':
+            parsed.append(('', '', ''))
+            conditions.append(None)
+            continue
         color = _COLOR.match(section)
         if color:
             section = section[color.end():]
@@ -207,6 +212,8 @@ def render_number(value: int | float, code: str) -> str | None:
     # condition in section two alone: importers disagree on these combinations.
     conditional = any(condition is not None for condition in conditions)
     if conditional:
+        if has_empty:
+            return None
         if conditions[0] is None or (len(parsed) == 3 and conditions[1] is None):
             return None
         # The MS-XLS single-section conditional production is General only.
@@ -254,7 +261,7 @@ def render_number(value: int | float, code: str) -> str | None:
         number = Decimal(str(value))
         if not number.is_finite():
             return None
-        if not core:  # Explicit, nonempty literal-only third section.
+        if not core:  # Empty section or explicit literal-only third section.
             return prefix
         if fixed is not None:
             integer, fraction, commas, percent = fixed.groups()
@@ -284,3 +291,14 @@ def render_number(value: int | float, code: str) -> str | None:
         exponent_sign = '-' if power < 0 else ('+' if sign == '+' else '')
         text = mantissa + letter + exponent_sign + str(abs(power)).zfill(len(zeros))
         return _with_affixes(text, prefix, suffix)
+
+
+def hides_text(code: str) -> bool:
+    """Only a validated, unconditional format with an empty fourth section.
+
+    Validate every numeric branch; a blank text section must not legitimize
+    unsupported syntax elsewhere. The bounded renderer never executes fields.
+    """
+    sections = _split_sections(code)
+    return (sections is not None and len(sections) == 4 and sections[-1] == ''
+            and all(render_number(value, code) is not None for value in (-1, 0, 1)))
