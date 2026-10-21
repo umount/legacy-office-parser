@@ -14,7 +14,7 @@ import struct
 
 from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
-from ._doc_table import apply_table
+from ._doc_table import TableIdentity, apply_table
 from ._doc_styles import Styles, character_ops, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
@@ -97,6 +97,7 @@ class _Props:
     flags: list[int] = field(default_factory=list)
     table_left: int = 0
     table_gap: int = 0
+    identity: TableIdentity = field(default_factory=TableIdentity)
 
     @property
     def inner(self):
@@ -350,6 +351,13 @@ class _Doc:
                 elif op in (0xC601, 0x2602):
                     raise UnsupportedFormatError('DOC paragraph style permutation/increment is unsupported')
                 elif op == 0x563A:
+                    table_style = _u16(arg)
+                    styles = self.styles.styles
+                    # MS-DOC 2.6.3: invalid/non-table references mean Normal Table.
+                    if (table_style >= len(styles) or styles[table_style] is None
+                            or styles[table_style][0] != 3):
+                        table_style = 11
+                    props.identity = replace(props.identity, style=table_style)
                     self.warn('Table styles and conditional table style formatting are not evaluated.')
                 elif op == 0x2416:
                     props.in_table = bool(arg[0])
@@ -806,6 +814,7 @@ class _TableLevel:
         self.vertical = {}
         self.row_edges = []
         self.direction = False
+        self.identity = TableIdentity()
 
     def cell(self):
         self.doc.budget.cell()
@@ -820,7 +829,7 @@ class _TableLevel:
 
     def row(self, props):
         direction = props.bidi or props.bidi90
-        if self.table.rows and direction != self.direction:
+        if self.table.rows and (direction != self.direction or props.identity != self.identity):
             # Row properties arrive at the TTP, after its cells are buffered.
             # Close only the completed rows; keep this pending row intact.
             self._normalize_grid()
@@ -829,6 +838,7 @@ class _TableLevel:
             self.vertical = {}
             self.row_edges = []
         self.direction = direction
+        self.identity = props.identity
         if props.edges and len(props.edges) - 1 != len(self.cells):
             self.doc.warn('Table definition and cell marks disagree; observed cells are retained without inferred cells.')
         self._merge(props)
@@ -911,12 +921,13 @@ class _TableLevel:
             self.doc.warn('Table ends without a row terminator; the incomplete row is retained.')
             if self.paras:
                 self.cell()
-            self.row(_Props(bidi=self.direction))
+            self.row(_Props(bidi=self.direction, identity=self.identity))
         self._normalize_grid()
         self.table = None
         self.vertical = {}
         self.row_edges = []
         self.direction = False
+        self.identity = TableIdentity()
 
     def _normalize_grid(self):
         # A wide physical cell can span boundaries introduced by other rows.

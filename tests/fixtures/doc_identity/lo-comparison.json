@@ -1,0 +1,225 @@
+{
+  "files": [
+    {
+      "id": "c142b6e6ff45",
+      "bytes": 31744,
+      "reference_seconds": 1.0678,
+      "status": "warning",
+      "format": "doc",
+      "text_chars": 141,
+      "tables": 2,
+      "slides": 0,
+      "sheets": 0,
+      "cells": 0,
+      "warnings": [
+        "Preferred table widths and automatic table layout are not evaluated; explicit cell geometry is used."
+      ],
+      "parse_seconds": 0.0059,
+      "max_rss_kib": 25744,
+      "reference_xml_tables": 1,
+      "reference_document": {
+        "body": {
+          "model_tables": 2,
+          "reference_tables": 1,
+          "model_total_tables": 2,
+          "reference_total_tables": 1,
+          "model_total_cells": 9,
+          "reference_total_cells": 9,
+          "table_count_equal": false,
+          "text_equal": false,
+          "table_checks": [
+            {
+              "number": 1,
+              "path": [
+                1
+              ],
+              "nested_table_checks": [],
+              "model_rows": 1,
+              "reference_rows": 3,
+              "model_cells": 3,
+              "reference_cells": 9,
+              "reference_omitted_cells": 0,
+              "dimensions_equal": false,
+              "cell_mismatches": [
+                {
+                  "row": 2,
+                  "column": 1,
+                  "model_present": false,
+                  "reference_present": true,
+                  "text_equal": false,
+                  "covered_equal": false,
+                  "col_span_equal": false,
+                  "row_span_equal": false,
+                  "blocks_equal": false,
+                  "path": [
+                    1,
+                    2,
+                    1
+                  ]
+                },
+                {
+                  "row": 2,
+                  "column": 2,
+                  "model_present": false,
+                  "reference_present": true,
+                  "text_equal": false,
+                  "covered_equal": false,
+                  "col_span_equal": false,
+                  "row_span_equal": false,
+                  "blocks_equal": false,
+                  "path": [
+                    1,
+                    2,
+                    2
+                  ]
+                },
+                {
+                  "row": 2,
+                  "column": 3,
+                  "model_present": false,
+                  "reference_present": true,
+                  "text_equal": false,
+                  "covered_equal": false,
+                  "col_span_equal": false,
+                  "row_span_equal": false,
+                  "blocks_equal": false,
+                  "path": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "row": 3,
+                  "column": 1,
+                  "model_present": false,
+                  "reference_present": true,
+                  "text_equal": false,
+                  "covered_equal": false,
+                  "col_span_equal": false,
+                  "row_span_equal": false,
+                  "blocks_equal": false,
+                  "path": [
+                    1,
+                    3,
+                    1
+                  ]
+                },
+                {
+                  "row": 3,
+                  "column": 2,
+                  "model_present": false,
+                  "reference_present": true,
+                  "text_equal": false,
+                  "covered_equal": false,
+                  "col_span_equal": false,
+                  "row_span_equal": false,
+                  "blocks_equal": false,
+                  "path": [
+                    1,
+                    3,
+                    2
+                  ]
+                },
+                {
+                  "row": 3,
+                  "column": 3,
+                  "model_present": false,
+                  "reference_present": true,
+                  "text_equal": false,
+                  "covered_equal": false,
+                  "col_span_equal": false,
+                  "row_span_equal": false,
+                  "blocks_equal": false,
+                  "path": [
+                    1,
+                    3,
+                    3
+                  ]
+                }
+              ],
+              "complete": true,
+              "equal": false
+            }
+          ],
+          "complete": true,
+          "equal": false
+        },
+        "footnotes": {
+          "model_chars": 0,
+          "reference_chars": 0,
+          "text_equal": true,
+          "reference_notes": 0,
+          "complete": true,
+          "equal": true,
+          "tables_text_only": true
+        },
+        "endnotes": {
+          "model_chars": 0,
+          "reference_chars": 0,
+          "text_equal": true,
+          "reference_notes": 0,
+          "complete": true,
+          "equal": true,
+          "tables_text_only": true
+        },
+        "headers_footers": {
+          "model_chars": 0,
+          "reference_chars": 0,
+          "reference_stories": 0,
+          "reference_nonempty_stories": 0,
+          "content_complete": true,
+          "token_multiset_equal": true,
+          "order_comparable": true,
+          "text_equal": true,
+          "comparable": true,
+          "complete": true,
+          "equal": true,
+          "pooled_text_only": true,
+          "tables_text_only": true,
+          "placement_comparable": false,
+          "anchors_comparable": false,
+          "story_identity_comparable": false,
+          "reference_parts": []
+        },
+        "textboxes": {
+          "model_chars": 0,
+          "reference_chars": 0,
+          "reference_stories": 0,
+          "reference_nonempty_stories": 0,
+          "content_complete": true,
+          "token_multiset_equal": true,
+          "order_comparable": true,
+          "text_equal": true,
+          "comparable": true,
+          "complete": true,
+          "equal": true,
+          "pooled_text_only": true,
+          "tables_text_only": true,
+          "placement_comparable": false,
+          "anchors_comparable": false,
+          "story_identity_comparable": false
+        },
+        "unsupported_scopes": {},
+        "whitespace_normalized": true,
+        "complete": true,
+        "equal": false,
+        "status": "ok"
+      },
+      "reference_document_equal": false,
+      "reference_tables": 1,
+      "total_tables": 2,
+      "reference_total_tables": 1,
+      "reference_ordered_words_equal": true,
+      "reference_word_recall": 1.0,
+      "reference_word_precision": 1.0,
+      "reference_words": 19,
+      "reference_nonspace_equal": true,
+      "reference_differences": [
+        "reference_document_equal",
+        "reference_tables",
+        "reference_total_tables"
+      ]
+    }
+  ]
+}
