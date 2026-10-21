@@ -129,7 +129,9 @@ class _Parser:
                 for pid in range(first, first + count):
                     target = unpack_from('<I', self.data, offset)[0]
                     offset += 4
-                    if pid in local_ids or target > directory_offset - 8:
+                    # Entries belong to this edit; unchanged objects are inherited
+                    # from older directories, never reintroduced via stale offsets.
+                    if pid in local_ids or not previous <= target <= directory_offset - 8:
                         raise InvalidDocumentError('duplicate persist ID or invalid PPT object offset')
                     local_ids.add(pid)
                     # Newest edit wins; older entries supply unchanged objects only.

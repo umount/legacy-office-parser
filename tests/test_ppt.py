@@ -115,6 +115,21 @@ def test_latest_persist_wins_deleted_objects_never_scanned(monkeypatch):
     assert [s.text for s in result.slides] == ['new', 'replacement']
 
 
+def test_newest_directory_cannot_resurrect_preceding_edit_text(monkeypatch):
+    root = document(persist(2, 200))
+    f = File().edit({1: root, 2: slide(drawing(text('STALE')))})
+    stale_offset = len(root)
+    previous = f.last_edit
+    f.edit({2: slide(drawing(text('CURRENT')))})
+    assert run(monkeypatch, f).slides[0].text == 'CURRENT'
+    directory = int.from_bytes(f.data[f.last_edit + 20:f.last_edit + 24], 'little')
+    assert stale_offset < previous
+    # Replace the new slide's persist offset with the valid but stale object.
+    pack_into('<I', f.data, directory + 12, stale_offset)
+    with pytest.raises(InvalidDocumentError, match='object offset'):
+        run(monkeypatch, f)
+
+
 def test_unchanged_objects_inherited_from_older_directory(monkeypatch):
     f = File().edit({1: document(persist(2, 200)), 2: slide(drawing(text('kept')))})
     f.edit({1: document(persist(2, 200))})
