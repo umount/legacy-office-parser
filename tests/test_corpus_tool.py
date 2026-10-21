@@ -1,0 +1,95 @@
+"""Corpus comparison regressions using synthetic XML only."""
+import importlib.util
+from pathlib import Path
+import re
+import xml.etree.ElementTree as ET
+import zipfile
+
+import pytest
+
+from legacy_office_parser.models import Document, Paragraph
+
+_spec = importlib.util.spec_from_file_location(
+    'check_corpus', Path(__file__).resolve().parents[1] / 'tools' / 'check_corpus.py')
+corpus = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(corpus)
+
+
+def xml(content):
+    return ET.fromstring(
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">'
+        + content + '</w:document>')
+
+
+def paragraph(text):
+    return '<w:p><w:r><w:t>' + text + '</w:t></w:r></w:p>'
+
+
+def tokens(text):
+    return re.findall(r'\w+', text)
+
+
+def test_runs_join_but_paragraphs_cells_and_breaks_separate():
+    root = xml('<w:body><w:p><w:r><w:t>alpha</w:t></w:r>'
+               '<w:hyperlink><w:r><w:t>bet</w:t><w:tab/><w:t>tabbed</w:t>'
+               '<w:br/><w:t>line</w:t><w:cr/><w:t>end</w:t></w:r></w:hyperlink>'
+               '</w:p><w:tbl><w:tr><w:tc>' + paragraph('left') + '</w:tc>'
+               '<w:tc>' + paragraph('right') + '</w:tc></w:tr></w:tbl></w:body>')
+    text, tables = corpus._docx_text(root)
+    assert tokens(text) == ['alphabet', 'tabbed', 'line', 'end', 'left', 'right']
+    assert tables == 1
+
+
+@pytest.mark.parametrize('branches,expected', [
+    ('<mc:Choice Requires="x">' + paragraph('chosen') + '</mc:Choice>'
+     '<mc:Choice Requires="y">' + paragraph('second') + '</mc:Choice>'
+     '<mc:Fallback><w:tbl>' + paragraph('fallback') + '</w:tbl></mc:Fallback>', ['chosen']),
+    ('<mc:Fallback>' + paragraph('fallback') + '</mc:Fallback>', ['fallback']),
+    ('<mc:Choice Requires="x"/><mc:Fallback>' + paragraph('fallback') + '</mc:Fallback>', []),
+])
+def test_one_alternate_content_branch(branches, expected):
+    text, tables = corpus._docx_text(xml('<mc:AlternateContent>' + branches + '</mc:AlternateContent>'))
+    assert tokens(text) == expected
+    assert tables == 0
+
+
+def test_nested_textbox_paragraphs_are_counted_once_and_do_not_split_anchor_word():
+    box = '<w:txbxContent>' + paragraph('box words') + '</w:txbxContent>'
+    root = xml('<w:p><w:r><w:t>pre</w:t><w:drawing><mc:AlternateContent>'
+               '<mc:Choice Requires="x">' + box + '</mc:Choice>'
+               '<mc:Fallback>' + box + '</mc:Fallback></mc:AlternateContent>'
+               '</w:drawing><w:t>fix</w:t></w:r></w:p>')
+    text, _ = corpus._docx_text(root)
+    assert tokens(text) == ['prefix', 'box', 'words']
+
+
+def test_special_hyphens_are_preserved():
+    text, _ = corpus._docx_text(xml('<w:p><w:r><w:t>a</w:t><w:noBreakHyphen/>'
+                                   '<w:t>b</w:t><w:softHyphen/><w:t>c</w:t></w:r></w:p>'))
+    assert text.strip() == 'a\u2011b\u00adc'
+
+
+def test_worker_compares_body_and_all_textboxes_only(tmp_path, monkeypatch):
+    import legacy_office_parser
+    doc = Document(format='doc', blocks=[Paragraph('alphabet')],
+                   textboxes='mainbox headerbox footerbox', headers_footers='excluded',
+                   footnotes='excludednote', endnotes='excludedend')
+    monkeypatch.setattr(legacy_office_parser, 'parse', lambda source: doc)
+    reference = tmp_path / 'synthetic.docx'
+    with zipfile.ZipFile(reference, 'w') as z:
+        z.writestr('word/document.xml', ET.tostring(xml(
+            '<w:p><w:r><w:t>alpha</w:t><w:t>bet</w:t><w:drawing>'
+            '<w:txbxContent>' + paragraph('mainbox') + '</w:txbxContent>'
+            '</w:drawing></w:r></w:p>')))
+        for kind in ('header', 'footer'):
+            z.writestr('word/' + kind + '1.xml', ET.tostring(xml(
+                paragraph('excluded reference header text') +
+                '<w:p><w:r><w:drawing><w:txbxContent>' + paragraph(kind + 'box') +
+                '</w:txbxContent></w:drawing></w:r></w:p>')))
+        z.writestr('word/footnotes.xml', ET.tostring(xml(paragraph('excluded note'))))
+    result = corpus._worker(tmp_path / 'unused.doc', reference)
+    assert result['reference_words'] == 4
+    assert result['reference_word_recall'] == 1
+    assert result['reference_word_precision'] == 1
+    assert result['reference_tables'] == 0

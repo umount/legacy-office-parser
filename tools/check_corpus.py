@@ -23,6 +23,61 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
+_W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+_MC = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+
+
+def _selected_children(element):
+    """Use one representation of AlternateContent, preferring its first Choice."""
+    if element.tag == _MC + 'AlternateContent':
+        branch = element.find(_MC + 'Choice')
+        if branch is None:
+            branch = element.find(_MC + 'Fallback')
+        return () if branch is None else (branch,)
+    return element
+
+
+def _docx_text(root, *, textboxes_only=False):
+    """Join inline runs; collect textbox stories independently of anchor paragraphs."""
+    boxes = []
+    tables = 0
+
+    def visit(element):
+        nonlocal tables
+        if element.tag == _W + 't':
+            return element.text or ''
+        if element.tag in (_W + 'tab', _W + 'br', _W + 'cr'):
+            return '\n'
+        if element.tag == _W + 'noBreakHyphen':
+            return '\u2011'
+        if element.tag == _W + 'softHyphen':
+            return '\u00ad'
+        if element.tag == _W + 'tbl':
+            tables += 1
+        value = ''.join(visit(child) for child in _selected_children(element))
+        if element.tag == _W + 'txbxContent':
+            boxes.append(value)
+            return ''
+        if element.tag in (_W + 'p', _W + 'tc'):
+            value += '\n'
+        return value
+
+    body = visit(root)
+    return '\n'.join(([] if textboxes_only else [body]) + boxes), tables
+
+
+def _docx_reference(archive):
+    body, tables = _docx_text(ET.fromstring(archive.read('word/document.xml')))
+    parts = [body]
+    # The model pools main-story and header/footer textboxes in doc.textboxes.
+    # Include those boxes, but exclude ordinary header/footer text on both sides.
+    for name in sorted(archive.namelist()):
+        if re.fullmatch(r'word/(?:header|footer)\d+\.xml', name):
+            boxes, _ = _docx_text(ET.fromstring(archive.read(name)), textboxes_only=True)
+            parts.append(boxes)
+    return '\n'.join(parts), tables
+
+
 def _worker(source: Path, reference: Path | None) -> dict:
     from legacy_office_parser import parse, ParseError, Paragraph
     start = time.perf_counter()
@@ -34,6 +89,8 @@ def _worker(source: Path, reference: Path | None) -> dict:
         '\t'.join(c.text for c in row) for row in b.rows) for b in doc.blocks)
     if doc.format == 'ppt':
         body = '\n'.join('\n'.join((s.title, s.text)) for s in doc.slides)
+    else:
+        body += '\n' + doc.textboxes
     result = {
         'status': 'warning' if doc.warnings else 'ok',
         'format': doc.format,
@@ -47,10 +104,7 @@ def _worker(source: Path, reference: Path | None) -> dict:
     if reference:
         with zipfile.ZipFile(reference) as z:
             if doc.format == 'doc':
-                root = ET.fromstring(z.read('word/document.xml'))
-                ns = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
-                ref_text = ' '.join(t.text or '' for t in root.iter(ns + 't'))
-                result['reference_tables'] = sum(1 for _ in root.iter(ns + 'tbl'))
+                ref_text, result['reference_tables'] = _docx_reference(z)
             else:
                 names = sorted((n for n in z.namelist() if re.fullmatch(r'ppt/slides/slide\d+\.xml', n)),
                                key=lambda n: int(re.search(r'(\d+)\.xml$', n)[1]))
