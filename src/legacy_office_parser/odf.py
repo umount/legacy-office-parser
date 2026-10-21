@@ -225,7 +225,53 @@ class _Parser:
         # Keep empty blocks too: an empty table still carries structure, and an
         # empty paragraph must survive if this pooled key contains a table.
 
+    def inline_object_body(self, element):
+        """Recognize only a direct inline ODF text document, never a link.
+
+        ODF 1.3 §§3.1.2, 3.3, 10.4.6.2. A document is a scope boundary:
+        only its body is extracted; its styles, masters, metadata and scripts
+        are not part of the host document's drawing story.
+        """
+        href = '{http://www.w3.org/1999/xlink}href'
+        if href in element.attrib or len(element) != 1:
+            self.unsupported(element)
+            return None
+        document = element[0]
+        if (document.tag != q('office:document') or
+                document.get(q('office:mimetype')) != 'application/vnd.oasis.opendocument.text'):
+            self.unsupported(element)
+            return None
+        bodies = document.findall(q('office:body'))
+        if len(bodies) != 1 or len(bodies[0]) != 1 or bodies[0][0].tag != q('office:text'):
+            self.unsupported(element)
+            return None
+        return bodies[0][0]
+
     def drawing(self, element):
+        if element.tag == q('draw:frame'):
+            # ODF 1.3 §10.4.1: children are alternative representations, in
+            # preference order. Even an empty supported representation wins.
+            for child in element:
+                if child.tag == q('draw:text-box'):
+                    self.drawing(child)
+                    return
+                if child.tag == q('draw:object'):
+                    body = self.inline_object_body(child)
+                    if body is not None:
+                        self.warn('ODF inline text objects pooled with text boxes; '
+                                  'object identity, anchors and embedded page layout are not retained.')
+                        in_note = self.in_note
+                        # Notes in the embedded document are not nested notes
+                        # in the host. Restore the host guard on every exit.
+                        self.in_note = False
+                        try:
+                            self.story(body, self.stories['textboxes'])
+                        finally:
+                            self.in_note = in_note
+                        return
+                else:
+                    self.unsupported(child)
+            return
         if element.tag == q('draw:text-box'):
             self.warn('ODF text boxes pooled without anchor, chain, or layout identities.')
             self.story(element, self.stories['textboxes'])
