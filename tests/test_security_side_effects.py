@@ -4,6 +4,7 @@ Audit hooks run in a child because they cannot be removed from a Python process.
 These are behavioral regression tests, not reproductions of native-code exploits.
 """
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -76,6 +77,7 @@ print(json.dumps({'effects': forbidden, 'parsed': True}))
 '''
     result = subprocess.run([sys.executable, '-c', child, str(ROOT / 'tests/fixtures')],
                             input=data, capture_output=True, timeout=15, cwd=ROOT,
-                            env={**__import__('os').environ, 'PYTHONPATH': str(ROOT / 'src')})
+                            env={**os.environ, 'PYTHONPATH': os.pathsep.join(
+                                [str(ROOT / 'src'), os.environ.get('PYTHONPATH', '')])})
     assert result.returncode == 0, result.stderr.decode()
     assert json.loads(result.stdout) == {'effects': [], 'parsed': True}
