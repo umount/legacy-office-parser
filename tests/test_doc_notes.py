@@ -418,8 +418,24 @@ def assert_generated_note_model(doc, raw, roundtrip):
             assert note.body.story == story and note.body.block_start == end
             assert note.body.block_end > end
             body = doc.story_blocks[story][end:note.body.block_end]
-            assert model_body_signature(body) == signature  # Includes every empty paragraph and table.
             source = units[(base + boundaries[i])*2:(base + boundaries[i+1])*2].decode('utf-16le')
+            actual_signature = model_body_signature(body)
+            if actual_signature != signature:
+                with ZipFile(roundtrip) as archive:
+                    main_xml = ET.fromstring(archive.read('word/document.xml'))
+                    note_xml = ET.fromstring(archive.read(f'word/{kind}s.xml'))
+                reference_id = list(main_xml.iter(W+kind+'Reference'))[i].get(W+'id')
+                note_xml = next(n for n in note_xml if n.get(W+'id') == reference_id)
+                leaves = []
+                def describe(node, ancestors=()):
+                    path = ancestors + (node.tag.rsplit('}', 1)[-1],)
+                    if node.tag in (W+'t', W+'delText'):
+                        leaves.append(('/'.join(path), node.text))
+                    for child in node:
+                        describe(child, path)
+                describe(note_xml)
+                pytest.fail(f'Note oracle mismatch: {kind} {i+1}; raw={source!r}; '
+                            f'model={actual_signature!r}; xml={signature!r}; leaves={leaves!r}')
             assert source.endswith('\r')
             assert raw_body_words(source) == signature_words(signature)
             if flags[i]:
