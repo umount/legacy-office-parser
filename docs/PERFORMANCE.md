@@ -15,6 +15,9 @@ it is not a runtime dependency or extraction oracle. Omitting `--libreoffice`
 explicitly skips the three binary formats. Inputs and isolated converter profiles
 are generated in temporary directories and removed after the run.
 
+Current follow-up: all seven formats pass after `ffe781c`; see the final section.
+The earlier 0.5.0 measurements below are retained as historical evidence.
+
 ## Workload and correctness
 
 - ODT/RTF/DOC: 3,000 paragraphs followed by one 300 × 6 table. Only the first
@@ -131,3 +134,21 @@ deadline validation and descendant timeout cleanup. Ruff passed for the two
 sidecar Python files. No production parser code or defaults were changed.
 
 Section-boundary regressions are stored in `tests/fixtures/doc_sections/`.
+
+## Follow-up: PPT metadata classification (`ffe781c`)
+
+The same large workload was run three times per format after the narrow PPT
+metadata classifier was added. Python 3.12.14, Debian Linux 6.1.0-53-amd64,
+LibreOffice 7.4.7.2, unchanged parser defaults. All **21 runs returned `ok`**,
+without warnings, timeouts or validation errors; the command exited zero.
+Source hash before/after was identical:
+`ccacba7b7a59d06c1c8875a9dfd2789700acbc887a9e69721da5798e4160e263`.
+
+PPT: 1,084,928 input bytes, 120 slides, 125,878 projected characters.
+Parse seconds: 0.029576, 0.030067, 0.029384.
+Peak RSS KiB: 24172, 24472, 24088. All authored text and ordering checks pass.
+
+The former warning came from fixed numeric timing metadata in `___PPT10`
+records. Unknown or potentially text-bearing extensions still warn. This result
+does not extend the completeness claim beyond the authored workload; see
+`research-ppt-extensions.md` for the classifier's exact boundary.
