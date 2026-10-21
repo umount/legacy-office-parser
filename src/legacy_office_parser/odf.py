@@ -59,6 +59,8 @@ class _Parser:
         self.limits = budget.limits
         self.max_rows = cap(self.limits, 'max_rows', 1_048_576)
         self.max_columns = cap(self.limits, 'max_columns', 16_384)
+        self.notes = {"footnote": [], "endnote": []}
+        self.in_note = False
         self.styles = {}
         for root in roots:
             if root is not None:
@@ -71,7 +73,7 @@ class _Parser:
 
     def unsupported(self, e):
         if e.tag == q('text:note'):
-            self.warn('ODF inline footnotes/endnotes are not extracted.')
+            self.warn('Unsupported or malformed ODF note omitted.')
             return
         # Element names are intentionally not echoed: extensions may contain secrets.
         if e.tag in {q('text:soft-page-break'), q('text:bookmark'), q('text:bookmark-start'),
@@ -97,6 +99,8 @@ class _Parser:
                 if child.tag in INLINE or child.tag in CACHED_FIELDS:
                     if child.get(q('text:display')) != 'none' and child.get(q('text:is-hidden')) not in {'true', '1'}:
                         walk(child)
+                elif child.tag == q('text:note'):
+                    self.note(child)
                 elif child.tag == q('text:ruby'):
                     for base in child:
                         if base.tag == q('text:ruby-base'):
@@ -133,6 +137,37 @@ class _Parser:
                         parts.append(token)
                         pending, started = False, True
         return ''.join(parts)
+
+    def note(self, element):
+        # Only explicitly classified notes in visible ODT content are collected.
+        # Citation labels are presentation, not part of the note body or anchor text.
+        kind = element.get(q('text:note-class'))
+        bodies = element.findall(q('text:note-body'))
+        if self.doc.format != 'odt' or self.in_note or kind not in self.notes or len(bodies) != 1:
+            self.unsupported(element)
+            return
+        blocks = []
+        self.in_note = True
+        try:
+            self.blocks(bodies[0], blocks)
+        finally:
+            self.in_note = False
+        parts = []
+        charged = 0
+        for block in blocks:
+            if isinstance(block, Paragraph):
+                value = block.text
+                charged += len(value)
+            else:
+                value = '\n'.join('\t'.join(c.text for c in row) for row in block.rows)
+                charged += sum(len(c.text) for row in block.rows for c in row)
+            if value:
+                parts.append(value)
+        value = '\n\n'.join(parts)
+        if value:
+            # Blocks already charged their text; also bound all rendered separators.
+            self.budget.text(len(value) - charged + (2 if self.notes[kind] else 0))
+            self.notes[kind].append(value)
 
     def paragraphs(self, element):
         for child in element:
@@ -175,6 +210,17 @@ class _Parser:
             yield e, column, repeat, rs, cs
             column += repeat
 
+    def repeat_notes(self, starts, copies, cells):
+        """Clone note bodies along with repeated table content, in reading order."""
+        if not copies:
+            return
+        self.budget.cell(cells * copies)
+        for kind, start in starts.items():
+            values = self.notes[kind][start:]
+            # Every cloned nonempty body follows an existing body of this kind.
+            self.budget.text(sum(len(value) + 2 for value in values) * copies)
+            self.notes[kind].extend(values * copies)
+
     def table(self, element):
         result = Table()
         row_index = 1
@@ -187,28 +233,36 @@ class _Parser:
             # Empty ODT rows still allocate a row object.
             self.budget.cell(max(width, 1) * repeat)
             template = []
+            row_notes = {kind: len(values) for kind, values in self.notes.items()}
+            row_cells = self.budget.cells
             for e, column, cr, rs, cs in specs:
                 if row_index + repeat + rs - 2 > self.max_rows:
                     raise LimitExceededError('ODF row span limit exceeded')
                 covered = e.tag == q('table:covered-table-cell')
+                cell_notes = {kind: len(values) for kind, values in self.notes.items()}
+                cell_count = self.budget.cells
                 value = '' if covered else self.cell_text(e)
+                self.repeat_notes(cell_notes, cr - 1, self.budget.cells - cell_count)
                 self.budget.text(len(value) * cr * repeat)
                 template.extend(Cell(value, rs, cs, covered) for _ in range(cr))
+            self.repeat_notes(row_notes, repeat - 1, self.budget.cells - row_cells)
             for _ in range(repeat):
                 result.rows.append([Cell(c.text, c.row_span, c.col_span, c.covered) for c in template])
             row_index += repeat
         return result
 
-    def blocks(self, parent):
+    def blocks(self, parent, destination=None):
+        if destination is None:
+            destination = self.doc.blocks
         for e in parent:
             if e.tag in PARAS:
                 value = self.inline(e)
                 self.budget.text(len(value))
-                self.doc.blocks.append(Paragraph(value))
+                destination.append(Paragraph(value))
             elif e.tag == q('table:table'):
-                self.doc.blocks.append(self.table(e))
+                destination.append(self.table(e))
             elif e.tag in BLOCK_WRAPPERS:
-                self.blocks(e)
+                self.blocks(e, destination)
             else:
                 self.unsupported(e)
 
@@ -372,6 +426,8 @@ def _check_visible_text(doc, limits):
                                  for row in block.rows), 1)
             if length:
                 lengths.append(length)
+        lengths.extend(len(value) for value in (doc.footnotes, doc.endnotes,
+                                                doc.headers_footers, doc.textboxes) if value)
         size = joined(lengths, 2)
     if size > cap(limits, 'max_text_chars', 10_000_000):
         raise LimitExceededError('ODF rendered text limit exceeded')
@@ -401,5 +457,7 @@ def parse_odf_bytes(data: bytes, limits: Limits, expected_format: str | None = N
                     parser.warn('ODF master-page content is not rendered.')
                     break
     {'odt': parser.blocks, 'ods': parser.sheets, 'odp': parser.slides}[fmt](body)
+    doc.footnotes = '\n\n'.join(parser.notes['footnote'])
+    doc.endnotes = '\n\n'.join(parser.notes['endnote'])
     _check_visible_text(doc, limits)
     return doc
