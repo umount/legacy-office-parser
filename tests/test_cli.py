@@ -16,10 +16,12 @@ def test_json_cli_preserves_blank_slide_and_notes(capsys):
     assert doc['slides'][2]['notes']
 
 
-def test_strict_cli_returns_result_and_nonzero_on_warning(capsys):
-    assert main([str(FIXTURES / 'ordinary_table.doc'), '--strict', '--json']) == 3
+def test_strict_cli_returns_result_and_nonzero_on_warning(tmp_path, capsys):
+    source = tmp_path / "warning.rtf"
+    source.write_bytes(b"{\\rtf1 visible {\\pict 00}}")
+    assert main([str(source), '--strict', '--json']) == 3
     out = capsys.readouterr()
-    assert json.loads(out.out)['format'] == 'doc'
+    assert json.loads(out.out)['format'] == 'rtf'
     assert 'warning:' in out.err
 
 

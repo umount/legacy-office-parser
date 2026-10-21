@@ -14,6 +14,7 @@ import struct
 
 from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
+from ._doc_styles import Styles, character_ops, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
@@ -77,6 +78,7 @@ class _Piece:
 
 @dataclass(slots=True)
 class _Props:
+    style: int = 0
     in_table: bool = False
     row_end: bool = False
     depth: int = 0
@@ -108,10 +110,13 @@ class _Doc:
         self.symbol_prms = {}
         self.symbol_fonts = None
         self.fields = []
+        self.paragraph_cache = None
+        self.character_cache = None
         self._fib()
         self.table = read_stream(ole, self.table_name, limits)
         self._pieces()
         self._bins()
+        self.styles = Styles(self, _span, _u16)
 
     def warn(self, message):
         if message not in self.document.warnings:
@@ -239,7 +244,7 @@ class _Doc:
         if i < 0 or i >= len(self.bin_pages):
             if self.bin_pages:
                 self.warn('Some paragraphs have no PAPX coverage; their table membership is unknown.')
-            return memoryview(b'')
+            return 0, memoryview(b'')
         pn = self.bin_pages[i]
         if pn not in self.pages:
             page = _span(self.word, pn * 512, 512)
@@ -254,7 +259,7 @@ class _Doc:
             for j in range(count):
                 off = page[(count + 1) * 4 + j * 13] * 2
                 if not off:
-                    groups.append(memoryview(b''))
+                    groups.append((0, memoryview(b'')))
                     continue
                 if off < front or off >= 511:
                     raise InvalidDocumentError('invalid DOC PAPX offset')
@@ -262,9 +267,7 @@ class _Doc:
                 start, size = (off + 1, cb * 2 - 1) if cb else (off + 2, page[off + 1] * 2)
                 if size < 2 or start + size > 511:
                     raise InvalidDocumentError('invalid DOC PAPX size')
-                if _u16(page, start):
-                    self.warn('Paragraph style inheritance is not evaluated; only direct table properties are used.')
-                groups.append(_span(page, start + 2, size - 2))
+                groups.append((_u16(page, start), _span(page, start + 2, size - 2)))
             self.pages[pn] = fcs, groups
         fcs, groups = self.pages[pn]
         j = bisect_right(fcs, fc) - 1
@@ -302,7 +305,13 @@ class _Doc:
             if depth > self.limits.max_depth:
                 raise LimitExceededError('DOC property indirection depth limit exceeded')
             for op, arg in self._sprms(group):
-                if op == 0x2416:
+                if op == 0x4600:
+                    props.style = _u16(arg)
+                elif op in (0xC601, 0x2602):
+                    raise UnsupportedFormatError('DOC paragraph style permutation/increment is unsupported')
+                elif op == 0x563A:
+                    self.warn('Table styles and conditional table style formatting are not evaluated.')
+                elif op == 0x2416:
                     props.in_table = bool(arg[0])
                 elif op == 0x2417:
                     props.row_end = bool(arg[0])
@@ -359,38 +368,30 @@ class _Doc:
                 return
 
     def properties(self, cp):
+        if self.paragraph_cache is not None and self.paragraph_cache[0] == cp:
+            return self.paragraph_cache[1]
         piece = self.pieces[bisect_right(self.cps, cp) - 1]
-        props = _Props()
-        self._apply(props, self._papx(piece.fc + (cp - piece.cp) * piece.width))
+        style, group = self._papx(piece.fc + (cp - piece.cp) * piece.width)
+        props = _Props(style=style)
+        self._apply(props, group)
         if piece.prm & 1:
             self._apply(props, self.prcs[piece.prm >> 1])
         elif piece.prm:
             # MS-DOC Prm0: table flags use the same one-byte operands as
             # their full Sprms and override PAPX, including explicit zero.
             isprm = (piece.prm >> 1) & 0x7F
+            if isprm == 0x04:
+                raise UnsupportedFormatError('DOC paragraph style increment is unsupported')
             op = {0x18: 0x2416, 0x19: 0x2417}.get(isprm)
             if op is not None:
                 self._apply(props, struct.pack('<HB', op, piece.prm >> 8))
-            elif isprm != 0x75:  # CFSpec is evaluated by the symbol reader.
+            elif isprm not in (0x41, 0x43, 0x53, 0x5C, 0x75):
                 self.warn('This compact piece formatting (Prm0) property is not evaluated.')
+        self.paragraph_cache = cp, props
         return props
 
     def _symbol_modifiers(self, group):
-        # Direct character formatting, MS-DOC 2.4.6.2. CPlain/CIstd preserve
-        # CSymbol and CFSpec; unrelated formatting must not clear these values.
-        modifiers = {}
-        for op, arg in self._sprms(group):
-            if op == 0x6A09:
-                modifiers['symbol'] = (_u16(arg), _u16(arg, 2))
-            elif op == 0x0855:
-                if arg[0] in (0, 1):
-                    modifiers['special'] = bool(arg[0])
-                elif arg[0] in (128, 129):
-                    modifiers['special'] = None
-                    self.warn('Style-relative CFSpec is not resolved; available symbol codes are retained.')
-                else:
-                    raise InvalidDocumentError('invalid DOC CFSpec toggle')
-        return modifiers
+        return character_ops(self, group)
 
     def _symbol_chpx(self, fc):
         if self.chpx_bins is None:
@@ -409,8 +410,8 @@ class _Doc:
         i = bisect_right(fcs, fc) - 1
         if i < 0 or i >= len(pages):
             if pages:
-                self.warn('Some characters have no CHPX coverage; symbol properties may be missing.')
-            return {}
+                self.warn('Some characters have no CHPX coverage; symbol and visibility properties may be missing.')
+            return ()
         pn = pages[i]
         if pn not in self.chpx_pages:
             page = _span(self.word, pn * 512, 512)
@@ -425,7 +426,7 @@ class _Doc:
             for j in range(count):
                 offset = page[(count + 1) * 4 + j] * 2
                 if not offset:
-                    groups.append({})
+                    groups.append(())
                     continue
                 if offset < front or offset >= 511 or offset + 1 + page[offset] > 511:
                     raise InvalidDocumentError('invalid DOC CHPX offset or size')
@@ -481,17 +482,56 @@ class _Doc:
             raise InvalidDocumentError('DOC symbol references a missing font')
         return self.symbol_fonts[index]
 
-    def _symbol_char(self, cp):
+    def _character_props(self, cp, paragraph_style):
         piece = self.pieces[bisect_right(self.cps, cp) - 1]
-        props = dict(self._symbol_chpx(piece.fc + (cp - piece.cp) * piece.width))
+        operations = self._symbol_chpx(piece.fc + (cp - piece.cp) * piece.width)
         if piece.prm not in self.symbol_prms:
             group = b''
             if piece.prm & 1:
                 group = self.prcs[piece.prm >> 1]
-            elif (piece.prm >> 1) & 0x7F == 0x75:  # Prm0 CFSpec
-                group = struct.pack('<HB', 0x0855, piece.prm >> 8)
+            elif piece.prm:
+                op = {0x41: 0x0800, 0x43: 0x0802, 0x53: 0x2A33,
+                      0x5C: 0x083C, 0x75: 0x0855}.get((piece.prm >> 1) & 0x7F)
+                if op is not None:
+                    group = struct.pack('<HB', op, piece.prm >> 8)
             self.symbol_prms[piece.prm] = self._symbol_modifiers(group)
-        props.update(self.symbol_prms[piece.prm])
+        key = paragraph_style, operations, piece.prm
+        if self.character_cache is not None and self.character_cache[0] == key:
+            return self.character_cache[1]
+        para_hidden = self.styles.hidden(paragraph_style, 1)
+        style_hidden = para_hidden
+        props = {'hidden': para_hidden}
+        char_style = 10
+        for op, arg in operations + self.symbol_prms[piece.prm]:
+            if op == 0x6A09:
+                props['symbol'] = (_u16(arg), _u16(arg, 2))
+            elif op == 0x4A30:
+                char_style = _u16(arg)
+                style_hidden = self.styles.hidden(char_style, 2, para_hidden)
+                props['hidden'] = style_hidden
+            elif op == 0x2A33:
+                props['hidden'] = style_hidden = para_hidden
+                char_style = 10
+            elif op == 0xCA47:
+                if char_style == 10:
+                    compare = False
+                    for subop, subarg in self._symbol_modifiers(arg[1:]):
+                        if subop == 0x083C:
+                            compare = toggle(subarg, style_hidden)
+                    if props['hidden'] == compare:
+                        props['hidden'] = para_hidden
+            else:
+                name = {0x083C: 'hidden', 0x0800: 'deleted',
+                        0x0802: 'field_hidden', 0x0855: 'special'}[op]
+                if op == 0x0855 and arg in (128, 129) and not self.styles.present:
+                    props[name] = None
+                    self.warn('Style-relative CFSpec is not resolved without a stylesheet; available symbol codes are retained.')
+                else:
+                    props[name] = toggle(arg, style_hidden if op == 0x083C else False)
+        self.character_cache = key, props
+        return props
+
+    def _symbol_char(self, props):
         if 'symbol' not in props or props.get('special') is False:
             return None
         font_index, code = props['symbol']
@@ -509,7 +549,13 @@ class _Doc:
             self.warn('Symbol control code is retained literally, not interpreted as a DOC delimiter.')
         return chr(code)
 
-    def clean(self, start, end):
+    def clean(self, start, end, mark_cp=None):
+        paragraph_style = self.properties(end if mark_cp is None else mark_cp).style
+        self.styles.hidden(paragraph_style, 1)  # Also validate empty paragraphs.
+        if mark_cp is None:
+            mark_props = self._character_props(end, paragraph_style)
+            if any(mark_props.get(name) for name in ('hidden', 'deleted', 'field_hidden')):
+                self.warn('Hidden or deleted paragraph/cell marks retain their structural boundaries; revision merging is not modeled.')
         raw = bytes(self.text[start * 2:end * 2])
         try:
             value = raw.decode('utf-16le')
@@ -541,8 +587,11 @@ class _Doc:
                 continue
             if self.fields and not all(self.fields):
                 continue
+            props = self._character_props(cp, paragraph_style)
+            if any(props.get(name) for name in ('hidden', 'deleted', 'field_hidden')):
+                continue
             if ch == '(':
-                symbol = self._symbol_char(cp)
+                symbol = self._symbol_char(props)
                 if symbol is not None:
                     out.append(symbol)
                     continue
@@ -575,7 +624,7 @@ class _Doc:
         if begin < start + count:
             self.budget.record()
             self.warn('A DOC story has no final paragraph mark; trailing text is retained.')
-            yield self.clean(begin, start + count), start + count - 1, 0
+            yield self.clean(begin, start + count, start + count - 1), start + count - 1, 0
 
     def parse(self):
         assembler = _Tables(self)
@@ -617,8 +666,6 @@ class _Doc:
                     self.warn('Auxiliary stories are separated by type; note anchors, header variants and textbox placement are not modeled.')
                 self._end_fields()
             start += count
-        if self.pair(12)[1]:
-            self.warn('Character formatting beyond direct symbol properties is not evaluated; hidden and revision-deleted text may be included.')
         return self.document
 
     def _end_fields(self):
