@@ -10,6 +10,11 @@ class Limits:
     max_depth: int = 32
     max_cells: int = 100_000
     max_slides: int = 10_000
+    max_sheets: int = 256
+    max_rows: int = 1_048_576
+    max_columns: int = 16_384
+    max_archive_entries: int = 4096
+    max_uncompressed_bytes: int = 128 * 1024 * 1024
 
     def __post_init__(self):
         for f in fields(self):
