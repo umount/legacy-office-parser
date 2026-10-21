@@ -8,7 +8,8 @@ No code copied from POI or sharepoint2text. No repair scan or stale-text fallbac
 
 Extracts outline and native drawing text, including grouped shapes/table cells.
 Does not render layouts, inherit master text, OCR pictures, or extract embedded
-objects, WordArt property strings, comments or version-specific extension text.
+objects, comments or version-specific extension text. Stored WordArt geometry
+text is extracted from live shapes; alternate XML representations are not merged.
 """
 from __future__ import annotations
 
@@ -164,7 +165,7 @@ class _Parser:
                 raise InvalidDocumentError('PPT outline text precedes slide reference')
         return result
 
-    def decode(self, rec: _Record) -> str:
+    def decode(self, rec: _Record, terminated: bool = False) -> str:
         length = rec.end - rec.start
         if rec.type == 4000 and length % 2:
             raise InvalidDocumentError('odd-length PPT UTF-16 text')
@@ -177,6 +178,8 @@ class _Parser:
             text = self.data[rec.start:rec.end].decode('utf-16-le' if rec.type == 4000 else 'latin-1')
         except UnicodeDecodeError as exc:
             raise InvalidDocumentError('invalid PPT UTF-16 text') from exc
+        if terminated and '\x00' in text[:-1]:
+            raise InvalidDocumentError('embedded null in OfficeArt geometry text')
         return text.replace('\r\n', '\n').replace('\r', '\n').replace('\v', '\n').replace('\f', '\n').replace('\x00', '').strip()
 
     def text_blocks(self, records: list[_Record], outline_count: int | None = None) -> list[tuple[int, str]]:
@@ -204,21 +207,96 @@ class _Parser:
         flush()
         return blocks
 
-    def drawing_text(self, drawing: _Record, outline_count: int) -> list[tuple[int, str]]:
+    def shape_properties(self, rec: _Record) -> str | None:
+        """Read only gtextUNICODE, never names/fonts/alternate XML as text.
+
+        MS-ODRAW 2.2.9 and 2.3.22.1–2: six-byte entries precede complex
+        payloads in entry order. fBid is undefined for gtext and ignored.
+        """
+        if rec.version != 3:
+            raise InvalidDocumentError('invalid OfficeArt property table version')
+        self.charge(rec.instance)
+        offset = rec.start + rec.instance * 6
+        if offset > rec.end:
+            raise InvalidDocumentError('OfficeArt property table outside bounds')
+        value = None
+        seen_text = False
+        for pos in range(rec.start, offset, 6):
+            flags, size = unpack_from('<HI', self.data, pos)
+            pid = flags & 0x3fff
+            if pid == 0xc0:
+                if seen_text:
+                    raise InvalidDocumentError('duplicate OfficeArt geometry text property')
+                seen_text = True
+                if not flags & 0x8000 and size:
+                    raise InvalidDocumentError('non-complex OfficeArt geometry text')
+            if not flags & 0x8000:
+                continue
+            # Legacy pVertices/pSegmentInfo may exclude the six-byte array
+            # header from op (also handled by POI EscherArrayProperty).
+            if pid in (0x145, 0x146) and size:
+                if rec.end - offset < 6:
+                    raise InvalidDocumentError('truncated OfficeArt array header')
+                count, _, width = unpack_from('<HHh', self.data, offset)
+                width = (-width >> 2) if width < 0 else width
+                if count * width == size:
+                    size += 6
+            if size > rec.end - offset:
+                raise InvalidDocumentError('OfficeArt complex property outside bounds')
+            if pid == 0xc0 and rec.type == 0xf00b:
+                if size < 2 or size % 2 or self.data[offset + size - 2:offset + size] != b'\0\0':
+                    raise InvalidDocumentError('invalid OfficeArt geometry text terminator/length')
+                # Reuse the strict UTF-16 decoder and shared budget, including
+                # the terminator and any surrogate pairs, before allocation.
+                value = self.decode(_Record(4000, 0, 0, offset, offset + size, rec.depth),
+                                    terminated=True)
+            elif pid == 0x3a9 and size:
+                self.warn('PPT alternate OfficeArt XML is not extracted; extension-only content may be omitted.')
+            offset += size
+        if offset != rec.end:
+            raise InvalidDocumentError('unclaimed OfficeArt complex property bytes')
+        return value
+
+    def shape_text(self, shape: _Record, outline: list[tuple[int, str]]) -> list[tuple[int, str]]:
         blocks: list[tuple[int, str]] = []
-        # PPDrawing's payload uses OfficeArt headers; ClientTextbox wraps PPT
-        # atoms even when its recVer is zero (POI EscherTextboxWrapper).
+        geometry = None
+        native: list[str] = []
+        for rec in self.children(shape):
+            if rec.type == 0xf00d:
+                atoms = list(self.children(rec))
+                texts = self.text_blocks(atoms, len(outline))
+                blocks.extend(texts)
+                native.extend(text for _, text in texts)
+                for atom in atoms:
+                    if atom.type == 3998:
+                        native.append(outline[self.u32(atom)][1])
+            elif rec.type in (0xf00b, 0xf122):
+                text = self.shape_properties(rec)
+                if text is not None:
+                    if geometry is not None:
+                        raise InvalidDocumentError('duplicate OfficeArt geometry text table')
+                    geometry = text
+        # Suppress an identical representation only on this exact shape,
+        # including a validated outline reference. Equal text on other shapes
+        # remains independent content; distinct attached text is retained.
+        if geometry and geometry not in native:
+            blocks.append((1, geometry))
+        return blocks
+
+    def drawing_text(self, drawing: _Record, outline: list[tuple[int, str]]) -> list[tuple[int, str]]:
+        blocks: list[tuple[int, str]] = []
         stack = [iter(self.children(drawing))]
         while stack:
             rec = next(stack[-1], None)
             if rec is None:
                 stack.pop()
-            elif rec.type == 0xf00d:
-                blocks.extend(self.text_blocks(list(self.children(rec)), outline_count))
             elif rec.type in (0xf002, 0xf003, 0xf004):
                 if rec.version != 15:
                     raise InvalidDocumentError('invalid OfficeArt container')
-                stack.append(iter(self.children(rec)))
+                if rec.type == 0xf004:
+                    blocks.extend(self.shape_text(rec, outline))
+                else:
+                    stack.append(iter(self.children(rec)))
         return blocks
 
     def sheet(self, entry: _Entry, typ: int) -> tuple[list[tuple[int, str]], int, bool]:
@@ -234,7 +312,7 @@ class _Parser:
                 self.size(child, 24 if typ == 1006 else 8, exact=True)
                 link = self.u32(child, 16 if typ == 1006 else 0)
             elif child.type == 1036:
-                blocks.extend(self.drawing_text(child, len(outline)))
+                blocks.extend(self.drawing_text(child, outline))
             elif child.type == 1017:
                 self.size(child, 16, exact=True)
                 hidden = bool(self.data[child.start + 10] & 4)
