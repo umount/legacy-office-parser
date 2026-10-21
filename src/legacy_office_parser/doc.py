@@ -16,6 +16,7 @@ from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
 from ._doc_notes import decode_note_ranges
 from ._doc_table import FrameIdentity, TableIdentity, apply_table, frame_change
+from ._doc_conditions import apply_conditions, row_boundary
 from ._doc_styles import Styles, character_ops, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
@@ -88,6 +89,9 @@ class _Piece:
 class _Props:
     style: int = 0
     applied_table_style: int | None = None
+    table_look: int = 0x600
+    table_header: bool = False
+    condition_known: bool = True
     in_table: bool = False
     row_end: bool = False
     depth: int = 0
@@ -354,7 +358,15 @@ class _Doc:
             for index, (op, arg) in enumerate(
                     self._sprms(group, allow_padding=not external_group), first_index):
                 consumed += 2 + len(arg)
-                if op == 0x4600:
+                if op in (0x560B, 0x5664):
+                    props.condition_known &= _u16(arg) in (0, 1)
+                if op == 0x740A:
+                    props.table_look = _u16(arg, 2)
+                    props.condition_known &= not bool(props.table_look & 0xF800)
+                elif op == 0x3404:
+                    props.table_header = bool(arg[0])
+                    props.condition_known &= arg[0] in (0, 1)
+                elif op == 0x4600:
                     props.style = _u16(arg)
                     props.frame = self.styles.frame(props.style)
                 elif op in (0xC601, 0x2602):
@@ -368,7 +380,7 @@ class _Doc:
                             or styles[table_style][0] != 3):
                         table_style = 11
                     props.identity = replace(props.identity, style=table_style)
-                    self.warn('Table styles: only unconditional hidden text is evaluated; other table-style formatting is not modeled.')
+                    self.warn('Table styles: hidden text is evaluated only for supported contexts; other table-style formatting is not modeled.')
                 elif op == 0x2416:
                     props.in_table = bool(arg[0])
                 elif op == 0x2417:
@@ -764,6 +776,7 @@ class _Doc:
             add(begin, start + count, 0, start + count - 1)
         while pending:
             close_incomplete()
+        apply_conditions(self, paragraphs)
         for begin, end, mark, mark_cp, props, hidden, known in paragraphs:
             self.paragraph_cache = mark_cp, props
             yield self.clean(begin, end, mark_cp if mark == 0 else None,
@@ -1008,12 +1021,8 @@ class _TableLevel:
 
     def row(self, props, *, complete=True):
         direction = props.bidi or props.bidi90
-        frame_boundary = (complete and self.identity.default_position
-                          and props.identity.default_position
-                          and self.previous_frame is not None and self.first_frame is not None
-                          and self.previous_frame != self.first_frame)
-        if self.table.rows and (direction != self.direction or props.identity != self.identity
-                                or frame_boundary):
+        if self.table.rows and row_boundary(self.identity, self.direction,
+                                            self.previous_frame, props, self.first_frame, complete):
             # Row properties arrive at the TTP, after its cells are buffered.
             # Close only the completed rows; keep this pending row intact.
             self._normalize_grid()

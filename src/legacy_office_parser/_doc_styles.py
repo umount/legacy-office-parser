@@ -28,6 +28,8 @@ class Styles:
         self.cache = {}
         self.frame_overrides = {}
         self.frame_cache = {}
+        self.conditions = {}
+        self.condition_cache = {}
         data = doc.table_part(1)  # fcStshf, NOT the original stylesheet fcStshfOrig.
         self.present = bool(data)
         if not data:
@@ -73,6 +75,21 @@ class Styles:
                 raise InvalidDocumentError('invalid DOC style UPX count')
             hidden = ()
             frame = {}
+            conditional = {}
+            bands = {}
+            unsafe = False
+            if kind == 3:
+                # Phase-one proof: any paragraph properties may affect frame
+                # identity. Unknown TAPX likewise cannot establish a safe grid.
+                unsafe = bool(groups[1])
+                for op, arg in doc._sprms(groups[0], allow_padding=False):
+                    if op in (0x3488, 0x3489):
+                        if not 1 <= arg[0] <= 3:
+                            raise InvalidDocumentError('invalid DOC table band size')
+                        bands[op] = arg[0]
+                    else:
+                        unsafe = True
+
             if kind in (1, 2, 3):
                 if kind == 1:
                     if u16(groups[0]) != index:
@@ -90,11 +107,23 @@ class Styles:
                 for op, arg in doc._sprms(groups[{1: 1, 2: 0, 3: 2}[kind]],
                                            allow_padding=kind != 3):
                     if kind == 3 and op == 0xCA85:
-                        # The complete length-delimited operand is opaque here;
-                        # never promote conditional CFVanish to an unconditional one.
                         if len(arg) < 3:
                             raise InvalidDocumentError('short DOC conditional character style operand')
-                        doc.warn('Conditional table style character formatting is not evaluated.')
+                        cnfc = u16(arg, 1)
+                        if cnfc not in (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048):
+                            raise InvalidDocumentError('invalid DOC conditional style condition')
+                        values = conditional.setdefault(cnfc, [])
+                        for subop, subarg in doc._sprms(arg[3:], allow_padding=False):
+                            if ((subop >> 10) & 7 != 2 or subop in _UPX_CHPX_FORBIDDEN
+                                    or subop in (0x0800, 0x0801, 0x0802, 0x0855, 0x6A09, 0xCA85)):
+                                raise InvalidDocumentError('forbidden DOC conditional character style property')
+                            if subop == 0x083C:
+                                if subarg[0] not in (0, 1, 128, 129):
+                                    raise InvalidDocumentError('invalid DOC CFVanish toggle')
+                                # Relative toggles need a separately established
+                                # conditional-style base; don't guess it here.
+                                unsafe |= subarg[0] in (128, 129)
+                                values.append(subarg[0])
                         continue
                     if ((op >> 10) & 7 != 2 or op in _UPX_CHPX_FORBIDDEN
                             or op in (0x0800, 0x0801, 0x0802, 0x0855, 0x6A09,
@@ -107,6 +136,8 @@ class Styles:
 
                 hidden = tuple(operations)
             self.styles.append((kind, base, hidden))
+            if kind == 3:
+                self.conditions[index] = (conditional, bands, unsafe)
             if frame:
                 self.frame_overrides[index] = frame
         if pos != len(data):
@@ -127,6 +158,35 @@ class Styles:
                 or self.styles[index][0] != 3):
             return False
         return self.hidden(index, 3)
+
+    def table_conditions(self, index):
+        """Bounded inherited condition sequences, band sizes and proof status."""
+        if index is None:
+            return {}, {}, False
+        if not 0 <= index < len(self.styles) or not self.styles[index] or self.styles[index][0] != 3:
+            index = 11
+        if index not in self.conditions:
+            return {}, {}, False
+        if index in self.condition_cache:
+            return self.condition_cache[index]
+        self.hidden(index, 3)  # Strict parent validation and depth checks.
+        path = []
+        current = index
+        while current != 0xFFF:
+            self.doc.budget.record()
+            path.append(current)
+            current = self.styles[current][1]
+        conditions, bands, unsafe = {}, {}, False
+        for current in reversed(path):
+            local, local_bands, local_unsafe = self.conditions[current]
+            bands.update(local_bands)
+            unsafe |= local_unsafe
+            for condition, operations in local.items():
+                self.doc.budget.record()
+                conditions.setdefault(condition, []).append(tuple(operations))
+        result = conditions, bands, unsafe
+        self.condition_cache[index] = result
+        return result
 
     def frame(self, index):
         """Resolve paragraph frame inheritance, bounded by existing style limits."""
