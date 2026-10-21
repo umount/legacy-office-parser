@@ -28,12 +28,20 @@ class Table:
 Block = Paragraph | Table
 
 @dataclass(slots=True)
+class SlideComment:
+    text: str
+    author: str = ''
+    initials: str = ''
+
+
+@dataclass(slots=True)
 class Slide:
     number: int
     title: str = ''
     text: str = ''
     notes: str = ''
     hidden: bool = False
+    comments: list[SlideComment] = field(default_factory=list)
 
 @dataclass(slots=True)
 class SpreadsheetCell:
@@ -122,7 +130,9 @@ class Document:
                           [text for text in sheet.drawings if text])
                 for sheet in self.sheets)
         if self.format in ('ppt', 'odp'):
-            return '\n\n'.join('\n'.join(p for p in (s.title, s.text, s.notes) if p) for s in self.slides)
+            return '\n\n'.join('\n'.join(p for p in
+                [s.title, s.text, s.notes] + [c.text for c in s.comments] if p)
+                for s in self.slides)
         parts = []
         for b in self.blocks:
             if isinstance(b, Paragraph):
@@ -140,6 +150,8 @@ class Document:
                     result.pop('blocks', None)
                 if not result.get('omitted'):
                     result.pop('omitted', None)
+            if 'comments' in result and not result['comments']:
+                result.pop('comments')
             if 'drawings' in result and not result['drawings']:
                 result.pop('drawings')
             if 'format' in result:

@@ -22,7 +22,7 @@ def _read(source: Source, limits: Limits) -> bytes:
 
 def _validate_result(doc: Document, limits: Limits) -> Document:
     # Defence in depth; individual parsers enforce limits during decoding too.
-    from .models import Paragraph
+    from .models import Paragraph, SlideComment
     _validate_notes(doc, limits)
     total = 0
     cells = 0
@@ -47,8 +47,28 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
             raise LimitExceededError('table cell limit exceeded')
         if total > limits.max_text_chars:
             raise LimitExceededError('output text size limit exceeded')
+    comment_count = 0
+    slide_visible = max(0, len(doc.slides) - 1) * 2
     for slide in doc.slides:
         total += len(slide.title) + len(slide.text) + len(slide.notes)
+        parts = [part for part in (slide.title, slide.text, slide.notes) if part]
+        slide_visible += sum(map(len, parts)) + max(0, len(parts) - 1)
+        has_text = bool(parts)
+        comment_count += len(slide.comments)
+        if comment_count > limits.max_records:
+            raise LimitExceededError('slide comment record limit exceeded')
+        for comment in slide.comments:
+            if (not isinstance(comment, SlideComment) or not all(isinstance(value, str)
+                    for value in (comment.text, comment.author, comment.initials))):
+                raise InvalidDocumentError('invalid slide comment')
+            total += len(comment.text) + len(comment.author) + len(comment.initials)
+            if comment.text:
+                slide_visible += int(has_text) + len(comment.text)
+                has_text = True
+            if total > limits.max_text_chars:
+                raise LimitExceededError('output comment text size limit exceeded')
+    if comment_count and slide_visible > limits.max_text_chars:
+        raise LimitExceededError('slide rendered text limit exceeded')
     if len(doc.sheets) > limits.max_sheets:
         raise LimitExceededError('sheet count limit exceeded')
     drawing_records = 0

@@ -10,7 +10,8 @@ Extracts outline and native drawing text, including grouped shapes/table cells.
 Includes ordinary text shapes from referenced masters when objects are inherited.
 Preserves active stored footer/fixed-date strings; dynamic fields are not evaluated.
 Does not render layouts, OCR pictures, or extract embedded
-objects, comments or version-specific extension text. Stored WordArt geometry
+objects or unknown version-specific extension text. Active PPT10 comments are
+retained separately from slide body and notes. Stored WordArt geometry
 text is extracted from live shapes; alternate XML representations are not merged.
 """
 from __future__ import annotations
@@ -20,11 +21,11 @@ from struct import unpack_from
 from typing import Iterator
 
 from ._ole import open_ole, read_stream
-from ._ppt_extensions import slide_metadata_only
+from ._ppt_extensions import _timing_metadata
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
-from .models import Document, Slide
+from .models import Document, Slide, SlideComment
 
 
 @dataclass(frozen=True, slots=True)
@@ -602,7 +603,78 @@ class _Parser:
                 blocks.append((1, value))
         return blocks
 
-    def sheet(self, entry: _Entry, typ: int) -> tuple[list[tuple[int, str]], int, bool]:
+    def comment(self, rec: _Record) -> SlideComment:
+        if rec.version != 15 or rec.instance != 0:
+            raise InvalidDocumentError('invalid PPT comment container header')
+        strings: dict[int, str] = {}
+        settings = False
+        for child in self.children(rec):
+            if child.type == 4026:
+                length = child.end - child.start
+                if (child.version != 0 or child.instance not in (0, 1, 2)
+                        or child.instance in strings or length % 2
+                        or length > (64000 if child.instance == 1 else 104)):
+                    raise InvalidDocumentError('invalid or duplicate PPT comment string')
+                value = self.decode(
+                    _Record(4000, 0, 0, child.start, child.end, child.depth), normalize=False)
+                if any((ord(char) < 32 and not (child.instance == 1 and char in '\t\r\n'))
+                       or 0x7f <= ord(char) <= 0x9f for char in value):
+                    raise InvalidDocumentError('invalid control in PPT comment string')
+                strings[child.instance] = self.normalize_text(value)
+            elif child.type == 12001:
+                self.size(child, 28, exact=True)
+                if (settings or child.version != 0 or child.instance != 0
+                        or unpack_from('<i', self.data, child.start)[0] < 0):
+                    raise InvalidDocumentError('invalid or duplicate PPT comment settings')
+                settings = True
+            else:
+                self.warn('PPT unknown comment metadata is not extracted.')
+        if not settings:
+            raise InvalidDocumentError('missing PPT comment settings')
+        return SlideComment(strings.get(1, ''), strings.get(0, ''), strings.get(2, ''))
+
+    def slide_comments(self, tags: _Record, comments: list[SlideComment], seen: set[str]) -> bool:
+        """Only direct typed PPT10 comments; return whether remaining data is known."""
+        if tags.version != 15 or tags.instance != 0:
+            return False
+        known = True
+        for tag in self.children(tags):
+            if tag.type != 5002 or tag.version != 15 or tag.instance != 0:
+                known = False
+                continue
+            pair = list(self.children(tag))
+            if (len(pair) != 2 or pair[0].type != 4026 or pair[0].version != 0
+                    or pair[0].instance != 0 or pair[0].end - pair[0].start != 16
+                    or self.data[pair[0].start:pair[0].end] != '___PPT10'.encode('utf-16-le')):
+                known = False
+                continue
+            blob = pair[1]
+            if blob.type != 5003 or blob.version != 0 or blob.instance != 0:
+                raise InvalidDocumentError('invalid PPT10 data header')
+            children = list(self.children(blob))
+            has_comments = any(child.type == 12000 for child in children)
+            if 'PPT10' in seen:
+                if has_comments or 'comments' in seen:
+                    raise InvalidDocumentError('duplicate PPT10 slide comment extension')
+                known = False
+                continue
+            seen.add('PPT10')
+            if has_comments:
+                seen.add('comments')
+            metadata_types: set[int] = set()
+            for child in children:
+                if child.type == 12000:
+                    comments.append(self.comment(child))
+                else:
+                    # Reuse the existing metadata-only classifier on this record
+                    # span. Do not copy payloads or search nested unknown records.
+                    span = _Record(5003, 0, 0, child.start - 8, child.end, blob.depth)
+                    if child.type in metadata_types or not _timing_metadata(self, span):
+                        known = False
+                    metadata_types.add(child.type)
+        return known
+
+    def sheet(self, entry: _Entry, typ: int) -> tuple[list[tuple[int, str]], int, bool, list[SlideComment]]:
         rec = self.resolve(entry.persist_id, typ)
         self.local_fields = set() if typ == 1006 else None
         self.inline_footer = None
@@ -625,6 +697,8 @@ class _Parser:
         hidden = False
         master_id = 0
         title_layout = False
+        comments: list[SlideComment] = []
+        seen_extensions: set[str] = set()
         for child in children:
             if child.type == (1007 if typ == 1006 else 1009):
                 if link is not None:
@@ -643,7 +717,7 @@ class _Parser:
                 self.size(child, 16, exact=True)
                 hidden = bool(self.data[child.start + 10] & 4)
             elif child.type == 5000:
-                if typ != 1006 or not slide_metadata_only(self, child):
+                if typ != 1006 or not self.slide_comments(child, comments, seen_extensions):
                     self.warn('PPT extension records are not extracted; extension-only content may be omitted.')
         if link is None:
             raise InvalidDocumentError('missing PPT slide/notes atom')
@@ -655,7 +729,7 @@ class _Parser:
             blocks.extend(self.master_text(master_id))
         if typ == 1006:
             blocks.extend(self.static_slide_fields(master_id, local_hf, local_fields, title_layout))
-        return blocks, link, hidden
+        return blocks, link, hidden, comments
 
     def parse(self, edit_offset: int) -> Document:
         root = self.resolve(self.directory(edit_offset), 1000)
@@ -681,24 +755,24 @@ class _Parser:
         document = Document(format='ppt')
         emitted_chars = 0
         for entry in lists.get(0, []):
-            blocks, note_id, hidden = self.sheet(entry, 1006)
+            blocks, note_id, hidden, comments = self.sheet(entry, 1006)
             title = '\n'.join(text for kind, text in blocks if kind in (0, 6) and text)
             body = '\n'.join(text for kind, text in blocks if kind not in (0, 6) and text)
             note_text = ''
             if note_id:
                 if note_id not in notes:
                     raise InvalidDocumentError('unresolved PPT notes ID')
-                note_blocks, slide_id, _ = self.sheet(notes[note_id], 1008)
+                note_blocks, slide_id, _, _ = self.sheet(notes[note_id], 1008)
                 if slide_id != entry.slide_id:
                     raise InvalidDocumentError('PPT notes backlink does not match slide ID')
                 note_text = '\n'.join(text for _, text in note_blocks if text)
-            parts = [part for part in (title, body, note_text) if part]
+            parts = [part for part in [title, body, note_text] + [c.text for c in comments] if part]
             emitted_chars += sum(map(len, parts)) + max(0, len(parts) - 1)
             if document.slides:
                 emitted_chars += 2  # Document.text inserts blank lines between slides.
             if emitted_chars > self.limits.max_text_chars:
                 raise LimitExceededError('PPT output text limit exceeded')
-            document.slides.append(Slide(len(document.slides) + 1, title, body, note_text, hidden))
+            document.slides.append(Slide(len(document.slides) + 1, title, body, note_text, hidden, comments))
         document.warnings = self.warnings
         return document
 

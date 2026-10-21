@@ -51,7 +51,6 @@ def test_narrow_metadata_subsets(monkeypatch, payload):
 @pytest.mark.parametrize('payload', [
     atom(0x7777, b'unknown'),
     text('extension-only text'),
-    container(12000, atom(4026, 'comment text'.encode('utf-16-le'), instance=1)),
     node(atom(0x7777, b'unknown nested record')),
     node(text('nested text')),
     node(container(61757, atom(61762, b'\x03' + 'string'.encode('utf-16-le'), instance=18))),
@@ -69,6 +68,12 @@ def test_unknown_or_text_bearing_content_retains_warning(monkeypatch, payload):
     assert result.text == 'Visible'
     assert len(result.warnings) == 1
     assert 'extension-only content may be omitted' in result.warnings[0]
+
+
+def test_supported_comment_requires_its_settings_record(monkeypatch):
+    payload = container(12000, atom(4026, 'comment text'.encode('utf-16-le'), instance=1))
+    with pytest.raises(InvalidDocumentError, match='missing PPT comment settings'):
+        run(monkeypatch, presentation(extension(payload)))
 
 
 @pytest.mark.parametrize('name', ['___PPT9', '___PPT12', 'Custom', '___PPT10\0'])

@@ -3,10 +3,10 @@ from .api import parse, parse_doc, parse_ppt, parse_xls, parse_rtf, parse_odt, p
 from .errors import (ParseError, InvalidDocumentError, UnsupportedFormatError,
                      EncryptedDocumentError, LimitExceededError)
 from .limits import Limits
-from .models import Document, Paragraph, Table, Cell, Slide, SpreadsheetCell, CellRange, Sheet, Note, NoteBodyRange
+from .models import Document, Paragraph, Table, Cell, Slide, SlideComment, SpreadsheetCell, CellRange, Sheet, Note, NoteBodyRange
 
 __version__ = '0.15.0'
 __all__ = ['parse_xls', 'parse_rtf', 'parse_odt', 'parse_ods', 'parse_odp',
            'SpreadsheetCell', 'CellRange', 'Sheet', 'parse', 'parse_doc', 'parse_ppt', 'Limits', 'Document', 'Paragraph',
-           'Table', 'Cell', 'Slide', 'Note', 'NoteBodyRange', 'ParseError', 'InvalidDocumentError',
+           'Table', 'Cell', 'Slide', 'SlideComment', 'Note', 'NoteBodyRange', 'ParseError', 'InvalidDocumentError',
            'UnsupportedFormatError', 'EncryptedDocumentError', 'LimitExceededError']

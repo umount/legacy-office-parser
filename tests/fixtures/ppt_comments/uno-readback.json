@@ -1,0 +1,33 @@
+[
+  {
+    "slide": 1,
+    "body": [
+      "Slide body 1"
+    ],
+    "comments": [
+      {
+        "author": "Research Author",
+        "initials": "RA",
+        "text": "Budget excludes migration"
+      },
+      {
+        "author": "Review Author",
+        "initials": "RA",
+        "text": "Привет — проверить\nSecond comment line"
+      }
+    ]
+  },
+  {
+    "slide": 2,
+    "body": [
+      "Slide body 2"
+    ],
+    "comments": [
+      {
+        "author": "Research Author",
+        "initials": "RA",
+        "text": "Slide body 2"
+      }
+    ]
+  }
+]
