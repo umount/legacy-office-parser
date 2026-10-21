@@ -8,7 +8,8 @@ No code copied from POI or sharepoint2text. No repair scan or stale-text fallbac
 
 Extracts outline and native drawing text, including grouped shapes/table cells.
 Includes ordinary text shapes from referenced masters when objects are inherited.
-Does not render layouts, evaluate master placeholders, OCR pictures, or extract embedded
+Preserves active stored footer/fixed-date strings; dynamic fields are not evaluated.
+Does not render layouts, OCR pictures, or extract embedded
 objects, comments or version-specific extension text. Stored WordArt geometry
 text is extracted from live shapes; alternate XML representations are not merged.
 """
@@ -53,6 +54,13 @@ class _Parser:
         self.warnings: list[str] = []
         self.masters: dict[int, _Entry] = {}
         self.master_cache: dict[int, tuple[list[tuple[int, str]], int]] = {}
+        self.master_fields: dict[int, set[int]] = {}
+        self.master_hf: dict[int, _Record] = {}
+        self.collect_master_fields: set[int] | None = None
+        self.local_fields: set[int] | None = None
+        self.default_hf: _Record | None = None
+        self.hf_cache: dict[int, tuple[int, dict[int, _Record]]] = {}
+        self.omit_title_fields = False
 
     def charge(self, count: int = 1) -> None:
         self.records += count
@@ -190,7 +198,11 @@ class _Parser:
         blocks: list[tuple[int, str]] = []
         kind: int | None = None
         chunks: list[str] = []
+        text_units = 0
+        field_position = -1
         def flush() -> None:
+            if field_position >= text_units:
+                raise InvalidDocumentError('PPT field marker outside corresponding text')
             if kind is not None:
                 blocks.append((kind, ''.join(chunks)))
         for rec in records:
@@ -199,10 +211,25 @@ class _Parser:
                 flush()
                 kind = self.u32(rec)
                 chunks = []
+                text_units = 0
+                field_position = -1
             elif rec.type in (4000, 4008):
                 if kind is None:
                     raise InvalidDocumentError('PPT text has no TextHeaderAtom')
                 chunks.append(self.decode(rec))
+                text_units += (rec.end - rec.start) // (2 if rec.type == 4000 else 1)
+            elif rec.type in (4056, 4087, 4088, 4089, 4090):
+                self.size(rec, 8 if rec.type == 4087 else 4, exact=True)
+                if rec.version != 0 or rec.instance != 0 or kind is None:
+                    raise InvalidDocumentError('invalid PPT field marker header or text association')
+                if rec.type == 4087 and self.data[rec.start + 4] > 12:
+                    raise InvalidDocumentError('invalid PPT datetime field format index')
+                # Check against untrimmed UTF-16 units at flush, including text
+                # records that follow the marker. Never use normalized output.
+                field_position = max(field_position, self.u32(rec))
+                self.warn('PPT text field markers are not evaluated; stored text may contain placeholders.')
+                if self.local_fields is not None:
+                    self.local_fields.add({4056: 8, 4087: 7, 4088: 7, 4089: 10, 4090: 9}[rec.type])
             elif rec.type == 3998:
                 self.size(rec, 4, exact=True)
                 if outline_count is None or self.u32(rec) >= outline_count:
@@ -268,6 +295,7 @@ class _Parser:
         decoding text, since client data need not precede the text box.
         """
         allowed = True
+        placeholder = None
         for rec in self.children(shape):
             if rec.type == 0xf00a:
                 self.size(rec, 8, exact=True)
@@ -294,10 +322,11 @@ class _Parser:
                 for atom in self.children(rec):
                     if atom.type == 3011:
                         self.size(atom, 8, exact=True)
-                        # Even position=-1 can carry a conditional footer/date
-                        # placementId. Do not guess its slide-specific value.
-                        allowed = False
-        return allowed
+                        # Position=-1 may still describe a conditional field.
+                        placeholder = self.data[atom.start + 4]
+        if allowed and placeholder in (7, 8, 9) and self.collect_master_fields is not None:
+            self.collect_master_fields.add(placeholder)
+        return allowed and placeholder is None
 
     def shape_text(self, shape: _Record, outline: list[tuple[int, str]]) -> list[tuple[int, str]]:
         blocks: list[tuple[int, str]] = []
@@ -312,6 +341,23 @@ class _Parser:
                 for atom in atoms:
                     if atom.type == 3998:
                         native.append(outline[self.u32(atom)][1])
+            elif rec.type == 0xf011 and self.local_fields is not None:
+                if rec.version != 15:
+                    raise InvalidDocumentError('invalid local OfficeArtClientData version')
+                for atom in self.children(rec):
+                    if atom.type == 1056:
+                        self.size(atom, 1, exact=True)
+                        if (atom.version != 0 or atom.instance != 0
+                                or self.data[atom.start] not in (7, 8, 9, 10)):
+                            raise InvalidDocumentError('invalid PPT round-trip field placeholder')
+                        # Modern round-trip field shapes can already contain the
+                        # actual text. Do not append a second legacy representation.
+                        self.local_fields.add(0)
+                    elif atom.type == 3011:
+                        self.size(atom, 8, exact=True)
+                        placement = self.data[atom.start + 4]
+                        if placement in (7, 8, 9):
+                            self.local_fields.add(placement)
             elif rec.type in (0xf00b, 0xf122):
                 text = self.shape_properties(rec)
                 if text is not None:
@@ -373,6 +419,7 @@ class _Parser:
                     raise InvalidDocumentError('PPT master reference has incorrect object type')
                 own: list[tuple[int, str]] = []
                 parent = None
+                fields: set[int] = set()
                 for child in self.children(rec):
                     if child.type == 1007:
                         if parent is not None:
@@ -387,7 +434,15 @@ class _Parser:
                         parent = target if follows_objects else 0
                     elif child.type == 1036:
                         # Master lists carry no presentation outline text.
-                        own.extend(self.drawing_text(child, [], inherited=True))
+                        self.collect_master_fields = fields
+                        try:
+                            own.extend(self.drawing_text(child, [], inherited=True))
+                        finally:
+                            self.collect_master_fields = None
+                    elif child.type == 4057 and child.instance == 0:
+                        if master_id in self.master_hf:
+                            raise InvalidDocumentError('duplicate PPT master header/footer container')
+                        self.master_hf[master_id] = child
                     elif child.type == 5000:
                         self.warn('PPT master extension records are not extracted; extension-only content may be omitted.')
                 if parent is None:
@@ -395,6 +450,7 @@ class _Parser:
                 # Inherited title-kind text is still ordinary master artwork,
                 # not the title of the presentation slide.
                 self.master_cache[master_id] = ([(1, text) for _, text in own if text], parent)
+                self.master_fields[master_id] = fields
             own, master_id = self.master_cache[master_id]
             # Cached text still costs a visit per block on every slide. Charge
             # before extending, not after the repeated allocation/iteration.
@@ -402,25 +458,118 @@ class _Parser:
             blocks.extend(own)
         return blocks
 
+    def header_footer_settings(self, rec: _Record) -> tuple[int, dict[int, _Record]]:
+        """MS-PPT 2.4.15: bounded flags and stored strings, never field evaluation."""
+        if rec.start in self.hf_cache:
+            self.charge()
+            return self.hf_cache[rec.start]
+        if rec.version != 15:
+            raise InvalidDocumentError('invalid PPT header/footer container')
+        flags = None
+        strings: dict[int, _Record] = {}
+        for child in self.children(rec):
+            if child.type == 4058:
+                self.size(child, 4, exact=True)
+                if flags is not None or child.version != 0 or child.instance != 0:
+                    raise InvalidDocumentError('invalid or duplicate PPT header/footer flags')
+                flags = unpack_from('<H', self.data, child.start + 2)[0]
+            elif child.type == 4026 and child.instance in (0, 2):
+                length = child.end - child.start
+                if child.version != 0 or length % 2 or (child.instance == 0 and length > 510):
+                    raise InvalidDocumentError('invalid PPT header/footer string record')
+                if child.instance in strings:
+                    raise InvalidDocumentError('duplicate PPT header/footer string')
+                strings[child.instance] = child
+        if flags is None:
+            raise InvalidDocumentError('missing PPT header/footer flags')
+        self.hf_cache[rec.start] = (flags, strings)
+        return flags, strings
+
+    def static_slide_fields(self, master_id: int, local: _Record | None,
+                            local_fields: set[int], title: bool) -> list[tuple[int, str]]:
+        # A local container overrides the document default as a whole; missing
+        # local strings must not resurrect stale default strings.
+        source = local if local is not None else self.default_hf
+        settings = self.header_footer_settings(source) if source is not None else None
+        if settings is not None:
+            flags, strings = settings
+            # These strings are optional. An enabled but unset static field is
+            # empty, not an unsupported dynamic field (common in blank decks).
+            if not (flags & 8 or (flags & 1 and (flags & 2 or not flags & 4 or 0 in strings))
+                    or (flags & 32 and 2 in strings)):
+                return []
+        fields: set[int] = set()
+        master_sources = []
+        current = master_id
+        while current:
+            self.charge()
+            fields.update(self.master_fields.get(current, ()))
+            if current in self.master_hf:
+                master_sources.append(self.master_hf[current])
+            current = self.master_cache[current][1]
+        if title and self.omit_title_fields:
+            return []
+        if source is None:
+            # Per-master footer settings are not established as slide defaults.
+            for rec in master_sources:
+                flags, _ = self.header_footer_settings(rec)
+                if flags & 0x29:
+                    self.warn('PPT active master header/footer settings are not resolved for slides.')
+            return []
+        flags, strings = settings
+        blocks = []
+        for placement, bit, instance, name in ((7, 1, 0, 'date'), (8, 8, None, 'slide-number'),
+                                              (9, 32, 2, 'footer')):
+            if not flags & bit:
+                continue
+            if (placement == 9 or (placement == 7 and flags & 4 and not flags & 2)) and instance not in strings:
+                continue
+            if placement in local_fields or 0 in local_fields:
+                self.warn('PPT slide-local field shapes are retained as stored text; legacy field text is not merged.')
+                continue
+            if placement not in fields:
+                self.warn('PPT active header/footer fields have unresolved placement or visibility; field text is omitted.')
+                continue
+            if placement == 8 or (placement == 7 and (not flags & 4 or flags & 2)):
+                self.warn(f'PPT active {name} field is not evaluated; no generated value is extracted.')
+                continue
+            atom = strings.get(instance)
+            if atom is None:
+                continue
+            # CString payloads use the same UTF-16 allocation and output budget.
+            value = self.decode(_Record(4000, 0, 0, atom.start, atom.end, atom.depth))
+            if value:
+                blocks.append((1, value))
+        return blocks
+
     def sheet(self, entry: _Entry, typ: int) -> tuple[list[tuple[int, str]], int, bool]:
         rec = self.resolve(entry.persist_id, typ)
+        self.local_fields = set() if typ == 1006 else None
         outline = self.text_blocks(entry.records)
         blocks = list(outline)
         link = None
         hidden = False
         master_id = 0
+        local_hf = None
+        title_layout = False
         for child in self.children(rec):
             if child.type == (1007 if typ == 1006 else 1009):
                 if link is not None:
                     raise InvalidDocumentError('duplicate PPT slide/notes atom')
                 self.size(child, 24 if typ == 1006 else 8, exact=True)
                 link = self.u32(child, 16 if typ == 1006 else 0)
+                if typ == 1006:
+                    title_layout = self.u32(child) == 0
                 if typ == 1006 and self.data[child.start + 20] & 1:
                     master_id = self.u32(child, 12)
                     if not master_id:
                         raise InvalidDocumentError('unresolved PPT master reference')
             elif child.type == 1036:
                 blocks.extend(self.drawing_text(child, outline))
+            elif child.type == 4057 and child.instance == 0 and typ == 1006:
+                if local_hf is not None:
+                    raise InvalidDocumentError('duplicate PPT slide header/footer container')
+                local_hf = child
             elif child.type == 1017:
                 self.size(child, 16, exact=True)
                 hidden = bool(self.data[child.start + 10] & 4)
@@ -429,15 +578,30 @@ class _Parser:
                     self.warn('PPT extension records are not extracted; extension-only content may be omitted.')
         if link is None:
             raise InvalidDocumentError('missing PPT slide/notes atom')
+        local_fields = self.local_fields or set()
+        self.local_fields = None
         if master_id:
             blocks.extend(self.master_text(master_id))
+        if typ == 1006:
+            blocks.extend(self.static_slide_fields(master_id, local_hf, local_fields, title_layout))
         return blocks, link, hidden
 
     def parse(self, edit_offset: int) -> Document:
         root = self.resolve(self.directory(edit_offset), 1000)
         lists: dict[int, list[_Entry]] = {}
+        seen_document_atom = False
         for rec in self.children(root):
-            if rec.type == 4080 and rec.instance in (0, 1, 2):
+            if rec.type == 1001:
+                self.size(rec, 40, exact=True)
+                if seen_document_atom:
+                    raise InvalidDocumentError('duplicate PPT document atom')
+                seen_document_atom = True
+                self.omit_title_fields = bool(self.data[rec.start + 37])
+            elif rec.type == 4057 and rec.instance == 3:
+                if self.default_hf is not None:
+                    raise InvalidDocumentError('duplicate PPT default header/footer container')
+                self.default_hf = rec
+            elif rec.type == 4080 and rec.instance in (0, 1, 2):
                 if rec.instance in lists:
                     raise InvalidDocumentError('duplicate PPT slide/notes list')
                 lists[rec.instance] = self.entries(rec)
