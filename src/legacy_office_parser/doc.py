@@ -3,7 +3,7 @@
 Format authority: [MS-DOC] sections 2.4.1, 2.4.3, 2.4.6.1, 2.5 and
 Clx/PlcPcd/PapxFkp/PapxInFkp/Sprm/TCGRF. Technical reference and adapted
 layout/operand-size logic: MIT-licensed wordcraft crates/docbin/src/{fib,
-piece,fkp,sprm,table}.rs (review checkout /tmp/wordcraft-parser-review).
+piece,fkp,sprm,table}.rs (see THIRD_PARTY.md for source revision and license).
 This is an extraction implementation, not a Word layout/revision engine.
 """
 from __future__ import annotations
@@ -497,14 +497,13 @@ class _Tables:
                 current[key] = cell
             elif vm == 1 and key in self.vertical:
                 previous = self.vertical[key]
-                if previous.col_span == cell.col_span:
-                    previous.row_span += 1
-                    current[key] = previous
-                    cell.covered = True
-                    if cell.text:
-                        self.doc.warn('Covered merged cells contain text; their text is retained at its original coordinate.')
-                else:
-                    self.doc.warn('Vertical merge with mismatched columns was not applied.')
+                # Equal edge intervals can use different physical cell counts.
+                # Column spans are normalized across rows when the table closes.
+                previous.row_span += 1
+                current[key] = previous
+                cell.covered = True
+                if cell.text:
+                    self.doc.warn('Covered merged cells contain text; their text is retained at its original coordinate.')
             elif vm:
                 self.doc.warn('Vertical merge without a matching explicit grid was not applied.')
         self.vertical = current

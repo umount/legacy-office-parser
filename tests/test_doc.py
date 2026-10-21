@@ -403,3 +403,14 @@ def test_mutated_structures_never_leak_low_level_exceptions(monkeypatch):
             parse(monkeypatch, streams, Limits(max_text_chars=1000, max_records=2000))
         except ParseError:
             pass
+
+
+def test_vertical_merge_matches_edges_across_different_physical_grids(monkeypatch):
+    streams = fixture([('a\7\7\7\7\7', True)], props=[
+        IN, IN, ROW + definition([98, 1], [0, 100, 200]),
+        IN, ROW + definition([32], [0, 200]),
+    ])
+    table = parse(monkeypatch, streams).blocks[0]
+    assert table.rows[0][0].row_span == 2
+    assert table.rows[0][0].col_span == 2
+    assert all(c.covered for c in table.rows[1])
