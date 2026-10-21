@@ -103,6 +103,10 @@ class _Doc:
         self.word = read_stream(ole, 'WordDocument', limits)
         self.data = None
         self.pages = {}
+        self.chpx_bins = None
+        self.chpx_pages = {}
+        self.symbol_prms = {}
+        self.symbol_fonts = None
         self.fields = []
         self._fib()
         self.table = read_stream(ole, self.table_name, limits)
@@ -367,9 +371,143 @@ class _Doc:
             op = {0x18: 0x2416, 0x19: 0x2417}.get(isprm)
             if op is not None:
                 self._apply(props, struct.pack('<HB', op, piece.prm >> 8))
-            else:
+            elif isprm != 0x75:  # CFSpec is evaluated by the symbol reader.
                 self.warn('This compact piece formatting (Prm0) property is not evaluated.')
         return props
+
+    def _symbol_modifiers(self, group):
+        # Direct character formatting, MS-DOC 2.4.6.2. CPlain/CIstd preserve
+        # CSymbol and CFSpec; unrelated formatting must not clear these values.
+        modifiers = {}
+        for op, arg in self._sprms(group):
+            if op == 0x6A09:
+                modifiers['symbol'] = (_u16(arg), _u16(arg, 2))
+            elif op == 0x0855:
+                if arg[0] in (0, 1):
+                    modifiers['special'] = bool(arg[0])
+                elif arg[0] in (128, 129):
+                    modifiers['special'] = None
+                    self.warn('Style-relative CFSpec is not resolved; available symbol codes are retained.')
+                else:
+                    raise InvalidDocumentError('invalid DOC CFSpec toggle')
+        return modifiers
+
+    def _symbol_chpx(self, fc):
+        if self.chpx_bins is None:
+            plc = self.table_part(12)
+            fcs, pages = [], []
+            if plc:
+                if len(plc) < 4 or (len(plc) - 4) % 8:
+                    raise InvalidDocumentError('invalid DOC character bin table')
+                count = (len(plc) - 4) // 8
+                self.budget.record(count)
+                fcs = [_u32(plc, i * 4) for i in range(count + 1)]
+                _ascending(fcs)
+                pages = [_u32(plc, (count + 1 + i) * 4) & 0x3FFFFF for i in range(count)]
+            self.chpx_bins = fcs, pages
+        fcs, pages = self.chpx_bins
+        i = bisect_right(fcs, fc) - 1
+        if i < 0 or i >= len(pages):
+            if pages:
+                self.warn('Some characters have no CHPX coverage; symbol properties may be missing.')
+            return {}
+        pn = pages[i]
+        if pn not in self.chpx_pages:
+            page = _span(self.word, pn * 512, 512)
+            count = page[511]
+            if not 1 <= count <= 101:
+                raise InvalidDocumentError('invalid DOC CHPX FKP run count')
+            self.budget.record(count)
+            starts = [_u32(page, j * 4) for j in range(count + 1)]
+            _ascending(starts)
+            front = (count + 1) * 4 + count
+            groups, shared = [], {}
+            for j in range(count):
+                offset = page[(count + 1) * 4 + j] * 2
+                if not offset:
+                    groups.append({})
+                    continue
+                if offset < front or offset >= 511 or offset + 1 + page[offset] > 511:
+                    raise InvalidDocumentError('invalid DOC CHPX offset or size')
+                if offset not in shared:
+                    shared[offset] = self._symbol_modifiers(
+                        _span(page, offset + 1, page[offset]))
+                groups.append(shared[offset])
+            self.chpx_pages[pn] = starts, groups
+        starts, groups = self.chpx_pages[pn]
+        j = bisect_right(starts, fc) - 1
+        if j < 0 or j >= len(groups):
+            raise InvalidDocumentError('DOC CHPX bin does not cover its character')
+        return groups[j]
+
+    def _symbol_font(self, index):
+        if self.symbol_fonts is None:
+            data = self.table_part(15)  # SttbfFfn: byte-sized FFNs, Unicode names.
+            fonts = []
+            if data:
+                count = _u16(data)
+                if count > 0x7FF0 or _u16(data, 2):
+                    raise InvalidDocumentError('invalid DOC font table header')
+                self.budget.record(count)
+                pos = 4
+                for _ in range(count):
+                    size = _span(data, pos, 1)[0]
+                    font = _span(data, pos + 1, size)
+                    names = bytes(_span(font, 39, size - 39))
+                    if len(names) < 2 or len(names) % 2:
+                        raise InvalidDocumentError('invalid DOC font name size')
+                    try:
+                        names = names.decode('utf-16le')
+                    except UnicodeDecodeError:
+                        raise InvalidDocumentError('invalid DOC font name encoding') from None
+                    strings = names.split('\0')
+                    # ixchSzAlt is measured in UTF-16 units, not Python chars.
+                    alt = font[4]
+                    if (not strings[0] or strings[-1] != '' or
+                            len(strings) != (3 if alt else 2) or
+                            (alt and (not strings[1] or
+                             alt != len(strings[0].encode('utf-16le')) // 2 + 1))):
+                        raise InvalidDocumentError('invalid DOC font names or alternate index')
+                    fonts.append((font[3], strings[0].casefold()))
+                    pos += size + 1
+                if pos != len(data):
+                    raise InvalidDocumentError('unexpected trailing DOC font table bytes')
+            else:
+                self.warn('Symbol font table is absent; symbol codes are retained without font interpretation.')
+            self.symbol_fonts = fonts
+        if not self.symbol_fonts and not self.pair(15)[1]:
+            return None
+        if index >= len(self.symbol_fonts):
+            raise InvalidDocumentError('DOC symbol references a missing font')
+        return self.symbol_fonts[index]
+
+    def _symbol_char(self, cp):
+        piece = self.pieces[bisect_right(self.cps, cp) - 1]
+        props = dict(self._symbol_chpx(piece.fc + (cp - piece.cp) * piece.width))
+        if piece.prm not in self.symbol_prms:
+            group = b''
+            if piece.prm & 1:
+                group = self.prcs[piece.prm >> 1]
+            elif (piece.prm >> 1) & 0x7F == 0x75:  # Prm0 CFSpec
+                group = struct.pack('<HB', 0x0855, piece.prm >> 8)
+            self.symbol_prms[piece.prm] = self._symbol_modifiers(group)
+        props.update(self.symbol_prms[piece.prm])
+        if 'symbol' not in props or props.get('special') is False:
+            return None
+        font_index, code = props['symbol']
+        font = self._symbol_font(font_index)
+        # CSymbolOperand.xchar is Unicode, never an ANSI code-page byte.
+        # Do not guess Wingdings/Symbol mappings or borrow unlicensed tables.
+        if (0xE000 <= code <= 0xF8FF or
+                (font and (font[0] == 2 or font[1] in
+                 ('symbol', 'wingdings', 'wingdings 2', 'wingdings 3', 'webdings')))):
+            self.warn('Font-dependent symbol codes are retained verbatim; no font-specific Unicode glyph mapping is applied.')
+        if 0xD800 <= code <= 0xDFFF:
+            self.warn('Invalid symbol Unicode surrogate was replaced with U+FFFD.')
+            return '\ufffd'
+        if code < 32:
+            self.warn('Symbol control code is retained literally, not interpreted as a DOC delimiter.')
+        return chr(code)
 
     def clean(self, start, end):
         raw = bytes(self.text[start * 2:end * 2])
@@ -379,7 +517,10 @@ class _Doc:
             self.warn('Invalid UTF-16 was replaced with U+FFFD.')
             value = raw.decode('utf-16le', errors='replace')
         out = []
+        next_cp = start
         for ch in value:
+            cp = next_cp
+            next_cp += 2 if ord(ch) > 0xFFFF else 1
             if ch == '\x13':
                 if len(self.fields) >= self.limits.max_depth:
                     raise LimitExceededError('DOC field nesting limit exceeded')
@@ -400,6 +541,11 @@ class _Doc:
                 continue
             if self.fields and not all(self.fields):
                 continue
+            if ch == '(':
+                symbol = self._symbol_char(cp)
+                if symbol is not None:
+                    out.append(symbol)
+                    continue
             if ch in ('\x01', '\x08'):
                 self.warn('Embedded objects and drawings are omitted; textbox stories are extracted separately.')
             elif ch in ('\x02', '\x05'):
@@ -472,7 +618,7 @@ class _Doc:
                 self._end_fields()
             start += count
         if self.pair(12)[1]:
-            self.warn('Character formatting is not evaluated; hidden and revision-deleted text may be included.')
+            self.warn('Character formatting beyond direct symbol properties is not evaluated; hidden and revision-deleted text may be included.')
         return self.document
 
     def _end_fields(self):
