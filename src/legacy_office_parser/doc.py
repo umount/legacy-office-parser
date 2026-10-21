@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import struct
 
 from ._ole import open_ole, read_stream
+from ._doc_textboxes import live_textbox_ranges
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
@@ -436,13 +437,25 @@ class _Doc:
                     self.warn('Comment story text is omitted; the output model has no comments field.')
                 else:
                     parts = []
-                    for text, cp, mark in self.paragraphs(start, count):
-                        props = self.properties(cp)
-                        if props.in_table or props.depth or props.inner:
-                            self.warn('Tables in auxiliary stories are flattened to text.')
-                        if props.depth > 1 or props.inner:
-                            self.warn('Nested tables are unsupported and flattened in CP order.')
-                        parts.append(text)
+                    ranges = [(0, count)]
+                    textbox_plc = b''
+                    if index in (5, 6):
+                        textbox_plc = self.table_part(56 if index == 5 else 58)
+                        ranges = live_textbox_ranges(
+                            textbox_plc, count, self.limits,
+                            record=self.budget.record, warn=self.warn,
+                        )
+                    for begin, end in ranges:
+                        if textbox_plc and self.text[(start + end - 1) * 2:(start + end) * 2] != b'\r\0':
+                            raise InvalidDocumentError('DOC live textbox has no final paragraph mark')
+                        for text, cp, mark in self.paragraphs(start + begin, end - begin):
+                            props = self.properties(cp)
+                            if props.in_table or props.depth or props.inner:
+                                self.warn('Tables in auxiliary stories are flattened to text.')
+                            if props.depth > 1 or props.inner:
+                                self.warn('Nested tables are unsupported and flattened in CP order.')
+                            parts.append(text)
+                        self._end_fields()
                     value = '\n'.join(parts)
                     attr = {1: 'footnotes', 2: 'headers_footers', 4: 'endnotes',
                             5: 'textboxes', 6: 'textboxes'}[index]
