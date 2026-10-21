@@ -728,15 +728,19 @@ class _Parser:
         self.sinks[0].finish()
         self.document.blocks = self.sinks[0].blocks
         extras: dict[str, list[str]] = {}
+        structured = {sink.story for sink in self.sinks[1:]
+                      if any(isinstance(block, Table) for block in sink.blocks)}
         for sink in self.sinks[1:]:
-            # Story tables are preserved as tab/newline text in model extras.
+            # Preserve all blocks of a table-bearing story, including paragraphs
+            # from its other sinks. Legacy strings keep their existing projection.
+            if sink.story in structured:
+                self.document.story_blocks.setdefault(sink.story, []).extend(sink.blocks)
             self.charge(max(0, len(sink.blocks) - 1))
             parts = []
             for block in sink.blocks:
                 if isinstance(block, Paragraph):
                     parts.append(block.text)
                 else:
-                    self.warn('Tables in headers or notes flattened to text.')
                     self.charge(sum(max(0, len(row) - 1) for row in block.rows)
                                 + max(0, len(block.rows) - 1))
                     parts.append('\n'.join('\t'.join(c.text for c in row) for row in block.rows))
@@ -746,7 +750,11 @@ class _Parser:
                     self.charge(1)
                 extras.setdefault(sink.story, []).append(text)
         for story, parts in extras.items():
-            setattr(self.document, story, '\n'.join(parts))
+            text = '\n'.join(parts)
+            if story in structured:
+                # Both the retained blocks and their aggregate string count.
+                self.charge(len(text))
+            setattr(self.document, story, text)
         if self.has_nested:
             # Bound the public text projection too, without allocating it. The
             # retained parent/child strings were already charged while built.
