@@ -1,4 +1,7 @@
 """Bounded MS-DOC STSH reader for extraction, not a formatting/layout engine."""
+from dataclasses import replace
+
+from ._doc_table import FrameIdentity, frame_change
 from .errors import InvalidDocumentError, LimitExceededError, UnsupportedFormatError
 
 
@@ -7,6 +10,8 @@ class Styles:
         self.doc = doc
         self.styles = []
         self.cache = {}
+        self.frame_overrides = {}
+        self.frame_cache = {}
         data = doc.table_part(1)  # fcStshf, NOT the original stylesheet fcStshfOrig.
         self.present = bool(data)
         if not data:
@@ -51,6 +56,7 @@ class Styles:
             if cupx not in expected:
                 raise InvalidDocumentError('invalid DOC style UPX count')
             hidden = ()
+            frame = {}
             if kind in (1, 2):
                 if kind == 1:
                     if u16(groups[0]) != index:
@@ -61,6 +67,9 @@ class Styles:
                                 0x2416, 0x2417, 0x6649, 0x664A, 0x244B, 0x244C,
                                 0x4600, 0xC601, 0x6646, 0x6645, 0x646B):
                             raise InvalidDocumentError('forbidden DOC paragraph style property')
+                        change = frame_change(op, arg)
+                        if change is not None:
+                            frame[change[0]] = change[1]
                 operations = []
                 for op, arg in doc._sprms(groups[1 if kind == 1 else 0]):
                     if (op >> 10) & 7 != 2 or op in (
@@ -74,8 +83,43 @@ class Styles:
 
                 hidden = tuple(operations)
             self.styles.append((kind, base, hidden))
+            if frame:
+                self.frame_overrides[index] = frame
         if pos != len(data):
             raise InvalidDocumentError('unexpected DOC stylesheet trailing bytes')
+
+    def frame(self, index):
+        """Resolve paragraph frame inheritance, bounded by existing style limits."""
+        if index in self.frame_cache:
+            return self.frame_cache[index]
+        # PIstd may temporarily name an invalid style before a later override.
+        # Its specified effect is to restore default paragraph properties.
+        if (index >= len(self.styles) or self.styles[index] is None
+                or self.styles[index][0] != 1):
+            return FrameIdentity()
+        path, seen = [], set()
+        current = index
+        while current != 0xFFF:
+            if current in seen:
+                raise InvalidDocumentError('cyclic DOC style inheritance')
+            if len(path) >= self.doc.limits.max_depth:
+                raise LimitExceededError('DOC style inheritance depth limit exceeded')
+            if current >= len(self.styles):
+                raise InvalidDocumentError('DOC style reference is out of range')
+            entry = self.styles[current]
+            if entry is None:
+                raise InvalidDocumentError('DOC style references an empty style')
+            if entry[0] != 1:
+                raise InvalidDocumentError('DOC style kind mismatch')
+            self.doc.budget.record()
+            seen.add(current)
+            path.append(current)
+            current = entry[1]
+        value = FrameIdentity()
+        for current in reversed(path):
+            value = replace(value, **self.frame_overrides.get(current, {}))
+        self.frame_cache[index] = value
+        return value
 
     def hidden(self, index, kind, initial=False):
         """Resolve CFVanish against the parent style; no recursion or CP-sized cache."""

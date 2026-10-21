@@ -14,7 +14,7 @@ import struct
 
 from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
-from ._doc_table import TableIdentity, apply_table
+from ._doc_table import FrameIdentity, TableIdentity, apply_table, frame_change
 from ._doc_styles import Styles, character_ops, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
@@ -98,6 +98,7 @@ class _Props:
     table_left: int = 0
     table_gap: int = 0
     identity: TableIdentity = field(default_factory=TableIdentity)
+    frame: FrameIdentity = field(default_factory=FrameIdentity)
 
     @property
     def inner(self):
@@ -348,6 +349,7 @@ class _Doc:
                 consumed += 2 + len(arg)
                 if op == 0x4600:
                     props.style = _u16(arg)
+                    props.frame = self.styles.frame(props.style)
                 elif op in (0xC601, 0x2602):
                     raise UnsupportedFormatError('DOC paragraph style permutation/increment is unsupported')
                 elif op == 0x563A:
@@ -418,6 +420,8 @@ class _Doc:
                     props.flags.extend([0] * (n - len(props.flags)))
                     if any(a > b for a, b in zip(props.edges, props.edges[1:])):
                         raise InvalidDocumentError('DOC cell boundaries are decreasing')
+                elif (change := frame_change(op, arg)) is not None:
+                    props.frame = replace(props.frame, **{change[0]: change[1]})
                 elif apply_table(props, op, arg, self.warn):
                     pass
                 elif op == 0xD606:
@@ -441,17 +445,18 @@ class _Doc:
             return self.paragraph_cache[1]
         piece = self.pieces[bisect_right(self.cps, cp) - 1]
         style, group = self._papx(piece.fc + (cp - piece.cp) * piece.width)
-        props = _Props(style=style)
+        props = _Props(style=style, frame=self.styles.frame(style))
         self._apply(props, group)
         if piece.prm & 1:
             self._apply(props, self.prcs[piece.prm >> 1])
         elif piece.prm:
-            # MS-DOC Prm0: table flags use the same one-byte operands as
+            # MS-DOC Prm0: table flags and frame properties use the same operands as
             # their full Sprms and override PAPX, including explicit zero.
             isprm = (piece.prm >> 1) & 0x7F
             if isprm == 0x04:
                 raise UnsupportedFormatError('DOC paragraph style increment is unsupported')
-            op = {0x18: 0x2416, 0x19: 0x2417}.get(isprm)
+            op = {0x18: 0x2416, 0x19: 0x2417, 0x1D: 0x261B,
+                  0x25: 0x2423, 0x32: 0x2430}.get(isprm)
             if op is not None:
                 self._apply(props, struct.pack('<HB', op, piece.prm >> 8))
             elif isprm not in (0x41, 0x43, 0x53, 0x5C, 0x75):
@@ -815,6 +820,8 @@ class _TableLevel:
         self.row_edges = []
         self.direction = False
         self.identity = TableIdentity()
+        self.first_frame = None
+        self.previous_frame = None
 
     def cell(self):
         self.doc.budget.cell()
@@ -827,9 +834,14 @@ class _TableLevel:
         self.cells.append(Cell(text=_projection(self.paras), blocks=self.paras if complex_cell else []))
         self.paras = []
 
-    def row(self, props):
+    def row(self, props, *, complete=True):
         direction = props.bidi or props.bidi90
-        if self.table.rows and (direction != self.direction or props.identity != self.identity):
+        frame_boundary = (complete and self.identity.default_position
+                          and props.identity.default_position
+                          and self.previous_frame is not None and self.first_frame is not None
+                          and self.previous_frame != self.first_frame)
+        if self.table.rows and (direction != self.direction or props.identity != self.identity
+                                or frame_boundary):
             # Row properties arrive at the TTP, after its cells are buffered.
             # Close only the completed rows; keep this pending row intact.
             self._normalize_grid()
@@ -839,6 +851,8 @@ class _TableLevel:
             self.row_edges = []
         self.direction = direction
         self.identity = props.identity
+        self.previous_frame = self.first_frame
+        self.first_frame = None
         if props.edges and len(props.edges) - 1 != len(self.cells):
             self.doc.warn('Table definition and cell marks disagree; observed cells are retained without inferred cells.')
         self._merge(props)
@@ -896,6 +910,10 @@ class _TableLevel:
         self.ensure_table()
         row_end = props.row_end if self.depth == 1 else props.inner_ttp
         cell_end = mark == 7 if self.depth == 1 else props.inner_cell
+        # At this depth only: a nested table's paragraphs are not its parent's
+        # first paragraph. Empty/hidden paragraphs still have frame properties.
+        if not row_end and not self.cells and self.first_frame is None:
+            self.first_frame = props.frame
         if self.depth > 1 and (props.row_end or mark == 7):
             self.doc.warn('Outer table markers at nested depth were retained as paragraph boundaries.')
         if row_end:
@@ -921,13 +939,15 @@ class _TableLevel:
             self.doc.warn('Table ends without a row terminator; the incomplete row is retained.')
             if self.paras:
                 self.cell()
-            self.row(_Props(bidi=self.direction, identity=self.identity))
+            self.row(_Props(bidi=self.direction, identity=self.identity), complete=False)
         self._normalize_grid()
         self.table = None
         self.vertical = {}
         self.row_edges = []
         self.direction = False
         self.identity = TableIdentity()
+        self.first_frame = None
+        self.previous_frame = None
 
     def _normalize_grid(self):
         # A wide physical cell can span boundaries introduced by other rows.

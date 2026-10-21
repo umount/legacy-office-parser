@@ -20,6 +20,74 @@ class TableIdentity:
     bottom: int = 0
 
 
+    @property
+    def default_position(self):
+        # TIpgp/style/direction are separate identity criteria, not this gate.
+        return (self.anchor == 0xF0 and not self.no_overlap
+                and not any((self.x, self.y, self.left, self.top, self.right, self.bottom)))
+
+
+@dataclass(frozen=True, slots=True)
+class FrameIdentity:
+    """Only the twelve paragraph frame properties named by MS-DOC 2.4.3."""
+    anchor: int = 0xF0
+    x: int = 0
+    y: int = 0
+    width: int = 0
+    height: int = 0
+    drop_cap: int = 0
+    wrap: int = 0
+    distance_x: int = 0
+    distance_y: int = 0
+    locked: bool = False
+    no_overlap: bool = False
+    flow: int = 0
+
+
+_FRAME_FIELDS = {
+    0x261B: 'anchor', 0x8418: 'x', 0x8419: 'y', 0x841A: 'width',
+    0x442B: 'height', 0x442C: 'drop_cap', 0x2423: 'wrap',
+    0x842F: 'distance_x', 0x842E: 'distance_y', 0x2430: 'locked',
+    0x2462: 'no_overlap', 0x443A: 'flow',
+}
+
+
+def frame_change(op, arg):
+    """Decode one supported property, masking reserved bits before comparison."""
+    name = _FRAME_FIELDS.get(op)
+    if name is None:
+        return None
+    value = int.from_bytes(arg, 'little')
+    if name == 'anchor':
+        value &= 0xF0
+    elif name in ('x', 'y'):
+        value = struct.unpack('<h', arg)[0]
+        if not -31679 <= value <= 31681:
+            raise InvalidDocumentError('invalid DOC frame position operand')
+    elif name in ('width', 'distance_x', 'distance_y'):
+        if not 0 <= value <= 31680:
+            raise InvalidDocumentError('invalid DOC frame distance operand')
+    elif name in ('locked', 'no_overlap'):
+        if value not in (0, 1):
+            raise InvalidDocumentError('invalid DOC frame boolean operand')
+    elif name == 'wrap':
+        if value > 5:
+            raise InvalidDocumentError('invalid DOC frame wrap operand')
+    elif name == 'height':
+        if (value & 0x7FFF) > 31680 or value == 0x8000:
+            raise InvalidDocumentError('invalid DOC frame height operand')
+    elif name == 'drop_cap':
+        value &= 0xFF
+        # Zero is the paragraph default (no drop cap).
+        if value and ((value & 7) not in (1, 2) or not 1 <= value >> 3 <= 10):
+            raise InvalidDocumentError('invalid DOC frame drop cap operand')
+    elif name == 'flow':
+        value &= 7
+        if value & 2 and not value & 1:
+            raise InvalidDocumentError('invalid DOC frame text flow operand')
+    return name, value
+
+
 _POSITION_FIELDS = {
     0x940E: 'x', 0x940F: 'y', 0x9410: 'left', 0x9411: 'top',
     0x941E: 'right', 0x941F: 'bottom',
