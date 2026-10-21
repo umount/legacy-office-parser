@@ -434,7 +434,7 @@ def assert_generated_note_model(doc, raw, roundtrip):
                     for child in node:
                         describe(child, path)
                 describe(note_xml)
-                pytest.fail(f'Note oracle mismatch: {kind} {i+1}; raw={source!r}; '
+                raise AssertionError(f'Note oracle mismatch: {kind} {i+1}; raw={source!r}; '
                             f'model={actual_signature!r}; xml={signature!r}; leaves={leaves!r}')
             assert source.endswith('\r')
             assert raw_body_words(source) == signature_words(signature)
