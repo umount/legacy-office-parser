@@ -191,8 +191,37 @@ def test_optional_libreoffice_roundtrip_of_authored_fixture(tmp_path, fmt):
         source = convert(source, fmt, tmp_path / 'source')
     expected = convert(source, 'docx', tmp_path / 'reference')
     doc = getattr(api, 'parse_' + fmt)(source)
+    authored = 'Reference header alpha Second header beta'.split()
+    # Writer versions can emit separate first/even/default parts for one source
+    # header. Verify every part's full authored content without declaring those
+    # variants to have a recoverable cross-story order or identical identities.
+    import xml.etree.ElementTree as ET
     with ZipFile(expected) as archive:
         report = reference.compare_document(doc, archive)
-    assert report['headers_footers']['content_complete']
-    assert report['headers_footers']['equal'] is True
-    assert report['equal'] is True
+        nonempty_parts = []
+        for name in archive.namelist():
+            if name.startswith('word/header') and name.endswith('.xml'):
+                root = ET.fromstring(archive.read(name))
+                tokens = ' '.join(node.text or '' for node in root.iter('{' + W + '}t')).split()
+                if tokens:
+                    assert tokens == authored
+                    nonempty_parts.append(tokens)
+    assert nonempty_parts
+    tokens = doc.headers_footers.split()
+    assert tokens and len(tokens) % len(authored) == 0
+    assert tokens == authored * (len(tokens) // len(authored))
+    if fmt == 'rtf':
+        assert tokens == authored  # The original source has exactly one header.
+    check = report['headers_footers']
+    assert check['content_complete']
+    assert check['reference_nonempty_stories'] == len(nonempty_parts)
+    assert report['body']['equal'] is True
+    assert report['footnotes']['equal'] is True
+    assert report['endnotes']['equal'] is True
+    assert report['textboxes']['equal'] is True
+    if len(nonempty_parts) == 1:
+        assert check['equal'] is True
+        assert report['equal'] is True
+    else:
+        assert check['equal'] is None and not check['order_comparable']
+        assert not check['complete'] and report['equal'] is None
