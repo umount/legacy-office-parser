@@ -15,7 +15,8 @@ it is not a runtime dependency or extraction oracle. Omitting `--libreoffice`
 explicitly skips the three binary formats. Inputs and isolated converter profiles
 are generated in temporary directories and removed after the run.
 
-Current follow-up: all seven formats pass after `ffe781c`; see the final section.
+Current follow-up: DOC preserves authored content but warns about preferred
+widths in 0.6; see the final section. The PPT correction remains valid.
 The earlier 0.5.0 measurements below are retained as historical evidence.
 
 ## Workload and correctness
@@ -152,3 +153,19 @@ The former warning came from fixed numeric timing metadata in `___PPT10`
 records. Unknown or potentially text-bearing extensions still warn. This result
 does not extend the completeness claim beyond the authored workload; see
 `research-ppt-extensions.md` for the classifier's exact boundary.
+
+## Follow-up: external DOC properties (0.6)
+
+One large run per format after `0ef6da7`, using the same defaults and environment.
+All content/structure expectations passed; ODT/RTF/ODS/ODP/XLS/PPT returned `ok`.
+DOC returned **`validation_failed` only for `parser_warnings`**, so the command
+exited 1. The benchmark remains strict; no diagnostic was suppressed.
+
+DOC: 3,000 paragraphs, one 300×6 table, 643,799 projected characters;
+1.7014 seconds, 32,504 KiB peak RSS. The warning explicitly states that preferred
+widths and automatic table layout are not evaluated. This is a more precise
+coverage diagnostic, with no loss in this workload's text or cell structure.
+PPT: 120 slides, 125,878 characters, zero warnings, 0.0365 seconds, 24,324 KiB.
+
+Exact page layout is outside the extraction contract. The tool still reports
+all warnings because some geometry differences can affect inferred cell spans.
