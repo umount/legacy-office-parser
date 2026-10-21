@@ -16,8 +16,12 @@ from test_odf import package
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize('resource', [
+    'file:///etc/passwd', 'http://127.0.0.1:9/data',
+    'vnd.sun.star.expand:${HOME}/private',
+])
 @pytest.mark.parametrize('kind', ['rtf', 'odt', 'ods', 'odp'])
-def test_document_resources_are_inert(kind):
+def test_document_resources_are_inert(kind, resource):
     if kind == 'rtf':
         data = (rb'{\rtf1 before '
                 rb'{\field{\*\fldinst INCLUDETEXT "file:///etc/passwd"}{\fldrslt cached}}'
@@ -44,13 +48,20 @@ def test_document_resources_are_inert(kind):
         if kind == 'ods':
             content = content.replace('<office:text>', '<office:spreadsheet><table:table><table:table-row><table:table-cell>')
             content = content.replace('</office:text>', '</table:table-cell></table:table-row></table:table></office:spreadsheet>')
+            content = content.replace('<table:table>',
+                '<table:table><table:table-source xlink:href="' + resource + '"/>', 1)
+            content = content.replace('<table:table-cell>',
+                '<table:table-cell table:formula="of:=WEBSERVICE(&quot;' + resource + '&quot;)">', 1)
         elif kind == 'odp':
             content = content.replace('<office:text>', '<office:presentation><draw:page><draw:frame><draw:text-box>')
             content = content.replace('</office:text>', '</draw:text-box></draw:frame></draw:page></office:presentation>')
+        content = content.replace('file:///etc/passwd', resource)
         data = package(fmt=kind, content=content, extra={
             '../../outside': b'not extracted',
             'Scripts/python/payload.py': b'raise Exception("not executed")',
         })
+    if kind == 'rtf':
+        data = data.replace(b'file:///etc/passwd', resource.encode('ascii'))
     child = r'''
 import json, sys
 from pathlib import Path

@@ -9,6 +9,8 @@ import json
 import os
 from pathlib import Path
 import resource
+import pyexpat
+import zlib
 import subprocess
 import sys
 import tracemalloc
@@ -16,7 +18,8 @@ import tracemalloc
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tests')]
 CASES = ('zip_expansion', 'xml_depth', 'xml_declarations', 'ole_cycle',
-         'rtf_depth', 'odf_repetition', 'repeated_parse')
+         'rtf_depth', 'odf_repetition', 'cell_odt', 'cell_ods', 'cell_odp',
+         'style_depth', 'repeated_parse')
 
 
 def child(case):
@@ -26,7 +29,20 @@ def child(case):
     from test_odf import package
     from test_ole_limits import directory_chain
     import struct
-    if case == 'zip_expansion':
+    if case.startswith('cell_'):
+        fmt = case[5:]
+        body = ('<table:table><table:table-row><table:table-cell>' +
+                '<text:p><text:s text:c="2000000"/></text:p>' * 70 +
+                '</table:table-cell></table:table-row></table:table>')
+        if fmt == 'odp':
+            body = '<draw:page>' + body + '</draw:page>'
+        data = package(body, fmt)
+        limits = Limits()
+    elif case == 'style_depth':
+        from test_odf_accumulation import presentation_styles
+        data = presentation_styles(20)
+        limits = Limits(max_depth=8)
+    elif case == 'zip_expansion':
         data = package('<text:p>' + 'a' * 2_000_000 + '</text:p>')
         limits = Limits(max_uncompressed_bytes=100_000)
     elif case == 'xml_depth':
@@ -94,7 +110,10 @@ def main():
                 results.append(json.loads(run.stdout))
         except subprocess.TimeoutExpired:
             results.append({'case': case, 'failed': True, 'error': 'wall timeout'})
-    print(json.dumps({'memory_limit_mib': 256, 'cpu_limit_s': 8, 'wall_limit_s': 15,
+    print(json.dumps({'runtime': {'python': sys.version.split()[0],
+                                  'expat': pyexpat.EXPAT_VERSION,
+                                  'zlib': zlib.ZLIB_RUNTIME_VERSION},
+                      'memory_limit_mib': 256, 'cpu_limit_s': 8, 'wall_limit_s': 15,
                       'results': results}, indent=2))
     return int(any(r.get('failed') for r in results))
 

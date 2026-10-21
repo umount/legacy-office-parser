@@ -395,10 +395,16 @@ class _Parser:
                 self.unsupported(child)
 
     def cell_text(self, e):
-        text = '\n'.join(self.paragraphs(e))
-        if len(text) > cap(self.limits, 'max_text_chars', 10_000_000):
-            raise LimitExceededError('ODF cell text limit exceeded')
-        return text
+        parts = []
+        size = 0
+        for text in self.paragraphs(e):
+            size += len(text) + bool(parts)
+            # Paragraph expansion is individually bounded; check their aggregate
+            # before retaining the next paragraph or allocating the joined cell.
+            if size + self.budget.output_chars > self.limits.max_text_chars:
+                raise LimitExceededError('ODF cell text limit exceeded')
+            parts.append(text)
+        return '\n'.join(parts)
 
     def cell_content(self, element):
         def nested(parent):
@@ -520,10 +526,12 @@ class _Parser:
         name = e.get(q('table:style-name') if family == 'table' else q('draw:style-name'))
         visited = set()
         while name and name not in visited:
-            visited.add(name)
             style = self.styles.get((family, name))
             if style is None:
                 break
+            if len(visited) >= min(self.limits.max_depth, 256):
+                raise LimitExceededError('ODF style inheritance depth limit exceeded')
+            visited.add(name)
             prop = style.find(q(property_tag))
             if prop is not None and q(attribute) in prop.attrib:
                 return prop.get(q(attribute)) in {'false', '0', 'hidden'}
