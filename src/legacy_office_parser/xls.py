@@ -1,4 +1,4 @@
-"""Focused BIFF8 extraction; no calculation, rendering, or format runtime dependency.
+"""Focused BIFF8 extraction with bounded numeric display; no calculation runtime.
 
 Protocol/reference provenance is recorded in docs/research-xls.md.
 """
@@ -10,6 +10,7 @@ import struct
 from datetime import datetime, timedelta
 
 from ._ole import open_ole, read_stream
+from ._xls_formats import BUILTIN_NUMERIC, render_number, simple_date_format
 from ._xls_strings import Segments, shared_strings
 from .errors import EncryptedDocumentError, InvalidDocumentError, LimitExceededError, UnsupportedFormatError
 from .limits import Limits
@@ -106,12 +107,22 @@ class _Parser:
             return value, 'number', str(value)
         fmt = self.xfs[xf]
         custom = self.formats.get(fmt)
+        numeric_format = custom if custom is not None else BUILTIN_NUMERIC.get(fmt)
+        if numeric_format is not None:
+            text = render_number(value, numeric_format)
+            if text is not None:
+                return value, 'number', text
+        # Reject unsupported custom syntax before the legacy date heuristic can
+        # mistake literal letters, locale tags or mixed number/date codes for dates.
+        if custom is not None and not simple_date_format(custom):
+            self.warn('Unsupported or ambiguous date/number format: raw numeric value retained.')
+            return value, 'number', str(value)
         date = 14 <= fmt <= 22 or 45 <= fmt <= 47
         time_only = fmt in (18, 19, 20, 21, 45, 47)
         uncertain = 27 <= fmt <= 36 or 50 <= fmt <= 58 or fmt == 46
         if custom is not None:
-            # Conservative subset: simple, single-section calendar/time formats.
-            cleaned = re.sub(r'"[^"]*"|\\.|_.|\*.', '', custom.lower())
+            # Already gated as a plain date/time format; never strip literals.
+            cleaned = custom.lower()
             date = bool(re.search('[ymdhs]', cleaned))
             uncertain = date and (';' in cleaned or '[' in cleaned)
             # Excel m/mm means minutes only after h/hh or before ss;
@@ -130,7 +141,7 @@ class _Parser:
             )
             time_only = (date and not calendar_month and not re.search('[yd]', cleaned)
                          and bool(re.search('[hs]', cleaned)))
-        elif fmt >= 164:
+        elif not date:
             uncertain = True
         if uncertain:
             self.warn('Unsupported or ambiguous date/number format: raw numeric value retained.')
