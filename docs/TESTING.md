@@ -1,6 +1,6 @@
 # Testing
 
-For current 0.17 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
+For current 0.18 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
 For achievements and comparisons with other libraries and LibreOffice, see
 [Comparison](COMPARISON.md). Version-specific results below are historical snapshots.
 
@@ -519,3 +519,19 @@ The installed 0.17 wheel passed all seven formats outside the source tree,
 including DOC comment ownership and hidden XLS raw values. The source archive
 contains all 127 tracked fixture files, including DOCX/XLSX/FODT reference sources
 and CSV observations; no private `tmp/` data is included.
+
+## Unicode WordArt validation (0.18)
+
+The full local suite passed **3,921 tests**, with **60 optional skips**. Ruff
+passed; 6,900 deterministic mutations over 69 public fixtures produced no
+unexpected exceptions. All 12 bounded resource checks passed, including a
+100,000-escape Unicode property with a 128-character output budget and a lexical
+budget large enough to reach the deferred property-overflow check.
+
+The WordArt/fallback/Unicode/API suites passed **201 tests** with live reference
+checks enabled, including nine new authored Unicode fixtures. Windows-1252,
+Windows-1251 and Shift-JIS examples matched LibreOffice 7.4.7.2. The Unicode
+suite is also included in the CI reference job. Public API/CLI tests preserve
+Unicode and suppress duplicate fallback content; the installed-wheel check
+covers Unicode, Cyrillic and Japanese fixtures outside the source import path.
+See [the exact supported grammar](research-rtf-fallback-text.md).

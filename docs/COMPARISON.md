@@ -131,3 +131,11 @@ For LLM input, the achieved result is direct, structured extraction with explici
 limits and independently tested behavior, without a full office-suite runtime.
 Performance measurements are kept separate in [PERFORMANCE.md](PERFORMANCE.md);
 converter startup time is not presented as a pure parser-speed comparison.
+
+## Version 0.18 Unicode evidence
+
+Nine authored RTF WordArt fixtures match LibreOffice 7.4.7.2 for BMP characters,
+surrogate-pair emoji, fallback counts, Windows-1252/1251/932 and restored encoding
+scope. This extends the narrow explicit WordArt subset; it does not establish
+support for arbitrary drawing properties or fallback-only shapes. The full local
+suite passed 3,921 tests, 6,900 mutation samples and 12 resource checks.

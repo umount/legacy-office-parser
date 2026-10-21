@@ -30,8 +30,9 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.17 adds source-linked DOC comments, hidden XLS display sections with
-raw values preserved, and a narrow subset of explicitly enabled RTF WordArt. Full compatibility with arbitrary documents has not
+Version 0.18 extends explicitly enabled RTF WordArt with Unicode and verified
+Windows-1252, Windows-1251 and Shift-JIS text. Source-linked DOC comments and
+hidden XLS display sections with raw values preserved remain available. Full compatibility with arbitrary documents has not
 yet been established; [coverage and limitations](docs/TESTING.md) are documented
 separately.
 
@@ -44,7 +45,7 @@ separately.
 - PPT 97–2003: current slides, titles, text, WordArt, ordinary text from active
   masters, stored static dates/footers, notes and comments.
 - RTF: code pages and Unicode, paragraphs, tables with ordinary rectangular
-  merges, nested tables, shape text, explicitly enabled literal WordArt and auxiliary text stories. Ambiguous merges
+  merges, nested tables, shape text, explicitly enabled Unicode WordArt and auxiliary text stories. Ambiguous merges
   produce warnings.
 - ODT: paragraphs, nested tables, notes, frames and headers/footers from selected
   master pages; ODS: sheets and cells; ODP: slides and notes.
@@ -60,8 +61,8 @@ construct in the document was extracted. See [support and limitations](docs/TEST
 
 On verified extraction cases, the parser matches the content and structure
 checked against LibreOffice. In specific documented cases, it preserves tables
-or repeated content lost during LibreOffice conversion. Version 0.17 passed
-3,804 tests, 9,500 deterministic mutations and local LibreOffice reference checks.
+or repeated content lost during LibreOffice conversion. Version 0.18 passed
+3,921 tests, 6,900 deterministic mutations and local LibreOffice reference checks.
 This is measured coverage, not a claim of complete office-suite compatibility.
 Apache OpenOffice has not been tested separately.
 

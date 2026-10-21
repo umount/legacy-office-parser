@@ -280,3 +280,11 @@ results, malformed-input and budget checks, and original reference fixtures.
 RTF fallback-only ownership remains unresolved rather than being guessed.
 See `research-doc-comments.md`, `research-xls-hidden-sections.md` and
 `research-rtf-fallback-text.md` for the contracts and evidence.
+
+### Unicode WordArt (0.18)
+
+Extended the verified explicit RTF WordArt subset using the existing incremental
+text decoder. Unicode fallback, surrogate pairs and three proven code pages
+retain shared text limits and strict shape ownership. Original LibreOffice
+fixtures, independent adversarial cases and API/CLI checks cover the extension.
+Fallback-only shapes and richer property grammar remain explicitly deferred.

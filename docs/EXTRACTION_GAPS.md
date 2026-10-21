@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register after 0.17. Each item requires a verified example, independent
+Working register after 0.18. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -72,6 +72,14 @@ does not establish completeness.
 - RTF: explicit type-136 WordArt with enable flags and a bounded literal ASCII
   property grammar. Independent LibreOffice readback confirms the original example.
   Fallback-only shape probes did not establish a safe recovery rule.
+
+## Completed in 0.18
+
+- RTF: Unicode and Windows-1252/1251/932 text in the verified explicit WordArt
+  subset, including scoped fallback counts and surrogate pairs. Nine authored
+  fixtures match independent LibreOffice extraction; malformed properties are
+  omitted as a whole. Nested formatting, other code pages and fallback-only
+  ownership remain outside this subset.
 
 ## Next areas to verify
 
