@@ -61,6 +61,7 @@ jobs:
           ODF_STORIES_LIBREOFFICE: '1'
           ODF_INLINE_LO_ORACLE: '1'
           ODF_PASSIVE_RESEARCH_LO: '1'
+          ODS_FLOATING_LO: '1'
           OFFICE_CORPUS_LIBREOFFICE: '1'
           AUXILIARY_REFERENCE_LO: '1'
         run: |
@@ -77,7 +78,7 @@ jobs:
                 'tests/test_xls_sections_ole.py', 'tests/test_rtf_story_blocks.py', 'tests/test_xls_conditions.py',
                 'tests/test_odf_inline_objects.py', 'tests/test_rtf_legacy_textboxes.py',
                 'tests/test_xls_scaled_currency_ole.py', 'tests/test_odf_passive_research.py',
-                'tests/test_doc_notes.py'], None),
+                'tests/test_doc_notes.py', 'tests/test_ods_floating_research.py'], None),
               ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures', '--libreoffice',
                 '--fail-on-difference'], 'reference-report.json'),
               ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures/doc_nested', '--libreoffice',

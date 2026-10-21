@@ -51,14 +51,28 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
         total += len(slide.title) + len(slide.text) + len(slide.notes)
     if len(doc.sheets) > limits.max_sheets:
         raise LimitExceededError('sheet count limit exceeded')
+    drawing_records = 0
+    sheet_visible = max(0, len(doc.sheets) - 1) * 2
     for sheet in doc.sheets:
         if not 0 <= sheet.rows <= limits.max_rows or not 0 <= sheet.columns <= limits.max_columns:
             raise LimitExceededError('sheet dimensions exceed limits')
         total += len(sheet.name)
+        sheet_visible += len(sheet.name)
+        drawing_records += len(sheet.drawings)
+        if drawing_records > limits.max_records:
+            raise LimitExceededError('sheet drawing record limit exceeded')
+        for drawing in sheet.drawings:
+            total += len(drawing)
+            if drawing:
+                sheet_visible += 1 + len(drawing)
+        if total > limits.max_text_chars:
+            raise LimitExceededError('output text size limit exceeded')
         cells += len(sheet.cells) + len(sheet.merges)
         for cell in sheet.cells:
             if not 1 <= cell.row <= limits.max_rows or not 1 <= cell.column <= limits.max_columns:
                 raise LimitExceededError('cell coordinates exceed limits')
+            if cell.text:
+                sheet_visible += 2 + len(cell.address) + len(cell.text)
             total += len(cell.text) + len(cell.formula or '')
             if isinstance(cell.value, str) and cell.value != cell.text:
                 total += len(cell.value)
@@ -68,6 +82,8 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
             if not (1 <= merged.start_row <= merged.end_row <= limits.max_rows and
                     1 <= merged.start_column <= merged.end_column <= limits.max_columns):
                 raise LimitExceededError('merged cell coordinates exceed limits')
+    if drawing_records and sheet_visible > limits.max_text_chars:
+        raise LimitExceededError('sheet rendered text limit exceeded')
     total += sum(len(s) for s in (doc.footnotes, doc.endnotes, doc.headers_footers, doc.textboxes))
     if total > limits.max_text_chars:
         raise LimitExceededError('output text size limit exceeded')

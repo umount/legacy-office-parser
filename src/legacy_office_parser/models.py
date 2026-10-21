@@ -72,6 +72,8 @@ class Sheet:
     hidden: bool = False
     rows: int = 0
     columns: int = 0
+    # Sheet-owned ordinary drawing text, in source order; never cell values.
+    drawings: list[str] = field(default_factory=list)
 
 
 
@@ -116,7 +118,8 @@ class Document:
         if self.format in ('xls', 'ods'):
             return '\n\n'.join(
                 '\n'.join([sheet.name] + [f'{c.address}\t{c.text}' for c in
-                          sorted(sheet.cells, key=lambda c: (c.row, c.column)) if c.text])
+                          sorted(sheet.cells, key=lambda c: (c.row, c.column)) if c.text] +
+                          [text for text in sheet.drawings if text])
                 for sheet in self.sheets)
         if self.format in ('ppt', 'odp'):
             return '\n\n'.join('\n'.join(p for p in (s.title, s.text, s.notes) if p) for s in self.slides)
@@ -137,6 +140,8 @@ class Document:
                     result.pop('blocks', None)
                 if not result.get('omitted'):
                     result.pop('omitted', None)
+            if 'drawings' in result and not result['drawings']:
+                result.pop('drawings')
             if 'format' in result:
                 if not result.get('story_blocks'):
                     result.pop('story_blocks', None)

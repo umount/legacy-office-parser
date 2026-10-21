@@ -79,6 +79,7 @@ class _Parser:
         # A containing story subtracts this delta to isolate its own block cost.
         self.story_budget_text = 0
         self.in_note = False
+        self.drawing_records = self.sheet_visible = 0
         self.styles = {}
         for root in roots:
             if root is not None:
@@ -531,10 +532,12 @@ class _Parser:
                           for block in blocks)
         return value, blocks
 
-    def rows(self, table):
+    def rows(self, table, *, sheet_shapes=False):
         for child in table:
             if child.tag == q('table:table-row'):
                 yield child
+            elif sheet_shapes and child.tag == q('table:shapes'):
+                continue
             elif child.tag in ROW_WRAPPERS:
                 yield from self.rows(child)
             elif child.tag not in {q('table:table-column'), q('table:table-columns'),
@@ -707,6 +710,69 @@ class _Parser:
             text = ('true' if value else 'false') if isinstance(value, bool) else str(value)
         return value, kind, text, formula
 
+    def sheet_text(self, size):
+        self.sheet_visible += size
+        if self.sheet_visible > self.limits.max_text_chars:
+            raise LimitExceededError('ODF sheet rendered text limit exceeded')
+
+    def sheet_drawings(self, container, sheet):
+        """Only ordinary direct sheet shapes; no objects, links or geometry."""
+        for shape in container:
+            if shape.tag == q('draw:frame'):
+                selected = None
+                for child in shape:
+                    if child.tag == q('draw:text-box'):
+                        selected = child
+                        break  # An empty supported alternative still wins.
+                    self.unsupported(child)
+                if selected is None:
+                    continue
+            elif shape.tag in TEXT_SHAPES:
+                selected = shape
+            else:
+                self.unsupported(shape)
+                continue
+            parts = []
+
+            def paragraphs(parent, level='root'):
+                for child in parent:
+                    if child.tag == q('text:p'):
+                        yield self.inline(child)
+                    elif child.tag == q('text:list'):
+                        yield from paragraphs(child, 'list')
+                    elif level == 'list' and child.tag in {q('text:list-item'), q('text:list-header')}:
+                        yield from paragraphs(child, 'item')
+                    else:
+                        self.unsupported(child)
+
+            for text in paragraphs(selected):
+                # Bound before retaining/joining; explicit empty paragraphs
+                # still contribute their separators to a nonempty drawing.
+                size = len(text) + bool(parts)
+                self.budget.text(size)
+                self.sheet_text(size)
+                parts.append(text)
+            if not any(parts) and len(parts) <= 1:
+                continue
+            self.drawing_records += 1
+            if self.drawing_records > self.limits.max_records:
+                raise LimitExceededError('ODF sheet drawing record limit exceeded')
+            self.sheet_text(1)  # Separator after sheet name/cells/previous drawing.
+            sheet.drawings.append('\n'.join(parts))
+
+    @staticmethod
+    def cell_address_size(row, rows, column, columns):
+        # Sum coordinate lengths by digit/letter bands, never by repeated cells.
+        def bands(start, count, base, first_end):
+            end = start + count - 1
+            low, high, width, size = 1, first_end, 1, 0
+            while low <= end:
+                size += max(0, min(end, high) - max(start, low) + 1) * width
+                low, high, width = high + 1, high * base + (base if base == 26 else base - 1), width + 1
+            return size
+        return (columns * bands(row, rows, 10, 9) +
+                rows * bands(column, columns, 26, 26))
+
     def sheets(self, body):
         for e in body:
             if e.tag != q('table:table'):
@@ -717,9 +783,13 @@ class _Parser:
             sheet = Sheet(e.get(q('table:name'), ''))
             self.budget.text(len(sheet.name))
             sheet.hidden = self.hidden(e, 'table', 'style:table-properties', 'table:display')
+            self.sheet_text(len(sheet.name) + (2 if self.doc.sheets else 0))
             self.doc.sheets.append(sheet)
+            for child in e:
+                if child.tag == q('table:shapes'):
+                    self.sheet_drawings(child, sheet)
             row_index = 1
-            for row in self.rows(e):
+            for row in self.rows(e, sheet_shapes=True):
                 rr = positive(row, 'table:number-rows-repeated', self.max_rows)
                 if row_index + rr - 1 > self.max_rows:
                     raise LimitExceededError('ODF row limit exceeded')
@@ -737,6 +807,9 @@ class _Parser:
                     self.budget.cell(rr * cr)
                     self.budget.text((len(text) + len(formula or '') +
                                       (len(value) if isinstance(value, str) else 0)) * rr * cr)
+                    if text:
+                        self.sheet_text((len(text) + 2) * rr * cr +
+                                        self.cell_address_size(row_index, rr, column, cr))
                     for r in range(row_index, row_index + rr):
                         for c in range(column, column + cr):
                             sheet.cells.append(SpreadsheetCell(r, c, value, kind, text, formula,
@@ -803,7 +876,8 @@ def _check_visible_text(doc, limits):
 
     if doc.format == 'ods':
         size = joined((joined([len(s.name)] + [len(c.address) + 1 + len(c.text)
-                                              for c in s.cells if c.text], 1)
+                                              for c in s.cells if c.text] +
+                                             [len(text) for text in s.drawings if text], 1)
                        for s in doc.sheets), 2)
     elif doc.format == 'odp':
         size = joined((joined((len(v) for v in (s.title, s.text, s.notes) if v), 1)
@@ -861,7 +935,7 @@ def parse_odf_bytes(data: bytes, limits: Limits, expected_format: str | None = N
         if any(isinstance(block, Table) for _, blocks in stories for block in blocks):
             doc.story_blocks[field] = [block for _, blocks in stories for block in blocks]
     _check_visible_text(doc, limits)
-    if doc.story_blocks:
+    if doc.story_blocks or any(sheet.drawings for sheet in doc.sheets):
         # Retained structure and its legacy projection are separate allocations.
         # Use the shared traversal for recursive cells, text, and depth budgets,
         # including callers of this byte-level entry point.
