@@ -1,64 +1,76 @@
 # legacy-office-parser
 
-**Достоверный текст и структура офисных документов для LLM.**
+**Faithful text and structure from office documents for LLMs.**
 
-Python-библиотека для подготовки DOC, XLS, PPT, RTF и OpenDocument
-(ODT, ODS, ODP) к обработке языковыми моделями. Сохраняет содержимое и отношения
-между данными: порядок чтения, строки и ячейки таблиц, объединения, значения,
-заголовки слайдов и заметки. Результат доступен как текст и структурированный JSON.
+A Python library for preparing DOC, XLS, PPT, RTF and OpenDocument
+(ODT, ODS, ODP) files for language models. It preserves content and relationships:
+reading order, table rows and cells, merged cells, values, slide titles and notes.
+Results are available as text and structured JSON.
 
-Один API и одна runtime-зависимость — `olefile` для бинарных OLE-контейнеров.
-Во время извлечения не нужны LibreOffice, Java и сеть. Макросы, скрипты и команды
-не выполняются; ссылки и внешние ресурсы не открываются.
+One API and one runtime dependency: `olefile` for binary OLE containers.
+Extraction requires neither LibreOffice nor Java nor network access. Macros,
+scripts and commands are never executed; links and external resources are not opened.
 
-## Что важно для LLM
+## What matters for LLMs
 
-- Текст сохраняет порядок; пустые ячейки и объединения не должны смещать данные
-  в соседние столбцы. Вложенные таблицы доступны отдельными блоками.
-- У ячейки электронной таблицы разделены исходное значение, тип, текстовое
-  представление и признак формулы. Например, доля `0.125` и текст `12.50%`
-  несут связанную, но разную информацию. Поддержка форматов значений развивается
-  по проверенным случаям.
-- Формулы используют сохранённый результат; вычисления и обновление внешних
-  данных не запускаются. Сохранённый результат может быть устаревшим.
-- Неизвестные конструкции и ограничения передаются через `warnings`.
-  Успешный разбор сам по себе не подтверждает полноту извлечения.
+- Text retains its order. Empty and merged cells must not shift data into
+  neighboring columns. Nested tables are available as separate blocks.
+- Spreadsheet cells separate the original value, type, display text and formula
+  flag. For example, the fraction `0.125` and the text `12.50%` convey related
+  but distinct information. Number-format support grows through verified cases.
+- Formulas use stored results; extraction does not trigger calculations or
+  external data updates. A stored result may be stale.
+- Unknown constructs and limitations are reported through `warnings`.
+  Successful parsing alone does not establish extraction completeness.
 
-Критерий качества — полнота и верность данных, значимых для модели.
-Точная вёрстка, оформление и пагинация не входят в задачу. LibreOffice
-используется при разработке как один из эталонов сравнения, наряду с
-независимыми ожидаемыми результатами собственных документов.
+Quality means complete and faithful data relevant to the model. Exact layout,
+styling and pagination are outside the scope. During development, LibreOffice
+serves as one reference reader alongside independent expected results for
+documents authored for this project.
 
-## Поддерживаемые форматы
+## Supported formats
 
-Версия 0.16 добавляет условную видимость текста для проверенного подмножества
-таблиц DOC и комментарии PPT с принадлежностью слайду.
-Полная совместимость на
-произвольных документах ещё не доказана; [покрытие и ограничения](docs/TESTING.md)
-перечислены отдельно.
+Version 0.16 adds conditional text visibility for a verified subset of DOC tables
+and slide-owned PPT comments. Full compatibility with arbitrary documents has not
+yet been established; [coverage and limitations](docs/TESTING.md) are documented
+separately.
 
-- DOC 97–2003: абзацы, вложенные таблицы и объединения; отдельные области текста, наследование видимости стилей.
-- XLS BIFF8: листы, разреженные типизированные ячейки, объединения,
-  сохранённые результаты формул; проценты, десятичные числа, группировка разрядов
-  и научная запись; явные текстовые подписи до/после числа, секции по знаку.
-  Более старые версии BIFF не поддержаны.
-- PPT 97–2003: действующие слайды, заголовки, текст, WordArt, обычный текст
-  активных мастеров, сохранённые статические даты/подписи, заметки и комментарии.
-- RTF: кодовые страницы и Unicode, абзацы, таблицы с обычными прямоугольными
-  объединениями, вложенные таблицы, текст фигур и дополнительные области текста.
-  Неоднозначные объединения сопровождаются предупреждениями.
-- ODT: абзацы, вложенные таблицы, сноски, рамки и колонтитулы выбранных шаблонов страниц; ODS: листы и ячейки; ODP: слайды и заметки.
+- DOC 97–2003: paragraphs, nested tables and merges; separate text stories and
+  inherited style visibility.
+- XLS BIFF8: sheets, sparse typed cells, merges and stored formula results;
+  percentages, decimals, digit grouping and scientific notation; explicit text
+  labels before/after numbers and sign-based sections. Older BIFF versions are
+  unsupported.
+- PPT 97–2003: current slides, titles, text, WordArt, ordinary text from active
+  masters, stored static dates/footers, notes and comments.
+- RTF: code pages and Unicode, paragraphs, tables with ordinary rectangular
+  merges, nested tables, shape text and auxiliary text stories. Ambiguous merges
+  produce warnings.
+- ODT: paragraphs, nested tables, notes, frames and headers/footers from selected
+  master pages; ODS: sheets and cells; ODP: slides and notes.
 
-Макросы, скрипты, активные объекты и команды документа не выполняются.
-Формулы не пересчитываются: возвращаются сохранённые значения с признаками
-формул. Пакет не переходит по ссылкам, не загружает внешние ресурсы и шаблоны.
-Видимый текст ссылки остаётся обычным текстом. Рендеринг, точное оформление
-и пагинация не входят в задачу. Проверяйте `warnings`: успешный разбор не означает, что извлечены
-все конструкции документа. [Поддержка и ограничения](docs/TESTING.md).
+Macros, scripts, active objects and document commands are never executed.
+Formulas are not recalculated: stored values are returned with formula flags.
+The package does not follow links or load external resources or templates.
+Visible link text remains ordinary text. Rendering, exact styling and pagination
+are outside the scope. Check `warnings`: successful parsing does not mean every
+construct in the document was extracted. See [support and limitations](docs/TESTING.md).
 
-## Установка и использование
+## Extraction quality
 
-Из локального репозитория:
+On verified extraction cases, the parser matches the content and structure
+checked against LibreOffice. In specific documented cases, it preserves tables
+or repeated content lost during LibreOffice conversion. Version 0.16 passed
+3,507 tests, 8,100 deterministic mutations and the LibreOffice reference CI job.
+This is measured coverage, not a claim of complete office-suite compatibility.
+Apache OpenOffice has not been tested separately.
+
+See [achievements and alternatives](docs/COMPARISON.md) for the evidence,
+previously reviewed libraries and the limits of these comparisons.
+
+## Installation and usage
+
+From a local checkout:
 
 ```sh
 python -m pip install .
@@ -67,7 +79,7 @@ python -m pip install .
 ```python
 from legacy_office_parser import parse, parse_xls, Limits
 
-# Формат определяется по содержимому, а не расширению имени.
+# Detect the format from content, not the filename extension.
 document = parse("example.odt", limits=Limits(max_file_bytes=32 * 1024 * 1024))
 print(document.text)
 structured = document.to_dict()
@@ -78,43 +90,45 @@ for sheet in workbook.sheets:
         print(sheet.name, cell.address, cell.value_type, cell.value, cell.is_formula)
 ```
 
-Вложенное содержимое ячейки доступно в `Cell.blocks`; `Cell.text` остаётся
-его полной текстовой проекцией. Для таблиц дополнительных областей DOC, RTF и ODT
-`Document.story_blocks` содержит блоки с ключами `footnotes`, `endnotes`,
-`headers_footers`, `textboxes`. Одноимённые строки сохраняются для текстового
-API. Пустой `story_blocks` отсутствует в JSON; `Document.text` не дублирует
-структурированные области. Для DOC `Document.notes` связывает отдельные тела сносок с исходными ссылками.
-`body` задаёт диапазон блоков в `story_blocks`; `anchor_path` указывает на
-абзац или ячейку основного текста. `source_cp` — позиция в исходном DOC,
-не индекс в нормализованной строке. `visibility` отмечает скрытую, удалённую
-или неизвестную видимость ссылки. Пустой `notes` отсутствует в JSON.
-Печатная нумерация сносок и положение рамок не восстанавливаются.
+Nested cell content is available in `Cell.blocks`; `Cell.text` remains its full
+text projection. For tables in auxiliary DOC, RTF and ODT stories,
+`Document.story_blocks` contains blocks under `footnotes`, `endnotes`,
+`headers_footers` and `textboxes`. The corresponding strings remain available
+for the text API. Empty `story_blocks` is omitted from JSON; `Document.text`
+does not duplicate structured stories. For DOC, `Document.notes` links individual
+note bodies to source references. `body` identifies a block range in
+`story_blocks`; `anchor_path` points to a main-story paragraph or cell.
+`source_cp` is a position in the source DOC, not an index into normalized text.
+`visibility` records hidden, deleted or unknown reference visibility. Empty
+`notes` is omitted from JSON. Printed note numbering and frame placement are
+not reconstructed.
 
-Есть также `parse_doc`, `parse_ppt`, `parse_rtf`, `parse_odt`, `parse_ods`,
-`parse_odp`. Все принимают путь или `bytes` и возвращают `Document`.
-Координаты ячеек электронных таблиц и границы объединений — с единицы.
-Отсутствующие ячейки листов не разворачиваются в плотную сетку.
-Текст обычных рисунков ODS хранится в `Sheet.drawings` в исходном порядке,
-отдельно от ячеек и с сохранением принадлежности листу. `Document.text`
-добавляет его после ячеек соответствующего листа; пустое поле не попадает в JSON.
-В таблицах DOC позиции общей сетки, которых нет в исходной строке, отмечены
-`Cell.omitted=True`; это отличается от пустой ячейки и `covered=True`
-в объединении. В JSON поле `omitted` присутствует только при `true`.
-Текстовая проекция использует табуляцию и не передаёт это различие;
-для точного восстановления отношений используйте структурированный результат. `formula` содержит исходное выражение,
-если формат/парсер его предоставляет; `is_formula` сохраняется и для XLS,
-где бинарные токены формулы не переводятся в выражение.
+The package also provides `parse_doc`, `parse_ppt`, `parse_rtf`, `parse_odt`,
+`parse_ods` and `parse_odp`. Each accepts a path or `bytes` and returns `Document`.
+Spreadsheet cell coordinates and merge boundaries are one-based. Missing cells
+are not expanded into a dense grid.
+
+Ordinary ODS drawing text is stored in `Sheet.drawings`, in source order,
+separately from cells and associated with its owning sheet. `Document.text`
+appends it after the cells of that sheet; an empty field is omitted from JSON.
+In DOC tables, positions in the shared grid that are absent from a source row
+have `Cell.omitted=True`; this differs from an empty cell or `covered=True`
+within a merge. JSON includes `omitted` only when it is `true`. The text
+projection uses tabs and does not convey this distinction; use the structured
+result to recover relationships accurately. `formula` contains the source
+expression when the format/parser provides it; `is_formula` is also retained
+for XLS, whose binary formula tokens are not translated into expressions.
 
 ```sh
 legacy-office-parser example.doc --json
 legacy-office-parser example.ods --json --strict
 ```
 
-CLI: код 0 — результат получен; 2 — ошибка; 3 с `--strict` — результат содержит
-предупреждения. Лимиты структуры и текста применяются внутри парсеров;
-системный лимит памяти и таймаут задаёт вызывающий процесс.
+CLI exit codes: 0 means a result was produced; 2 means an error; 3 with `--strict`
+means the result contains warnings. Structure and text limits are enforced
+inside the parsers; the calling process sets the system memory limit and timeout.
 
-## Разработка
+## Development
 
 ```sh
 python -m pip install -e '.[dev]'
@@ -123,15 +137,19 @@ ruff check src tests tools
 python -m build
 ```
 
-Личные файлы и отчёты помещаются в игнорируемую Git папку `tmp/`.
-Публичные fixtures содержат только специально созданные документы.
+Keep private files and reports in the Git-ignored `tmp/` directory.
+Public fixtures contain only documents authored specifically for testing.
+Multilingual strings quoted in fixture documentation are literal test data and
+remain in their original languages.
 
-## Документация
+## Documentation
 
-- [План и состояние](docs/PLAN.md)
-- [Принципы и архитектура](docs/ARCHITECTURE.md)
-- [Исследование DOC/PPT и сравнение с WordCraft](docs/RESEARCH.md)
+- [Achievements and alternatives](docs/COMPARISON.md)
+- [Plan and status](docs/PLAN.md)
+- [Principles and architecture](docs/ARCHITECTURE.md)
+- [DOC/PPT research and WordCraft comparison](docs/RESEARCH.md)
 - [XLS](docs/research-xls.md), [RTF](docs/research-rtf.md), [OpenDocument](docs/research-odf.md)
-- [Проверка и ограничения](docs/TESTING.md)
-- [Производительность](docs/PERFORMANCE.md)
-- [Источники и происхождение](THIRD_PARTY.md)
+- [Validation and limitations](docs/TESTING.md)
+- [Remaining extraction gaps](docs/EXTRACTION_GAPS.md)
+- [Performance](docs/PERFORMANCE.md)
+- [Sources and provenance](THIRD_PARTY.md)

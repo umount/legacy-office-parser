@@ -1,133 +1,139 @@
-# Исследование перед реализацией — 2026-10-21
+# Research before implementation — 2026-10-21
 
-Исходники изучены до начала реализации. Это анализ плюс небольшие проверки
-отдельных функций, не независимая сертификация готовых библиотек.
+This is a historical record of the revisions and implementation stages studied below.
+Statements about limitations describe the state at the time of each investigation,
+not necessarily current package support. For the current comparison scope and
+recorded evidence, see [Comparison with libraries and office suites](COMPARISON.md).
+These findings do not constitute a broad ranking of libraries.
+
+Source code was studied before implementation began. This is an analysis with small
+checks of individual functions, not independent certification of existing libraries.
 
 ## sharepoint-to-text
 
-Ревизия: `6f2e77ca4b5fcf4e42550b9d1bb3cd51a4078dec`.
+Revision: `6f2e77ca4b5fcf4e42550b9d1bb3cd51a4078dec`.
 
-DOC: `_find_text_start_and_enc` угадывает расположение/кодировку, затем тело
-читается последовательно. Настоящая таблица фрагментов CLX/PlcPcd не используется.
-Таблицы угадываются из плоской строки: латинские слова в первой половине,
-числа во второй. Пробы отдельных функций выявили ошибочную классификацию
-кириллицы и ложное распознавание обычного текста как таблицы.
+DOC: `_find_text_start_and_enc` guesses the location/encoding, then reads the body
+sequentially. It does not use the actual CLX/PlcPcd piece table.
+Tables are inferred from a flat string: Latin-script words in the first half,
+numbers in the second. Probes of individual functions revealed incorrect classification
+of Cyrillic text and false recognition of ordinary text as tables.
 
-PPT: перебираются записи всего потока, не строится актуальный persist directory.
-Пустые слайды могут исчезнуть, заметки привязываются по позиции, текст фигур
-может быть отброшен при наличии outline-текста. Пробы функций подтвердили
-эти случаи; полный end-to-end прогон пакета не проводился.
+PPT: records are scanned across the entire stream without building the current persist directory.
+Empty slides may disappear, notes are associated by position, and shape text
+may be discarded when outline text is present. Function probes confirmed
+these cases; a full end-to-end run of the package was not performed.
 
-Решение: не делать механический fork двух файлов. Использовать проверенные
-идеи низкоуровневого чтения и спецификации. Не переносить общий роутер,
-SharePoint-клиент, изображения, PDF, архивы и другие форматы.
+Decision: do not mechanically fork the two files. Use verified low-level reading
+ideas and the specifications. Do not carry over the shared router,
+SharePoint client, images, PDF, archives, or other formats.
 
-Источник: https://github.com/Horsmann/sharepoint-to-text
+Source: https://github.com/Horsmann/sharepoint-to-text
 
 ## WordCraft
 
-Ревизия: `e05b7fe86f3b85454000dffc321de638d7009817`.
+Revision: `e05b7fe86f3b85454000dffc321de638d7009817`.
 
-`crates/docbin` действительно читает FIB/CLX/piece table, FKP/PAPX/SPRM,
-собирает таблицы и объединения. Полезные ориентиры: `piece.rs`, `fkp.rs`,
-`sprm.rs`, `table.rs`, `notes.rs` и искусственные тесты в `tests.rs`.
+`crates/docbin` does read FIB/CLX/piece table and FKP/PAPX/SPRM,
+and assembles tables and merges. Useful references: `piece.rs`, `fkp.rs`,
+`sprm.rs`, `table.rs`, `notes.rs`, and synthetic tests in `tests.rs`.
 
-Ограничение: `table.rs` прямо ограничивает структурное представление глубиной
-1; более глубокие таблицы превращаются в абзацы. DOC до Word 97 также не входит
-в этот reader. «Поддержка DOC» не означает полноту всех разновидностей.
+Limitation: `table.rs` explicitly limits the structural representation to depth
+1; deeper tables become paragraphs. DOC versions before Word 97 are also outside
+this reader's scope. “DOC support” does not mean complete coverage of all variants.
 
-Решение: использовать как технический ориентир и сверять со спецификацией.
-Rust не мешает собственной Python-реализации; сам редактор нам не нужен.
-При адаптации исходников сохранять необходимые уведомления о происхождении.
+Decision: use it as a technical reference and check it against the specification.
+Rust does not prevent an independent Python implementation; we do not need the editor itself.
+When adapting source code, retain the required attribution notices.
 
-Источник: https://github.com/storytold/wordcraft/tree/main/crates/docbin
+Source: https://github.com/storytold/wordcraft/tree/main/crates/docbin
 
 ## office_oxide
 
-Исследован как готовая альтернатива: Rust-ядро с Python-привязками, настоящее
-чтение DOC-фрагментов/таблиц и PPT persist directory. Это кандидат для
-сравнения, а не принятая runtime-зависимость нашего пакета.
+Investigated as an existing alternative: a Rust core with Python bindings, actual
+DOC piece/table parsing, and a PPT persist directory. It is a candidate for
+comparison, not an adopted runtime dependency of our package.
 
-Вложенные DOC-таблицы уплощаются. Полнота заметок PPT не подтверждена; fallback
-к старым записям в некоторых путях требует проверки. Результаты изучения main
-не следует автоматически приписывать опубликованному Python wheel.
+Nested DOC tables are flattened. Completeness of PPT notes is unconfirmed; fallback
+to old records in some paths needs checking. Findings from studying main
+must not automatically be attributed to the published Python wheel.
 
-Источник: https://github.com/yfedoseev/office_oxide
+Source: https://github.com/yfedoseev/office_oxide
 
-## Спецификации и независимый ориентир
+## Specifications and independent references
 
 - DOC: https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
 - PPT: https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-ppt/5bda8009-6612-4679-a6eb-6fb83cbcf195
-- Apache POI HSLF/HWPF: дополнительный ориентир для связей slides/notes и
-  глубины таблиц, без Java runtime в нашем пакете.
-- LibreOffice: независимый инструмент для сравнительной проверки,
-  но не единственная истина — ожидаемое содержимое искусственных файлов известно.
+- Apache POI HSLF/HWPF: an additional reference for slides/notes relationships and
+  table depth, without a Java runtime in our package.
+- LibreOffice: an independent tool for comparative validation,
+  but not the sole source of truth—the expected content of synthetic files is known.
 
-## Дополнительная сверка DOC: кодировки и границы
+## Additional DOC comparison: encodings and boundaries
 
-Сверка выполнена с той же закреплённой ревизией WordCraft `e05b7fe`:
-`piece.rs`, `fib.rs`, `fkp.rs`, `sprm.rs`, `table.rs`, `notes.rs`, `lib.rs`
-и тестами. Это сравнение исходников и отдельных воспроизводимых случаев;
-полный WordCraft не собирался и не прогонялся на частном корпусе.
-Оригинальные Rust-модули `piece.rs` и `encoding.rs` подключены без изменений
-к отдельному небольшому пробнику: подтверждены вывод U+20AC/U+017D/U+017E
-для байтов 80/8E/9E и две U+FFFD для разорванной пары UTF-16.
+The comparison used the same pinned WordCraft revision, `e05b7fe`:
+`piece.rs`, `fib.rs`, `fkp.rs`, `sprm.rs`, `table.rs`, `notes.rs`, `lib.rs`,
+and tests. This is a comparison of source code and individual reproducible cases;
+the full WordCraft project was neither built nor run against the private corpus.
+The original Rust modules `piece.rs` and `encoding.rs` were included unchanged
+in a separate small probe: it confirmed U+20AC/U+017D/U+017E output
+for bytes 80/8E/9E and two U+FFFD characters for a broken UTF-16 pair.
 
-Для кодировок независимым основанием остаётся
+The independent basis for encodings remains
 [MS-DOC FcCompressed](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-f4f2-4795-bab5-6d9d7a0ed249).
-В DOC 97–2003 несжатые фрагменты используют UTF-16LE, сжатые — однобайтовые
-значения Unicode с перечисленными в спецификации заменами. Это не выбор
-CP1251 по языку документа. Набор кодовых страниц в общем `encoding.rs`
-WordCraft обслуживает в том числе RTF и не означает их использование в DOC.
+In DOC 97–2003, uncompressed pieces use UTF-16LE; compressed pieces use single-byte
+Unicode values with the substitutions listed in the specification. This does not
+select CP1251 based on the document language. The code pages in WordCraft's shared
+`encoding.rs` also serve RTF and do not imply their use in DOC.
 
-В изученной версии WordCraft `piece.rs` вызывает `cp1252`: значения
-`0x80`, `0x8E`, `0x9E` расходятся с таблицей MS-DOC. Наше соответствие этим
-байтам сохраняется. В WordCraft пара UTF-16 объединяется только внутри
-одного фрагмента; у нас логическая последовательность кодовых единиц
-собирается до декодирования, поэтому пара на границе фрагментов сохраняется.
+In the studied WordCraft version, `piece.rs` calls `cp1252`: values
+`0x80`, `0x8E`, and `0x9E` differ from the MS-DOC table. Our mapping for these
+bytes is retained. WordCraft combines a UTF-16 pair only within a single
+piece; we assemble the logical sequence of code units before decoding,
+so a pair spanning a piece boundary is preserved.
 
-`tests/test_doc_encoding.py` проверяет все байты `0x20–0xFF`, каждую границу
-UTF-16 в многоязычной строке, изолированные суррогаты, точный предел длины
-в кодовых единицах и игнорирование зарезервированного бита FcCompressed.
-Лимит `max_text_chars` для входного DOC считается в UTF-16 единицах вместе
-с управляющими символами, поэтому символ вне BMP занимает две единицы.
+`tests/test_doc_encoding.py` checks every byte from `0x20–0xFF`, every UTF-16
+boundary in a multilingual string, isolated surrogates, the exact length limit
+in code units, and ignoring the reserved FcCompressed bit.
+For DOC input, `max_text_chars` counts UTF-16 units including control
+characters, so a character outside the BMP occupies two units.
 
-Сверка остальных частей выявила и закрыла следующие дефекты извлечения:
+Comparison of the remaining components identified and fixed these extraction defects:
 
-- Флаг обфускации без флага шифрования ошибочно приводил к отказу.
-- `cswNew/nFibNew` не учитывались при проверке версии FIB и размера массива
-  смещений. Теперь проверяется эффективная версия, включая границы расширения.
-- `sprmPDtap` не применял знаковое изменение глубины таблицы; короткие
-  переопределения не могли сбросить два независимых признака вложенности.
-- Соседние таблицы с разным направлением объединялись. Теперь граница
-  устанавливается до объединения ячеек очередной строки.
-- Служебные и повторно используемые диапазоны текстовых рамок попадали в
-  извлечённый текст. Теперь учитываются обе PLC рамок и сбрасывается состояние
-  полей между действующими диапазонами. При отсутствии PLC результат явно
-  предупреждает, что действующие диапазоны невозможно проверить.
+- The obfuscation flag without the encryption flag incorrectly caused rejection.
+- `cswNew/nFibNew` were not considered when checking the FIB version and the size of the
+  offset array. The effective version is now checked, including extension bounds.
+- `sprmPDtap` did not apply signed changes to table depth; short
+  overrides could not reset the two independent nesting flags.
+- Adjacent tables with different directions were combined. The boundary is now
+  established before merging cells in the next row.
+- Auxiliary and reused textbox ranges were included in extracted
+  text. Both textbox PLCs are now considered, and field state is reset
+  between active ranges. If PLCs are absent, the result explicitly
+  warns that active ranges cannot be verified.
 
-Изменения закреплены тестами `test_doc_fib.py`, `test_doc_table_properties.py`,
-`test_doc_textboxes.py` и `test_doc_textboxes_integration.py`. Не реализованная
-геометрия `TDxaCol` теперь вызывает предупреждение вместо молчаливого пропуска.
+The changes are covered by `test_doc_fib.py`, `test_doc_table_properties.py`,
+`test_doc_textboxes.py`, and `test_doc_textboxes_integration.py`. Unimplemented
+`TDxaCol` geometry now produces a warning instead of being silently skipped.
 
-Наследование стилей, остальные свойства Prm0, внешние свойства таблиц, скрытый/удалённый текст
-остаются ограничениями. WordCraft содержит полезные реализации этих областей,
-но их нельзя считать перенесёнными в этот пакет. Полнота его редактора не
-равна полноте нашего извлечения; сравнение с исходниками дополняет, а не
-заменяет независимые ожидаемые результаты.
-
-
-Дополнительная регрессия `test_doc_fidelity.py` закрывает компактные свойства
-Prm0 `PFInTable` и `PFTtp`, включая явный сброс и выбор свойств фрагмента,
-содержащего знак конца абзаца. Неподдержанные свойства Prm0 по-прежнему
-обозначаются предупреждением. Этот дефект воспроизведён на собственных
-синтетических данных, не на личном корпусе.
+Style inheritance, other Prm0 properties, external table properties, and hidden/deleted text
+remain limitations. WordCraft contains useful implementations of these areas,
+but they must not be considered ported to this package. The completeness of its editor
+does not imply the completeness of our extraction; source comparisons supplement,
+rather than replace, independent expected results.
 
 
-Символы `sprmCSymbol` извлекаются по CHPX/FKP и применимым свойствам фрагмента
-вместо служебного символа `(`. Таблицы форматирования и шрифтов проверяются
-по границам и общему бюджету записей. Пара `font/code` не подменяется таблицей
-угадываемых глифов: исходный Unicode-код сохраняется, PUA и символьные шрифты
-сопровождаются предупреждением. На одном локальном документе исправлены два
-символа: результат теперь совпадает с LibreOffice без учёта пробельных различий.
-Собственные регрессии проверяют также границы CHPX, переопределения и суррогаты.
+The additional regression `test_doc_fidelity.py` covers the compact Prm0 properties
+`PFInTable` and `PFTtp`, including explicit resets and selection of the properties
+of the piece containing the paragraph-end mark. Unsupported Prm0 properties
+still produce a warning. This defect was reproduced using original
+synthetic data, not the private corpus.
+
+
+`sprmCSymbol` characters are extracted using CHPX/FKP and applicable piece properties
+in place of the control character `(`. Formatting and font tables are checked
+against bounds and the shared record budget. The `font/code` pair is not replaced
+with a guessed glyph mapping: the original Unicode code is retained, while PUA and
+symbol fonts produce warnings. Two characters were corrected in one local document:
+the result now matches LibreOffice apart from whitespace differences.
+Original regressions also check CHPX boundaries, overrides, and surrogates.

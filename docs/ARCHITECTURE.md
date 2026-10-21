@@ -1,104 +1,106 @@
-# Принципы и архитектура
+# Principles and architecture
 
-## Назначение
+## Purpose
 
-Библиотека решает одну задачу: офисный документ → достоверные данные для LLM.
-Сохраняются текст, порядок чтения, связи ячеек и объединений, типы и значения,
-заголовки и заметки. Публичные интерфейсы — Python API и командная строка.
+The library has one job: office document → faithful data for LLMs.
+It preserves text, reading order, cell and merge relationships, types and values,
+titles and notes. Public interfaces are the Python API and command line.
 
-Макросы, скрипты, команды, активные объекты и формулы не исполняются.
-Нет переходов по ссылкам, сетевых загрузок или открытия ресурсов, указанных
-в документе. Сохранённый результат формулы может быть устаревшим; признак
-формулы сохраняется в модели. Точное оформление и неявная пагинация не являются
-целью. Свойства формата читаются в той мере, в которой они нужны для верного
-извлечения содержимого и структуры.
+Macros, scripts, commands, active objects and formulas are not executed.
+The parser does not follow links, download files or open resources referenced
+by a document. Stored formula results may be stale; the model retains the
+formula flag. Exact styling and implicit pagination are not goals. Format
+properties are read to the extent needed for faithful content and structure.
 
-Термин «внешние свойства DOC» обозначает записи в потоке Data внутри того же
-OLE-файла. Он не означает обращение к внешнему файлу или сетевому ресурсу.
+“External DOC properties” means records in the Data stream of the same OLE file.
+It does not mean access to an external file or network resource.
 
-## Принципы
+## Principles
 
-1. Минимум зависимостей. `olefile` читает контейнер, стандартная библиотека —
-   бинарные структуры, RTF, ZIP и XML. Не подключать весь офисный пакет ради одного парсера.
-2. Общий код выделять только по реальному повторению. Сейчас это OLE-доступ,
-   пределы, ошибки и модели. Система плагинов, универсальный реестр форматов,
-   собственный DI и отдельный сервер не нужны.
-3. Сначала правильное содержимое. Не угадывать таблицы по словам и числам,
-   не искать произвольные «похожие на текст» байты вместо чтения структур.
-4. Актуальное состояние файла важнее количества извлечённого текста. Нельзя
-   возвращать старые/удалённые записи PPT как часть действующей презентации.
-5. Неподдержанное содержимое обозначается предупреждением или ошибкой.
-   Нельзя выдавать пустой/упрощённый результат за гарантированно полный.
-6. Публичный контракт мал и типизирован. Внутренние бинарные структуры наружу
-   не передаются. Текстовые документы, таблицы и презентации используют общую
-   оболочку и подходящие каждому виду структуры.
-7. Ограничения применяются до выделения больших объектов и в циклах разбора.
-   Лимит файла не является достаточным пределом памяти всего процесса.
-   `max_depth` и `max_records` также ограничивают граф каталога OLE до
-   рекурсивного обхода библиотекой контейнера.
-8. Никаких фоновых потоков, сети и исполнения встроенного содержимого.
-9. Тесты проверяют ожидаемое содержание документов и реальные ошибки, а не
-   только повторяют ветвления реализации.
-10. Один пакет содержит модули только согласованных форматов. Готовые
-    реализации используются как технические ориентиры и источник необходимых
-    частей; происхождение адаптаций фиксируется.
+1. Minimize dependencies. `olefile` reads the container; the standard library
+   handles binary structures, RTF, ZIP and XML. Do not add an entire office suite
+   for a single parser.
+2. Extract shared code only when duplication warrants it. Currently this means
+   OLE access, limits, errors and models. A plugin system, universal format
+   registry, custom dependency injection and a separate server are unnecessary.
+3. Correct content comes first. Do not infer tables from words and numbers or
+   scan arbitrary “text-like” bytes instead of reading structures.
+4. The current file state matters more than the amount of extracted text.
+   Stale or deleted PPT records must not appear in the current presentation.
+5. Unsupported content produces a warning or error. An empty or simplified
+   result must not be presented as guaranteed complete.
+6. Keep the public contract small and typed. Do not expose internal binary
+   structures. Text documents, spreadsheets and presentations share a wrapper
+   with structures appropriate to each kind.
+7. Apply limits before large allocations and inside parsing loops. A file-size
+   limit does not bound total process memory. `max_depth` and `max_records`
+   also bound the OLE directory graph before the container library traverses it
+   recursively.
+8. No background threads, network access or execution of embedded content.
+9. Tests check expected document content and actual errors, not just mirror
+   implementation branches.
+10. One package contains modules for the agreed formats only. Existing
+    implementations serve as technical references and sources of needed parts;
+    the provenance of adaptations is recorded.
 
-## Слои
+## Layers
 
-`api.py` читает ограниченный вход и определяет формат по содержимому:
-OLE-потокам, сигнатуре RTF или MIME ZIP-пакета OpenDocument.
-`doc.py`, `xls.py`, `ppt.py`, `rtf.py`, `odf.py` — модули форматов.
-`_ole.py` и `_odf_package.py` отвечают за контейнеры; специализированные
-помощники остаются рядом с соответствующим модулем.
-`models.py`, `errors.py`, `limits.py` — общий контракт без инфраструктуры.
-`cli.py` — тонкий адаптер к тому же API, печатает JSON или текст.
+`api.py` reads bounded input and detects the format from its contents:
+OLE streams, the RTF signature or the OpenDocument ZIP package MIME type.
+`doc.py`, `xls.py`, `ppt.py`, `rtf.py` and `odf.py` implement the formats.
+`_ole.py` and `_odf_package.py` handle containers; specialized helpers stay
+alongside their format module.
+`models.py`, `errors.py` and `limits.py` define the shared contract without
+infrastructure. `cli.py` is a thin adapter to the same API, printing JSON or text.
 
-Путь и `bytes` принимаются одинаково. Расширение имени не заменяет проверку
-содержимого. DOCX, RTF под именем `.doc` и другие форматы не должны молча
-попадать в бинарный DOC-парсер.
+Paths and `bytes` are accepted consistently. Filename extensions do not replace
+content checks. DOCX, RTF named `.doc` and other formats must not silently enter
+the binary DOC parser.
 
-## Модель
+## Model
 
-DOC/RTF/ODT хранят упорядоченные `Paragraph | Table`. Таблица содержит строки и ячейки
-с текстом, `row_span`, `col_span`, `covered`; покрытые объединением координаты
-не сдвигают соседние столбцы. `Cell.blocks` сохраняет порядок абзацев и вложенных
-таблиц, а `Cell.text` — их плоскую проекцию. Дополнительные области отделены от body.
-DOC, RTF и ODT сохраняют таблицы этих областей в опциональном `Document.story_blocks`;
-ключи совпадают с текстовыми полями областей. Проекции остаются в строковых полях,
-поэтому `Document.text` не обходит дерево повторно. Пустое поле отсутствует в JSON.
-Лимит текста учитывает все удерживаемые строки, включая проекции вложенных ячеек
-и структурированных областей. DOC собирает уровни таблиц итеративно по PItap
-и раздельным маркерам ячеек/строк; глубина и число записей ограничены.
-`Document.notes` для DOC содержит ссылки на диапазоны блоков сносок и пути к
-абзацам/ячейкам основного текста. Исходный CP не является смещением в очищенной
-строке. Тела не копируются; флаги видимости относятся к ссылке. Пути вычисляются
-после окончательного построения таблиц, с памятью обхода порядка глубины.
-PPT/ODP хранят `Slide(number, title, text, notes, hidden)`, включая пустые слайды.
-XLS/ODS хранят `Sheet` с разреженным списком `SpreadsheetCell` и отдельными
-диапазонами объединений `CellRange`. Координаты начинаются с единицы. Значение,
-тип, отображаемый текст и формула отделены; формулы не вычисляются.
-XLS применяет ограниченное подмножество числовых масок только к `text`,
-сохраняя исходное числовое `value`. Форматы вне поддержанной грамматики
-возвращают исходное число с предупреждением. Полный Excel format engine
-в пакет не включается.
-`Sheet.drawings` сохраняет обычный текст рисунков ODS отдельно от ячеек,
-в порядке исходного листа. Это не координаты привязки и не значения клеток.
-`Document.text` для листов указывает адреса ячеек, добавляет рисунки после ячеек
-того же листа и не разворачивает пустую сетку.
-`Document.warnings` передаёт выявленные ограничения. `Document.text` — удобное
-плоское представление, оно не заменяет структурированные данные.
+DOC/RTF/ODT store ordered `Paragraph | Table` blocks. Tables contain rows and cells
+with text, `row_span`, `col_span` and `covered`; coordinates covered by a merge
+do not shift neighboring columns. `Cell.blocks` preserves paragraph and nested
+table order, while `Cell.text` provides their flat projection. Auxiliary stories
+are separate from the body. DOC, RTF and ODT retain tables from these stories in
+optional `Document.story_blocks`, whose keys match the story text fields.
+Projections remain in string fields, so `Document.text` does not traverse the
+tree again. Empty `story_blocks` is omitted from JSON. The text budget counts all
+retained strings, including nested-cell and structured-story projections.
+DOC builds table levels iteratively using PItap and distinct cell/row markers;
+depth and record counts are bounded.
 
-## Граница процесса
+For DOC, `Document.notes` references note block ranges and main-story paragraph
+or cell paths. Source CP is not an offset into cleaned text. Bodies are not
+copied; visibility flags describe the reference. Paths are calculated after
+tables are fully assembled, using traversal memory proportional to depth.
 
-Парсер синхронный. Таймаут, принудительное завершение и системный предел памяти
-задаёт вызывающий процесс. Пакет не создаёт собственный пул процессов.
+PPT/ODP store `Slide(number, title, text, notes, hidden)`, including empty slides.
+XLS/ODS store `Sheet` with a sparse list of `SpreadsheetCell` and separate
+`CellRange` merge ranges. Coordinates are one-based. Value, type, display text
+and formula are separate; formulas are not evaluated. XLS applies a limited
+subset of numeric masks only to `text`, retaining the original numeric `value`.
+Formats outside the supported grammar return the original number with a warning.
+The package does not include a full Excel formatting engine.
 
+`Sheet.drawings` retains ordinary ODS drawing text separately from cells,
+in source sheet order. These are neither anchor coordinates nor cell values.
+For sheets, `Document.text` includes cell addresses, appends drawings after the
+cells of the same sheet and does not expand an empty grid.
+`Document.warnings` reports detected limitations. `Document.text` is a convenient
+flat representation, not a replacement for structured data.
 
-Условная табличная видимость DOC применяется до очистки текста только после
-проверки границ и прямоугольной структуры таблицы. Неподдержанные условные
-свойства не получают предположительного результата. См. `research-doc-conditional-styles.md`.
+Conditional DOC table visibility is applied before text cleaning, only after
+verifying table boundaries and rectangular structure. Unsupported conditional
+properties do not receive guessed results. See `research-doc-conditional-styles.md`.
 
-`Slide.comments` содержит `SlideComment(text, author, initials)` для активного
-слайда. В `Document.text` включается текст комментариев после заметок; авторство
-остаётся структурированным. Пустой список не сериализуется. Все строки и записи
-учитываются в общих лимитах; макросы и внешние ссылки не исполняются.
+`Slide.comments` contains `SlideComment(text, author, initials)` for the active
+slide. `Document.text` includes comment text after notes; authorship remains
+structured. Empty lists are not serialized. All strings and records count
+toward shared limits; macros and external links are not executed.
+
+## Process boundary
+
+The parser is synchronous. The calling process sets timeouts, forced termination
+and system memory limits. The package does not create its own process pool.

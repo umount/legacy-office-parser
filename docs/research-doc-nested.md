@@ -1,28 +1,29 @@
-# Вложенные таблицы DOC
+# Nested DOC tables
 
-Источник формата: [MS-DOC, 2.4.3 Overview of Tables](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/5b45f0e7-7760-4fdb-af88-0146de2feb4c).
+Format source: [MS-DOC, 2.4.3 Overview of Tables](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/5b45f0e7-7760-4fdb-af88-0146de2feb4c).
 
-Глубину задаёт PItap/PDtap вместе с признаками принадлежности таблице.
-На первом уровне U+0007 завершает ячейку, а отдельный U+0007 с PFTtp — строку.
-На вложенных уровнях это U+000D с PFInnerTableCell и PFInnerTtp соответственно.
-Терминатор строки не должен превращаться в дополнительную пустую ячейку.
+PItap/PDtap, together with table-membership flags, specify the depth.
+At the first level, U+0007 terminates a cell, while a separate U+0007 with
+PFTtp terminates a row. At nested levels, U+000D with PFInnerTableCell and
+PFInnerTtp serves these respective roles. A row terminator must not become
+an additional empty cell.
 
-Парсер поддерживает стек уровней без рекурсивного вызова сборщика.
-Каждый уровень самостоятельно собирает строки, объединения и сетку;
-снижение глубины завершает только покидаемые уровни. Ячейка может начинаться
-со вложенной таблицы без предшествующего абзаца собственной глубины.
-`Cell.blocks` сохраняет порядок абзацев и таблиц, `Cell.text` — проекцию.
+The parser maintains a level stack without recursively invoking the builder.
+Each level independently assembles rows, merges, and its grid; decreasing the
+depth finalizes only the levels being exited. A cell may begin with a nested
+table without a preceding paragraph at the cell's own depth. `Cell.blocks`
+preserves paragraph/table order, while `Cell.text` holds the text projection.
 
-Тот же сборщик применяется к сноскам, колонтитулам и текстовым рамкам.
-Структурированные области хранятся в `Document.story_blocks`, но это не
-добавляет идентификаторов сносок, вариантов колонтитулов или положения рамок.
-Обычные области без таблиц сохраняют прежнее представление только строкой.
+The same builder is used for notes, headers/footers, and textboxes.
+Structured stories are stored in `Document.story_blocks`, but this does not
+add note identifiers, header/footer variants, or textbox positions.
+Ordinary stories without tables retain their previous string-only representation.
 
-Незавершённая строка сохраняется с предупреждением. Внутренний маркер без
-вложенной глубины отклоняется как противоречивая структура. Лимиты учитывают
-глубину, записи, все ячейки и одновременно удерживаемые текстовые проекции;
-размер проекции проверяется до её объединения в строку.
+An unfinished row is retained with a warning. An inner marker without nested
+depth is rejected as contradictory structure. Limits account for depth,
+records, all cells, and simultaneously retained text projections; the projection
+size is checked before its parts are joined into a string.
 
-Условные табличные стили, все причины разделения смежных таблиц и полная
-геометрия Word не входят в эту реализацию. Такие возможности требуют
-отдельных примеров и регрессий, а не эвристики по тексту.
+Conditional table styles, every possible reason for separating adjacent tables,
+and complete Word geometry are outside this implementation. Those features
+require dedicated examples and regressions, rather than text-based heuristics.

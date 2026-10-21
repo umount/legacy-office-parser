@@ -1,49 +1,50 @@
-# XLS: ограниченные числовые условия
+# XLS: bounded numeric conditions
 
-Поддержаны операторы `<`, `<=`, `>`, `>=`, `=`, `<>` в начале первых двух
-секций. Выбирается первая подходящая секция до округления и процентного
-масштабирования. Допустима завершающая секция без условия. Все секции,
-включая невыбранные, проверяются до формирования результата. Цветовая метка
-может предшествовать условию или следовать ему; повторённые метки запрещены.
+The operators `<`, `<=`, `>`, `>=`, `=`, and `<>` are supported at the start
+of the first two sections. The first matching section is selected before
+rounding and percent scaling. A final unconditional section is allowed.
+All sections, including those not selected, are validated before producing
+the result. A color tag may precede or follow the condition; duplicate tags
+are rejected.
 
-## Неполная поддержка и отказ от догадок
+## Incomplete support and avoiding guesses
 
-Поддержка применяется только к неотрицательным значениям. Все отрицательные
-значения с условными масками остаются исходными числами с предупреждением:
-нормативное правило неявного минуса для произвольных условных секций не
-установлено достаточно надёжно. Ранее исследованная эвристика по нескольким
-примерам LibreOffice не используется. Обычные секции по знаку не изменились.
+Support applies only to nonnegative values. All negative values with conditional
+masks retain their raw numeric representation with a warning: the normative rule
+for an implicit minus sign in arbitrary conditional sections has not been
+established reliably enough. The previously investigated heuristic based on a few
+LibreOffice examples is not used. Ordinary sign-based sections are unchanged.
 
-Также остаются неподдержанными смешанные неявные/условные трёхсекционные
-маски, условие только во второй секции, неподдержанные числовые ядра и
-ситуация, где ни одна секция не подходит. Зависимые от ширины `#####` не
-генерируются. Для нуля у двухсекционной маски `[>0]...;fallback` сохранён
-отказ из-за неоднозначного преобразования такого формата в LibreOffice.
-Одиночная условная секция допускается только с General.
+Mixed implicit/conditional three-section masks, a condition only in the second
+section, unsupported numeric cores, and cases where no section matches also
+remain unsupported. Width-dependent `#####` output is not generated. Zero in a
+two-section `[>0]...;fallback` mask still falls back because LibreOffice transforms
+that format ambiguously. A single conditional section is allowed only with General.
 
-## Точность и ограничения
+## Precision and limits
 
-Порог — ограниченная ASCII-десятичная запись в конечном диапазоне binary64.
-Дополнительно он должен совпадать со своей кратчайшей десятичной записью
-после преобразования в binary64: `Decimal(str(float(threshold)))`.
-Слишком точные пороги отклоняются. Например, `1.00000000000000001` нельзя
-сравнивать как точный Decimal, если офисный читатель округляет его до 1:
-иначе выбирается другая секция без предупреждения.
+The threshold is a bounded ASCII decimal representation within the finite
+binary64 range. It must also equal its shortest decimal representation after
+conversion to binary64: `Decimal(str(float(threshold)))`.
+Overprecise thresholds are rejected. For example, `1.00000000000000001` cannot
+be compared as an exact Decimal if an Office reader rounds it to 1; otherwise,
+a different section would be selected without a warning.
 
-Сравнения выполняются без арифметического округления и без зависимости от
-пользовательского Decimal context. Исходное значение и его знак не меняются.
-Полная маска ограничена 64 символами; общий текстовый бюджет сохраняется.
+Comparisons involve no arithmetic rounding and do not depend on the caller's
+Decimal context. The raw value and its sign are unchanged. The complete mask
+is limited to 64 characters; the cumulative text budget remains in force.
 
-## Источники и проверки
+## Sources and validation
 
 - [MS-XLS Format grammar](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/300280fd-e4fe-4675-a924-4d383af48d3b)
 - [Microsoft numbering formats](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.numberingformats)
 - [LibreOffice format codes](https://help.libreoffice.org/latest/en-US/text/shared/01/05020301.html)
 
-Синтетические BIFF-потоки проверяют все операторы, границы, исходные типы,
-FORMULA-кеши, лимиты и hostile Decimal context. Авторские OOXML-книги проходят
-XLSX→CSV и XLSX→XLS→CSV. Дополнительная проба меняет сам FORMAT в готовом XLS,
-чтобы сравнение чрезмерно точного порога не скрывалось нормализацией экспорта.
-Независимое ревью проверило 3336 строк, включая 1992 неотрицательных случая,
-и нашло ошибку точности порога; она исправлена отказом от неоднозначного случая.
-Это расширяет проверенное покрытие, но не закрывает условные форматы целиком.
+Synthetic BIFF streams test all operators, boundaries, raw types, FORMULA caches,
+limits, and hostile Decimal contexts. Authored OOXML workbooks pass through
+XLSX→CSV and XLSX→XLS→CSV. An additional probe modifies the actual FORMAT in the
+exported XLS so that export normalization cannot conceal the overprecise-threshold
+comparison. Independent review checked 3336 rows, including 1992 nonnegative cases,
+and found the threshold-precision bug; it was fixed by rejecting the ambiguous
+case. This expands verified coverage but does not provide complete support for
+conditional formats.

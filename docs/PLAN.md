@@ -1,269 +1,271 @@
-# План работ
-
-## Текущее назначение
-
-Достоверное представление данных офисных документов для LLM. Задачи
-приоритизируются по потерям текста, нарушению порядка чтения, связей в таблицах
-и смысла значений. Единицы измерения и проценты относятся к смыслу данных.
-Исполнение активного содержимого, загрузка ресурсов и точная вёрстка в проект
-не входят. Исторические этапы ниже сохраняются как история развития.
-
-## Цель первой версии
+# Work plan
+
+## Current purpose
+
+Provide a reliable representation of office document data for LLMs. Tasks are
+prioritized by text loss, disrupted reading order, table relationships,
+and the meaning of values. Units and percentages are part of the data's meaning.
+Executing active content, fetching resources, and reproducing exact page layout
+are out of scope. The stages below are retained as a history of development.
+
+## First-version goal
+
+A small, standalone Python package for DOC/PPT with one runtime dependency:
+`olefile`. DOC: text and table structure; PPT: text by slide and notes.
+Only the binary Word/PowerPoint 97–2003 formats. No network or office runtime.
+
+## Stages and criteria
+
+1. Research and contract: study existing implementations and format
+   limitations; define errors, the model, and limits.
+2. Corpus: create original documents with explicit expected cells,
+   slide order, Cyrillic text, and notes. Private files belong only in `tmp/`.
+3. DOC: FIB → CLX → text pieces, then PAPX/FKP/SPRM → paragraphs/tables.
+   Do not replace structural parsing with heuristics; identify unsupported cases.
+4. PPT: Current User → UserEdit chain → persist directory → active
+   slides/notes. Preserve empty slides and their numbers; do not index old versions.
+5. Validation: unit tests for corrupt structures, an end-to-end synthetic corpus,
+   a local private corpus, text/table comparisons with LibreOffice, and metrics.
+6. Delivery: wheel, CLI, documentation of limitations, and reproducibility instructions.
+
+## Readiness
 
-Самостоятельный небольшой Python-пакет DOC/PPT с одной runtime-зависимостью
-`olefile`. DOC — текст и структура таблиц; PPT — текст по слайдам и заметки.
-Только бинарные форматы Word/PowerPoint 97–2003. Без сети и офисного runtime.
-
-## Этапы и критерии
-
-1. Исследование и контракт: изучить существующие реализации и ограничения
-   форматов; закрепить ошибки, модель и пределы.
-2. Корпус: создать собственные документы, зафиксировать ожидаемые ячейки,
-   порядок слайдов, кириллицу и заметки. Личные файлы — только в `tmp/`.
-3. DOC: FIB → CLX → фрагменты текста, затем PAPX/FKP/SPRM → абзацы/таблицы.
-   Не заменять разбор структуры эвристикой; неподдержанные случаи обозначать.
-4. PPT: Current User → цепочка UserEdit → persist directory → действующие
-   slides/notes. Сохранять пустые слайды и номера; старые версии не индексировать.
-5. Проверка: unit-тесты повреждённых структур, end-to-end искусственный корпус,
-   локальный частный корпус, сравнение текста/таблиц с LibreOffice и метрики.
-6. Поставка: wheel, CLI, документация ограничений, инструкции воспроизводимости.
-
-## Готовность
+The first version must not be declared a complete replacement for LibreOffice
+based solely on passing unit tests. Known expected results and analysis of
+discrepancies are required. Record issues found in real documents without
+quoting private content.
 
-Первую версию нельзя объявлять полной заменой LibreOffice только по зелёным
-unit-тестам. Требуются известные ожидаемые результаты и разбор расхождений.
-Проблемы на реальном корпусе фиксируются без цитат личного содержимого.
+Record the actual status and limitations in `TESTING.md` after test runs.
+Save work in intermediate commits; publication is a separate step.
 
-Фактическое состояние и ограничения записываются в `TESTING.md` по окончании
-прогонов. Работа сохраняется промежуточными коммитами; публикация — отдельный шаг.
+## First-iteration status
 
-## Состояние первой итерации
+Stages 1–6 are implemented: package, API/CLI, parsers, original corpus,
+validation, and build. Limitations and results are listed in `TESTING.md`.
+Next steps: expand the real-world PPT corpus, investigate DOC discrepancies,
+and gradually address unsupported constructs with individual regressions.
+The next agreed formats are listed below; implementation proceeds in stages.
+
+## Target format support
+
+The project's ultimate goal is content extraction without LibreOffice for:
+DOC, XLS, PPT, RTF, ODT, ODS, and ODP. The initial DOC/PPT stage does not mean
+that this goal has already been achieved. Rendering and converting the visual
+appearance of documents are excluded: the goal is text and structure extraction.
 
-Этапы 1–6 реализованы: пакет, API/CLI, парсеры, собственный корпус,
-проверки и сборка. Ограничения и результаты перечислены в `TESTING.md`.
-Дальнейшая работа: расширить реальный PPT-корпус, разобрать расхождения DOC
-и постепенно закрывать неподдержанные конструкции отдельными регрессиями.
-Следующие согласованные форматы перечислены ниже; реализация идёт поэтапно.
+The next stages will be defined after reviewing existing implementations and specifications:
 
-## Целевая поддержка форматов
+- XLS: sheets, cell types and values, rows/columns, and merges;
+  define a separate policy for formulas and cached results.
+- RTF: code pages, Unicode escapes and fallback bytes, nested groups,
+  tables, and exclusion of control/embedded data from text.
+- ODT/ODS/ODP: ZIP/XML, text and tables, sheets and slides; limits on decompression,
+  repeated rows/cells, and XML structures.
 
-Конечная цель проекта — извлечение содержимого без LibreOffice для:
-DOC, XLS, PPT, RTF, ODT, ODS и ODP. Первый этап DOC/PPT не означает,
-что эта цель уже достигнута. Рендеринг и преобразование внешнего вида документов
-не входят в эту формулировку: речь об извлечении текста и структуры.
+Each format needs an independent module, a public contract,
+an original synthetic corpus, and validation against real files.
 
-Следующие этапы оформляются после проверки готовых реализаций и спецификаций:
+Delivery remains a single package with a unified API and internal format modules.
+Existing implementations provide algorithms, selected necessary components,
+and regression cases; adding a separate large dependency for each
+format is not the target architecture. Borrowed components must carry
+source and license notices. Errors, limits,
+format detection, and the result wrapper remain shared; sheets/cells, tables,
+and slides retain their own structure. The implementation order is not yet fixed.
 
-- XLS: листы, типы и значения ячеек, строки/столбцы и объединения;
-  отдельно определить политику формул и сохранённых результатов.
-- RTF: кодовые страницы, Unicode-escape и fallback-байты, вложенные группы,
-  таблицы и исключение служебных/встроенных данных из текста.
-- ODT/ODS/ODP: ZIP/XML, текст и таблицы, листы и слайды; ограничения распаковки,
-  повторяемых строк/ячеек и XML-структур.
+## Second iteration: one package for seven formats
 
-Для каждого формата нужны самостоятельный модуль, публичный контракт,
-собственный синтетический корпус и проверка реальных файлов.
+RTF, XLS BIFF8, and ODT/ODS/ODP are implemented; the shared API and CLI are extended.
+Sparse sheets now include value types, merges, and cached
+formula results. There is still only one runtime dependency: `olefile`.
+Existing solutions were studied before implementation: xlrd, striprtf/WordCraft, and odfpy/OASIS.
 
-Поставка остаётся одним пакетом с единым API и модулями форматов внутри.
-Готовые реализации служат источником алгоритмов, отдельных необходимых частей
-и регрессионных случаев; подключение отдельного большого пакета на каждый
-формат не является целевой архитектурой. Заимствованные части сопровождаются
-уведомлениями об источнике и лицензии. Общими остаются ошибки, ограничения,
-определение формата и оболочка результата; листы/ячейки, таблицы и слайды
-сохраняют собственную структуру. Порядок реализации ещё не закреплён.
+All seven formats have original documents with independent expectations.
+The initial limitations of each new format, comparison methodology,
+and actual results are listed in `TESTING.md` and the format-specific research files.
+Full equivalence with LibreOffice is not claimed: subsequent improvements are selected
+based on reproducible discrepancies and constructs needed for real documents.
 
-## Вторая итерация: единый пакет семи форматов
 
-Реализованы RTF, XLS BIFF8 и ODT/ODS/ODP; общий API и CLI расширены.
-Добавлены разреженные листы с типами значений, объединениями и сохранёнными
-результатами формул. Runtime-зависимость по-прежнему одна — `olefile`.
-Готовые решения изучены до реализации: xlrd, striprtf/WordCraft и odfpy/OASIS.
+## Quality criterion and third iteration
 
-Для всех семи форматов есть собственные документы с независимыми ожиданиями.
-Ограничения первой версии каждого нового формата, методика сравнения и
-фактические результаты перечислены в `TESTING.md` и профильных research-файлах.
-Полная эквивалентность LibreOffice не заявляется: следующие улучшения выбираются
-по воспроизводимым расхождениям и необходимым конструкциям реальных документов.
+The goal is to extract text and the required structure at least as well as LibreOffice
+on an agreed corpus covering all seven formats. Passing unit tests, the number of supported
+extensions, and matching sets of words do not establish this on their own.
 
+- Compare text in reading order; separately check tables, coordinates,
+  merges, cell types and values, slide order, and notes.
+- Address every confirmed loss with an independent regression and a fix.
+- Distinguish parser defects, errors in reference conversions, and differences in representation.
+  Do not adapt the output to reproduce content loss in LibreOffice.
+- Explicitly identify unverified and unsupported constructs. A warning
+  reports a gap but does not replace fixing it.
+- Check the local corpus without publishing private content; create public
+  regressions from original minimal documents.
 
-## Критерий качества и третья итерация
+The current iteration strengthens comparisons of structure and auxiliary stories,
+adds support for ordinary ODT footnotes, and checks DOC/RTF completeness using
+reproducible examples. Full equivalence is not claimed until these checks are complete.
 
-Цель — извлекать текст и нужную структуру не хуже LibreOffice на согласованном
-корпусе всех семи форматов. Зелёные unit-тесты, число поддержанных расширений
-и совпадение набора слов сами по себе эту цель не подтверждают.
 
-- Сравнивать текст в порядке чтения; отдельно проверять таблицы, координаты,
-  объединения, типы и значения ячеек, порядок слайдов и заметки.
-- Каждую подтверждённую потерю закрывать независимой регрессией и исправлением.
-- Различать дефект парсера, ошибку эталонной конверсии и отличие представления.
-  Не подгонять результат под потерю содержимого в LibreOffice.
-- Непроверенные и неподдержанные конструкции отмечать явно. Предупреждение
-  информирует о пробеле, но не заменяет его исправление.
-- Проверять локальный корпус без публикации личного содержимого; публичные
-  регрессии создавать из собственных минимальных документов.
+### Third-iteration results (0.3)
 
-Текущая итерация усиливает сравнение структуры и дополнительных областей,
-закрывает обычные сноски ODT и проверяет полноту DOC/RTF на воспроизводимых
-примерах. Полная эквивалентность до завершения этих проверок не заявляется.
+Document, table, and presentation comparisons were strengthened; actual
+LibreOffice checks and deterministic corrupt inputs were added to CI. Fixes cover
+DOC Prm0/CSymbol and RTF merges and shape text; ODT now supports footnotes, text
+frames, and selected headers/footers. Local and independent checks are described
+in `TESTING.md`. Results were saved in separate intermediate commits.
 
+Further coverage is needed for nested tables, DOC style inheritance,
+rare PPT/RTF extensions, and implicit ODT pagination. These remain gaps,
+not completed items. A broader real-world corpus and analysis of every
+significant discrepancy are required before replacing the office runtime generally.
 
-### Результат третьей итерации (0.3)
 
-Усилены сравнения документов, таблиц и презентаций, добавлены реальные
-LibreOffice-проверки и детерминированные повреждённые входы в CI. Исправлены
-DOC Prm0/CSymbol, объединения и текст фигур RTF; добавлены сноски, текстовые
-рамки и выбранные колонтитулы ODT. Локальные и независимые проверки описаны
-в `TESTING.md`. Результаты сохранены отдельными промежуточными коммитами.
+### Fourth-iteration results (0.4)
 
-Дальнейшее покрытие нужно для вложенных таблиц, наследования DOC-стилей,
-редких расширений PPT/RTF и неявной пагинации ODT. Это остающиеся пробелы,
-а не выполненные пункты. Перед общей заменой офисного runtime нужен более
-широкий реальный корпус и разбор каждого существенного расхождения.
+Nested RTF/ODT tables preserve structure and paragraph order in `Cell.blocks`;
+`Cell.text` remains the complete text projection. DOC accounts for inherited
+style visibility and direct hidden/deleted properties. PPT extracts WordArt
+from properties of active shapes. Comparison with DOCX checks nested structure.
 
+Remaining gaps include nested DOC tables, conditional table styles, rare format
+extensions, and implicit pagination. Executing macros or formulas and fetching
+external resources are outside the package's purpose.
 
-### Результат четвёртой итерации (0.4)
 
-Вложенные таблицы RTF/ODT сохраняют структуру и порядок абзацев в `Cell.blocks`;
-`Cell.text` остаётся полной текстовой проекцией. DOC учитывает наследование
-видимости стилей и прямые свойства hidden/deleted. PPT извлекает WordArt
-из свойств действующих фигур. Сравнение с DOCX проверяет вложенную структуру.
+### Fifth-iteration results (0.5)
 
-Остаются вложенные таблицы DOC, условные табличные стили, редкие расширения
-форматов и неявная пагинация. Выполнение макросов, формул и загрузка внешних
-ресурсов не входят в назначение пакета.
+- Nested DOC tables and tables in auxiliary stories are preserved;
+  text order, grids, merges, and retained-projection limits were checked.
+- Comparisons of headers/footers and frames against a DOCX reference were expanded.
+  Text comparison is explicitly distinguished from unknown anchors, geometry,
+  and ordering of separate stories.
+- A reproducible time and memory benchmark was added for large ordinary documents
+  in all seven formats, checking the amount of extracted content.
+- Documentation of current coverage was updated; package checks and CI are part of delivery.
+- DOC section boundaries are handled separately from manual page breaks.
 
+A broader real-world PPT corpus, rare extensions, and XLS number formats
+remain separate areas of work. Subsequent fixes must be based on
+reproducible documents and independent expectations. Implicit ODT pagination
+requires a layout engine and is not promised by the current extraction contract.
 
-### Результат пятой итерации (0.5)
 
-- Вложенные таблицы DOC и таблицы дополнительных областей сохраняются;
-  проверены порядок текста, сетки, объединения и лимиты удерживаемых проекций.
-- Расширено сравнение колонтитулов и рамок с DOCX-эталоном. Явно отделены
-  сравнение текста и неизвестные привязки, геометрия и порядок отдельных областей.
-- Добавлен воспроизводимый замер времени и памяти на крупных обычных документах
-  всех семи форматов с проверкой количества извлечённого содержимого.
-- Обновлено текущее покрытие в документации; проверки пакета и CI входят в поставку.
-- Границы разделов DOC учитываются отдельно от ручных разрывов страницы.
+### After 0.5: PPT extensions and external DOC properties
 
-Более широкий реальный корпус PPT, редкие расширения и числовые форматы XLS
-остаются отдельными направлениями. Следующие исправления должны опираться
-на воспроизводимые документы и независимые ожидания. Неявная пагинация ODT
-требует механизма раскладки и не обещается текущим контрактом извлечения.
+A bounded subset of auxiliary PPT extensions was classified:
+animation timing and numeric properties no longer imply possible text loss.
+Unknown extensions retain a warning. An original 120-slide presentation
+passes a complete check of its specified content without warnings.
 
+Version 0.6 completed the external DOC table properties stage: sequential cell
+operations, shared bounded traversal of HugePapx/PTableProps, an original OLE file,
+independent regressions, and a LibreOffice comparison. Limitations of conditional
+styles and automatic geometry are described in `research-doc-external-tables.md`.
 
-### После 0.5: расширения PPT и внешние свойства DOC
+Further work prioritizes reliable data for LLMs: text completeness and order,
+table relationships, cell values, and explicit indications of incomplete
+extraction. Executing macros/scripts/formulas, following links, fetching
+external resources, exact formatting, and pagination are outside the plan.
 
-Классифицировано ограниченное подмножество служебных расширений PPT:
-время и числовые свойства анимации больше не означают возможную потерю текста.
-Неизвестные расширения сохраняют предупреждение. Собственная презентация на
-120 слайдов проходит полную проверку заданного содержимого без предупреждений.
 
-В 0.6 выполнен этап внешних свойств таблиц DOC: последовательные операции
-ячеек, общий ограниченный обход HugePapx/PTableProps, собственный OLE-файл,
-независимые регрессии и LibreOffice-сверка. Ограничения условных стилей и
-автоматической геометрии изложены в `research-doc-external-tables.md`.
+### XLS numeric data (0.7)
 
-Приоритет дальнейшей работы — достоверность данных для LLM: полнота и порядок
-текста, отношения в таблицах, значения ячеек и явные признаки неполного
-извлечения. Выполнение макросов/скриптов/формул, переходы по ссылкам, загрузка
-внешних ресурсов, точное оформление и пагинация не входят в план.
+Loss of meaningful representations of common number formats was addressed:
+percentages, decimal places, grouping, and scientific notation. The original number
+is retained separately; formulas are not recalculated. Unknown format patterns
+are not interpreted speculatively and produce a warning.
+Validation covered an original XLS, the CLI, independent BIFF cases, and
+LibreOffice's displayed values.
 
+Remaining areas within scope: DOC table rows with differing outer boundaries,
+anchors for auxiliary text stories, PPT text extensions, and value formats
+with units/currencies and conditional sections.
+Each requires reproducible examples and an independent expected result.
 
-### Числовые данные XLS (0.7)
 
-Закрыта потеря смыслового представления распространённых числовых форматов:
-проценты, десятичные разряды, группировка и научная запись. Исходное число
-сохраняется отдельно; формулы не пересчитываются. Неизвестные маски не
-интерпретируются предположительно и сопровождаются предупреждением.
-Проверены собственный XLS, CLI, независимые BIFF-сценарии и отображаемые
-значения LibreOffice.
+### Differing DOC row boundaries (0.8)
 
-Остающиеся направления в границах задачи: строки таблиц DOC с различающимися
-внешними границами, привязки дополнительных текстовых областей, текстовые
-расширения PPT, форматы значений с единицами/валютами и условными секциями.
-Каждое требует воспроизводимых примеров и независимого ожидаемого результата.
+A common grid of exact boundaries is built for explicit, strictly increasing geometry.
+Missing positions are marked `omitted`; internal merges are preserved.
+Tests cover nesting, vertical merges, empty cells, and the grid-expansion
+budget. Comparisons do not equate a missing position with an empty cell.
+Automatic geometry, conditional styles, and distinguishing adjacent tables using all
+positioning properties remain limitations; details are in
+`research-doc-offsets.md`. Next areas: text-story anchors,
+PPT text extensions, and additional meaningful XLS formats.
 
 
-### Различающиеся границы строк DOC (0.8)
+### Explicit XLS number labels (0.9)
 
-Для явной строго возрастающей геометрии построена общая сетка точных границ.
-Отсутствующие позиции отмечены `omitted`, внутренние объединения сохранены.
-Проверены вложенность, вертикальные объединения, пустые ячейки и бюджет
-разворачивания сетки. Сверка не приравнивает отсутствие к пустой ячейке.
-Автоматическая геометрия, условные стили и различение соседних таблиц по всем
-свойствам позиционирования остаются ограничениями; подробности в
-`research-doc-offsets.md`. Следующие направления: привязки областей текста,
-текстовые расширения PPT и дополнительные смысловые форматы XLS.
+Quoted/escaped labels before/after the numeric core are preserved: units,
+currency symbols, and literal percent signs. The original number remains separate.
+Independent BIFF tests and an original XLS check the distinction between a literal
+percent sign and scaling; LibreOffice provides an additional reference.
+Details: `research-xls-literals.md`. Localized currency patterns,
+conditional formats, and multi-section formats remain outside this stage.
 
 
-### Явные подписи чисел XLS (0.9)
+### XLS numeric sections (0.10)
 
-Сохраняются quoted/escaped подписи до/после числового ядра: единицы измерения,
-обозначения валют и буквальный процент. Исходное число остаётся отдельно.
-Самостоятельные BIFF-тесты и собственный XLS проверяют различие буквального
-процента и масштабирования; LibreOffice служит дополнительным эталоном.
-Подробности: `research-xls-literals.md`. Локализованные валютные маски,
-условные и многосекционные форматы остаются за пределами этого этапа.
+Ordinary sign-based sections were added: positive, negative, and zero
+values; parentheses and explicit signs, nonempty zero labels, and standard colors.
+Selection precedes rounding; original numeric values are unchanged.
+All sections are validated, even if the current cell does not select them.
+Details: `research-xls-sections.md`. Numeric comparison conditions,
+localized patterns, and sections that hide values remain limitations.
 
 
-### Числовые секции XLS (0.10)
+### Structure and inherited-text extraction package (0.11)
 
-Добавлены обычные секции по знаку: положительные, отрицательные и нулевые
-значения; скобки и явный знак, непустая подпись нуля, стандартные цвета.
-Выбор предшествует округлению, исходные числовые значения не меняются.
-Все секции проверяются, даже если текущая ячейка их не выбирает.
-Подробности: `research-xls-sections.md`. Числовые условия сравнения,
-локализованные маски и скрывающие секции остаются ограничениями.
+Auxiliary RTF tables, explicit boundaries between adjacent DOC tables,
+and ordinary text from active PPT masters are preserved. Each stage has independent expectations,
+an original document, and limit checks; review findings were fixed.
+Further work is tracked in `EXTRACTION_GAPS.md`; unfinished parts
+are not considered supported merely because a related construct is extracted.
 
 
-### Пакет извлечения структуры и наследуемого текста (0.11)
+### Auxiliary ODT tables and XLS conditions (0.12)
 
-Сохранены дополнительные таблицы RTF, явные границы соседних DOC-таблиц,
-обычный текст активных PPT-мастеров. Каждый этап имеет независимые ожидания,
-авторский документ и проверку лимитов; замечания ревью исправлены.
-Дальнейшие направления ведутся в `EXTRACTION_GAPS.md`; незавершённые части
-не считаются поддержанными только потому, что смежная конструкция извлекается.
+Tables in ODT auxiliary stories retain their structure as independent copies;
+the retained-text limit is checked before making additional copies.
+XLS conditions are supported for a verified nonnegative subset;
+negative values and ambiguous thresholds do not receive speculative
+display representations. This is a partial extension, not complete support for conditional formats.
+The RTF oracle was fixed for LibreOffice versions that create multiple identical
+header/footer variants: each variant is checked in full.
 
 
-### Дополнительные таблицы ODT и условия XLS (0.12)
+### Passive content and story boundaries (0.13)
 
-Таблицы дополнительных областей ODT сохраняют структуру и независимые копии;
-проверка удерживаемого текста выполняется до повторного копирования.
-Условия XLS поддержаны для подтверждённого неотрицательного подмножества;
-отрицательные значения и неоднозначные пороги не получают предположительного
-отображения. Это частичное расширение, не полное закрытие условных форматов.
-Исправлен oracle RTF для версий LibreOffice, создающих несколько одинаковых
-вариантов колонтитула: каждый вариант проверяется целиком.
+Boundaries between adjacent DOC tables now account for first-paragraph properties;
+other additions include inline ODT text objects, standalone legacy RTF text, and static
+PPT fields. Parsing retains shared limits and selects a verified representation.
+Next work: separate DOC note relationships, meaningful XLS number formats,
+and text visibility in table styles. The detailed register is in `EXTRACTION_GAPS.md`.
 
 
-### Пассивное содержимое и границы областей (0.13)
+### Notes, shape text, and numeric labels (0.14)
 
-Дополнены границы соседних DOC-таблиц по свойствам первого абзаца,
-inline-текстовые объекты ODT, standalone legacy-текст RTF и статические поля
-PPT. Разбор сохраняет общие лимиты и выбирает подтверждённое представление.
-Следующие работы: отдельные связи сносок DOC, смысловые числовые маски XLS
-и видимость текста в табличных стилях. Подробный реестр — `EXTRACTION_GAPS.md`.
+DOC gained separate note relationships without duplicating text; ODT gained text from three
+verified shape types; XLS gained bounded currency patterns, scaling,
+and optional trailing digits. The package uses a single source for its version.
+CI also mutates the entire original corpus rather than just the baseline files.
 
 
-### Сноски, текст фигур и числовые подписи (0.14)
+### Text visibility and ownership (0.15)
 
-DOC получил отдельные связи сносок без дублирования текста; ODT — текст трёх
-проверенных видов фигур; XLS — ограниченные валютные маски, масштабирование
-и необязательные конечные цифры. Пакет использует единый источник версии.
-Дополнительно CI мутирует весь собственный корпус, а не только базовые файлы.
+Unconditional DOC table-style CFVanish is applied before paragraph/direct overrides,
+after establishing row context. ODS shape text is associated with its sheet,
+and static inline PPT FooterMC substitutes the stored label. Embedded
+execution and computed dates remain unsupported.
 
 
-### Видимость и принадлежность текста (0.15)
+### Conditional visibility and comments (0.16)
 
-Безусловный table-style CFVanish DOC применяется до paragraph/direct overrides,
-после установления контекста строки. Текст фигур ODS связан со своим листом,
-а статический inline FooterMC PPT подставляет сохранённую подпись. Встроенное
-исполнение и вычисляемые даты по-прежнему отсутствуют.
-
-
-### Условная видимость и комментарии (0.16)
-
-Реализовано проверенное подмножество условного CFVanish DOC, включая наследование,
-приоритеты краёв/углов, полосы, RTL и консервативный отказ при неоднозначных
-границах. Комментарии активных слайдов PPT представлены отдельно с авторством.
-Оба пути прошли независимое ревью и отрицательные регрессии. Оставшиеся области
-требуют отдельных доказательств и перечислены в `EXTRACTION_GAPS.md`.
+A verified subset of conditional DOC CFVanish is implemented, including inheritance,
+edge/corner precedence, bands, RTL, and conservative fallback when boundaries
+are ambiguous. Comments on active PPT slides are represented separately with authorship.
+Both paths passed independent review and negative regressions. Remaining areas
+require separate evidence and are listed in `EXTRACTION_GAPS.md`.

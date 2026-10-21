@@ -1,48 +1,52 @@
-# XLS: явные подписи числовых значений
+# XLS: explicit labels for numeric values
 
-Описание этапа 0.9. В 0.10 дополнительно поддержаны обычные секции по знаку
-и стандартные цвета; см. [числовые секции](research-xls-sections.md).
+This describes the 0.9 stage. Version 0.10 additionally supports ordinary
+sign-based sections and standard colors; see [numeric sections](research-xls-sections.md).
 
-## Назначение
+## Purpose
 
-Числа `12.50 kg` и `USD 12.50` теряют часть смысла, если возвращать только
-`12.5`. Сохраняем явно записанные в маске подписи в `text`; исходное `value`,
-тип числа и признак формулы остаются прежними. Валюты не конвертируются,
-единицы не нормализуются, формулы и внешние ссылки не вычисляются.
+Numbers such as `12.50 kg` and `USD 12.50` lose part of their meaning if only
+`12.5` is returned. Labels explicitly stored in the mask are preserved in `text`;
+the raw `value`, numeric type, and formula flag remain unchanged. Currencies are
+not converted, units are not normalized, and formulas and external references
+are not evaluated.
 
-## Поддержанная грамматика
+## Supported grammar
 
-Ровно одно ранее поддержанное числовое ядро: fixed, grouped, percent или
-scientific. До и после него допускаются текст в двойных кавычках и отдельные
-символы с обратной косой чертой. Пустые кавычки допустимы: их создаёт
-LibreOffice при экспорте числового стиля с пустой подписью.
-Числовое ядро нельзя разрывать текстом; токены не склеиваются после удаления
-кавычек. Форматы дат остаются на прежнем отдельном пути.
+Exactly one previously supported numeric core: fixed, grouped, percent, or
+scientific. Double-quoted text and individual backslash-escaped characters are
+allowed before and after it. Empty quotes are valid: LibreOffice creates them
+when exporting a numeric style with an empty label. Text cannot split the
+numeric core; tokens are not joined after removing quotes. Date formats retain
+their existing separate parsing path.
 
-`0.00%` масштабирует число на 100; `0.00"%"` только добавляет символ.
-`0"days"` остаётся числом с подписью, а не датой. Текст внутри кавычек не
-интерпретируется как цвет, условие, разделитель секций или числовая маска.
-Неявный минус единственной числовой секции предшествует всей подписи:
-`"USD "0.00` и -12.5 дают `-USD 12.50`. Это проверено независимым экспортом
-LibreOffice; округлённый ноль остаётся без минуса по прежнему контракту.
+`0.00%` scales the number by 100; `0.00"%"` only appends the symbol.
+`0"days"` remains a labeled number, not a date. Quoted text is not interpreted
+as a color, condition, section separator, or numeric mask. The implicit minus
+sign in a single numeric section precedes the entire label:
+`"USD "0.00` with -12.5 produces `-USD 12.50`. This was verified through an
+independent LibreOffice export; rounded zero remains unsigned under the
+existing contract.
 
-Полная маска ограничена 64 символами, дробная часть — 15 обязательными
-разрядами, экспонента — 3 знаками минимальной ширины. Приписываемый текст
-входит в общий бюджет результата. Сканирование линейное; нового кеша нет.
-Секции, условия, цвет, локали, bare currency symbols, accounting, scaling commas,
-дроби и произвольные интерполяции по-прежнему возвращают число с предупреждением.
-Подпись валюты не означает поддержку локализованных валютных форматов Excel.
+The complete mask is limited to 64 characters, the fractional part to 15
+mandatory digits, and the exponent to 3 minimum-width digits. Appended text
+counts toward the cumulative output budget. Scanning is linear; no new cache
+is introduced. Sections, conditions, colors, locales, bare currency symbols,
+accounting, scaling commas, fractions, and arbitrary interpolation still return
+the raw number with a warning. A currency label does not imply support for
+localized Excel currency formats.
 
-## Источники и независимая проверка
+## Sources and independent validation
 
 [Microsoft: custom number format guidelines](https://support.microsoft.com/en-US/Excel/review-guidelines-for-customizing-a-number-format)
-описывает явный текст в кавычках/с escape, процентное масштабирование и секции.
+describes explicit quoted/escaped text, percent scaling, and sections.
 [MS-XLS Format](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/300280fd-e4fe-4675-a924-4d383af48d3b)
-задаёт грамматику. Реализация самостоятельная, только стандартная библиотека.
+defines the grammar. The implementation is independent and uses only the
+standard library.
 
-`tests/fixtures/xls_literals` содержит собственный ODS и преобразованный XLS.
-Ожидания заданы вручную: масса, отрицательные числа, подпись USD, буквальный
-процент, слово days, кириллица и две подписи одновременно. API и CLI сохраняют
-исходные значения; отдельный тест сравнивает весь отображаемый CSV LibreOffice.
-Синтетические BIFF-потоки дополняют реальные файлы формулами, RK/MULRK,
-неверным синтаксисом, лимитами и крайними числовыми значениями.
+`tests/fixtures/xls_literals` contains an original ODS and the converted XLS.
+Expectations are specified manually: mass, negative numbers, a USD label,
+a literal percent sign, the word days, Cyrillic text, and two labels together.
+The API and CLI preserve raw values; a separate test compares the complete
+LibreOffice CSV display output. Synthetic BIFF streams supplement the actual
+files with formulas, RK/MULRK, invalid syntax, limits, and extreme numeric values.

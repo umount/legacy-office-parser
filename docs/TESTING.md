@@ -1,6 +1,10 @@
-# Проверка
+# Testing
 
-## Быстрый прогон
+For current 0.16 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
+For achievements and comparisons with other libraries and LibreOffice, see
+[Comparison](COMPARISON.md). Version-specific results below are historical snapshots.
+
+## Quick checks
 
 ```sh
 python -m pip install -e '.[dev]'
@@ -9,462 +13,471 @@ ruff check src tests tools
 python -m build
 ```
 
-CI проверяет Python 3.11–3.13. LibreOffice в runtime и обычных тестах не нужен:
-сгенерированные бинарные fixtures хранятся вместе с ожидаемыми результатами.
+CI tests Python 3.11–3.13. LibreOffice is not required at runtime or for regular
+tests: generated binary fixtures are stored alongside their expected results.
 
-## Закрытый корпус
+## Private corpus
 
-Личные файлы помещаются в `tmp/`, всё содержимое которой исключено из Git.
-Не публиковать извлечённые тексты, снимки документов, OOXML-конверсии и диффы.
+Place personal files in `tmp/`, whose entire contents are excluded from Git.
+Do not publish extracted text, document snapshots, OOXML conversions, or diffs.
 
 ```sh
 PYTHONPATH=src python tools/check_corpus.py tmp --libreoffice > tmp/corpus-report.json
 ```
 
-Утилита запускает каждый парсер отдельно, использует временный профиль
-LibreOffice и удаляет временные документы. Отчёт содержит хеш-идентификатор,
-размеры, время, max RSS процесса, количество таблиц/слайдов/листов/ячеек и статистику слов.
-Время LibreOffice включает старт процесса и конверсию; это не чистое сравнение
-скорости парсеров. RSS относится ко всему Python-процессу, не только парсеру.
-Совпадение набора слов не доказывает правильность порядка, объединений и заметок.
-Для этого используются точные ожидания в искусственных fixtures.
-Сравнение DOC/RTF/ODT охватывает основной текст и текстовые рамки; фрагменты
-форматирования объединяются внутри абзацев, из AlternateContent берётся
-одна ветвь. Заметки PPT/ODP, сноски и обычный текст колонтитулов этой метрикой
-не проверяются.
-Для XLS/ODS отчёт сравнивает порядок листов, координаты, типы, сохранённые
-значения и объединения. Пустые ячейки только с форматированием исключаются
-с обеих сторон; `cells` и `populated_cells` поэтому могут различаться.
-Сравнение не воспроизводит отображение чисел и не доказывает свежесть кэша
-формул. Неоднозначные форматы, пересчёт и округление конверсии отмечаются
-отдельно, без ложного равенства. Утилита принимает каталог или отдельный файл.
+The tool runs each parser separately, uses a temporary LibreOffice profile, and
+deletes temporary documents. The report contains a hash identifier, sizes,
+elapsed time, process max RSS, table/slide/sheet/cell counts, and word statistics.
+LibreOffice timing includes process startup and conversion; this is not a direct
+comparison of parser speed. RSS covers the entire Python process, not just the
+parser. Matching word sets do not prove correct order, merges, or notes.
+Synthetic fixtures with exact expectations test those properties.
+DOC/RTF/ODT comparisons cover main text and textboxes; formatting fragments are
+joined within paragraphs, and one branch is selected from AlternateContent.
+This metric does not check PPT/ODP notes, footnotes, or ordinary header/footer text.
+For XLS/ODS, the report compares sheet order, coordinates, types, stored values,
+and merges. Empty cells containing only formatting are excluded on both sides;
+`cells` and `populated_cells` may therefore differ.
+The comparison does not reproduce number display or establish whether formula
+caches are current. Ambiguous formats, recalculation, and conversion rounding are
+reported separately rather than treated as equivalent. The tool accepts a
+directory or a single file.
 
-Для DOC/RTF/ODT дополнительно проверяются порядок основного текста, таблицы,
-координаты, spans, покрытые клетки и отдельные области сносок. Нормализуется
-только whitespace. Неподдержанные scopes дают `equal: null`, не успешную
-проверку. Колонтитулы и рамки пока не сопоставляются этим структурным oracle.
-Для PPT/ODP проверяются текст, заметки и видимость каждого слайда; порядок
-берётся из отношений presentation.xml, а не из имён ZIP members.
+For DOC/RTF/ODT, additional checks cover main-text order, tables, coordinates,
+spans, covered cells, and separate note stories. Only whitespace is normalized.
+Unsupported scopes yield `equal: null`, not a successful check. Headers/footers
+and textboxes are not yet compared by this structural oracle.
+For PPT/ODP, each slide's text, notes, and visibility are checked; order comes
+from presentation.xml relationships, not ZIP member names.
 
 ```sh
 python tools/check_corpus.py tests/fixtures --libreoffice --fail-on-difference
 RTF_FIDELITY_LO=1 ODF_NOTES_LIBREOFFICE=1 python -m pytest -q tests/test_rtf_fidelity.py tests/test_odf_notes.py
 ```
 
-`--fail-on-difference` возвращает ненулевой код при расхождении проверяемых
-свойств или неразрешённом сравнении. Это диагностический барьер, а не
-доказательство отсутствия ошибок в непокрытых конструкциях. Обычный режим
-сохраняет отчёт о расхождениях, но код ошибки связан с разбором/конверсией.
-В CI отдельная задача устанавливает LibreOffice только как эталон разработки.
+`--fail-on-difference` returns a nonzero exit code when checked properties differ
+or a comparison cannot be resolved. This is a diagnostic gate, not proof that
+untested constructs are free of defects. Normal mode retains the difference
+report, but its error exit code reflects parsing/conversion failures.
+A separate CI job installs LibreOffice solely as a development reference.
 
-## Обязательные сценарии
+## Required scenarios
 
-- DOC: кириллица, UTF-16 и сжатые фрагменты, несколько фрагментов в разном
-  физическом порядке; реальные свойства таблиц, пустые/многоабзацные ячейки,
-  горизонтальные и вертикальные объединения, предупреждение о неподдержанной
-  вложенности; отдельные области текста.
-- PPT: пустые слайды не сдвигают нумерацию; заметки связаны по идентификаторам;
-  текст фигур не теряется при наличии outline; актуальная цепочка сохранений,
-  отсутствие старого/удалённого текста.
-- XLS: SST/CONTINUE и смена кодировки внутри строки; RK/MULRK, типы ячеек,
-  результаты формул, даты 1900/1904, ошибки/пустые значения, координаты и объединения.
-- RTF: группы и назначения, кодовые страницы, Unicode/fallback, бинарные блоки,
-  поля, отдельные области текста, строки и ячейки таблиц.
-- ODF: ZIP/MIME/XML, повторяемые пустые и заполненные строки/ячейки,
-  сохранённые поля/формулы, типы значений, объединения, слайды и заметки.
-- Повреждения: неверные смещения/длины, циклы ссылок, усечённые контейнеры,
-  шифрование, бюджеты записей/текста/таблиц/слайдов.
-- Поставка: wheel устанавливается и импортируется вне исходного дерева.
+- DOC: Cyrillic, UTF-16 and compressed pieces, multiple pieces in a different
+  physical order; actual table properties, empty/multiparagraph cells,
+  horizontal and vertical merges, warnings for unsupported nesting;
+  separate text stories.
+- PPT: empty slides do not shift numbering; notes are linked by identifier;
+  shape text is retained when outline text is present; the current save chain
+  is used, without old/deleted text.
+- XLS: SST/CONTINUE and encoding changes within a string; RK/MULRK, cell types,
+  formula results, 1900/1904 dates, errors/empty values, coordinates, and merges.
+- RTF: groups and destinations, code pages, Unicode/fallback, binary blocks,
+  fields, separate text stories, table rows and cells.
+- ODF: ZIP/MIME/XML, repeated empty and populated rows/cells,
+  stored fields/formulas, value types, merges, slides, and notes.
+- Corruption: invalid offsets/lengths, reference cycles, truncated containers,
+  encryption, and record/text/table/slide budgets.
+- Distribution: the wheel installs and imports outside the source tree.
 
-## Фактические результаты
+## Recorded results
 
-Для версии 0.2 проверено 2026-10-21 на Python 3.11 и 3.12: 428 тестов, включая точное сравнение
-искусственных документов всех семи форматов и проверки CLI; Ruff — без замечаний.
-Проверка Python 3.13 настроена в CI, локально не выполнялась.
-Wheel и sdist собираются; wheel установлен в отдельное чистое окружение,
-API семи форматов проверен вне исходного дерева; CLI использует те же точки входа. Лицензионные уведомления
-включены в wheel, собственный корпус и документация — в sdist.
+Version 0.2 was tested on 2026-10-21 with Python 3.11 and 3.12: 428 tests, including
+exact comparisons of synthetic documents in all seven formats and CLI checks;
+Ruff reported no issues. Python 3.13 testing is configured in CI but was not run locally.
+The wheel and sdist build successfully; the wheel was installed in a separate
+clean environment, and the API for all seven formats was checked outside the
+source tree. The CLI uses the same entry points. License notices are included
+in the wheel; the project's own corpus and documentation are included in the sdist.
 
-Пять документов закрытого DOC-корпуса разобраны без ошибок. Количество таблиц
-совпало с LibreOffice во всех пяти файлах (всего 48). Полнота набора слов
-относительно DOCX-конверсии составила 99.921–100.000%, точность — 99.921–100.000%.
-Это диагностические показатели, а не подтверждение идентичного содержимого.
-Дополнительно проверены 15 существующих локальных образцов: 4 DOC, 5 XLS,
-2 RTF, 2 ODT, 1 PPT и 1 ODP. Все разобраны без исключений. На RTF/ODT/PPT/ODP
-совпадение набора слов с конверсией LibreOffice — 100%. На пяти XLS совпало
-число листов и заполненных ячеек, включая файл с 40 007 ячейками.
-На одном дополнительном DOC расходятся границы слов: исходная таблица 3×2
-извлечена структурно, но DOCX-конверсия LibreOffice склеивает её ячейки и не
-содержит таблицы. Все 222 непробельных символа совпадают в исходном порядке.
-Показатели 96,67% полноты / 82,86% точности набора слов в этом случае не означают
-потерю текста. Отчёт сохраняет показатели и отдельную проверку непробельной
-последовательности, не маскируя различие структуры.
-Внешние образцы не включены в публичный репозиторий.
+Five documents from the private DOC corpus parsed without errors. Table counts
+matched LibreOffice in all five files (48 in total). Word-set recall against the
+DOCX conversion was 99.921–100.000%, and precision was 99.921–100.000%.
+These are diagnostic metrics, not confirmation of identical content.
+Another 15 existing local samples were checked: 4 DOC, 5 XLS, 2 RTF, 2 ODT,
+1 PPT, and 1 ODP. All parsed without exceptions. For RTF/ODT/PPT/ODP, word sets
+matched the LibreOffice conversion by 100%. For five XLS files, sheet and
+populated-cell counts matched, including a file with 40 007 cells.
+One additional DOC had different word boundaries: the original 3×2 table was
+extracted structurally, but LibreOffice's DOCX conversion concatenated its cells
+and contained no table. All 222 non-whitespace characters matched in their
+original order. Word-set recall of 96.67% and precision of 82.86% in this case
+do not indicate text loss. The report retains these metrics and a separate check
+of the non-whitespace sequence rather than concealing the structural difference.
+External samples are not included in the public repository.
 
-## Текущее покрытие и ограничения (0.12)
+## Coverage snapshot for 0.12 (historical)
 
-- DOC до Word 97, шифрованные документы и документы без CLX не поддерживаются.
-  Явные свойства идентичности разделяют соседние DOC-таблицы.
-  Вложенные таблицы DOC сохраняются в `Cell.blocks`, включая таблицы
-  дополнительных областей в `Document.story_blocks`. Объединения и сетки
-  обрабатываются отдельно на каждом уровне. Поддержаны PTableProps/HugePapx,
-  вставки/удаления ячеек, ширины и последовательные объединения. Условные
-  табличные стили, preferred widths и автоматическая раскладка не вычисляются.
-- DOC учитывает наследование видимости стилей и прямые hidden/deleted свойства;
-  поля используют сохранённый результат. Комментарии пропускаются.
-  Привязки сносок, варианты колонтитулов и положение рамок не моделируются.
-  Для рамок используются действующие диапазоны PLC; при отсутствии PLC
-  сохраняется полный текст с предупреждением о непроверенных диапазонах.
-- PPT извлекает активные слайды, связанные заметки и WordArt действующих фигур.
-  Обычный текст активных мастеров извлекается; placeholder-поля мастеров,
-  текст вложенных объектов и редких расширений, включая Metro blob,
-  не входит в гарантированное покрытие. Нужен более широкий реальный корпус.
-- XLS: поддержан BIFF8; более старые BIFF не поддержаны. Формулы не вычисляются,
-  токены не переводятся в выражения; сохранённые результаты могут быть устаревшими.
-  Поддержаны General, простые проценты, фиксированная точность, группировка
-  разрядов и научная запись с сохранением исходного числа отдельно от текста.
-  Явные подписи и обычные секции по знаку сохраняются; локализованные валютные,
-  отрицательные условные значения, неоднозначные условия/пороги, пустые секции,
-  масштабируемые и другие неподдержанные
-  форматы сохраняются числами с предупреждением; неоднозначные даты также.
-  Диаграммы, макросы и рисунки пропускаются.
-- RTF: таблицы дополнительных областей сохраняют структуру в `story_blocks`.
-  Вложенные таблицы, обычные прямоугольные объединения и текст `shptxt`
-  поддержаны. Неоднозначные/нерегулярные объединения упрощаются с предупреждением.
-  Legacy fallback-only фигуры, редкие назначения и HTML-вложения не входят
-  в полное покрытие.
-- ODT: таблицы дополнительных областей сохраняются в `story_blocks`.
-  Вложенные таблицы, обычные сноски, рамки и колонтитулы выбранных шаблонов
-  поддержаны. Неявная пагинация и визуальный порядок не воспроизводятся;
-  встроенные объекты, часть расширений и вложенные/некорректные сноски не поддержаны.
-  Повторённые формулы ODS сохраняют исходное выражение без пересчёта ссылок.
-- Изображения, OCR и выполнение макросов отсутствуют.
+- Pre-Word 97 DOC, encrypted documents, and documents without CLX are unsupported.
+  Explicit identity properties separate adjacent DOC tables.
+  Nested DOC tables are retained in `Cell.blocks`, including tables in auxiliary
+  stories under `Document.story_blocks`. Merges and grids are handled separately
+  at each level. PTableProps/HugePapx, cell insertion/deletion, widths, and
+  sequential merges are supported. Conditional table styles, preferred widths,
+  and automatic layout are not evaluated.
+- DOC respects inherited style visibility and direct hidden/deleted properties;
+  fields use their stored results. Comments are omitted.
+  Note anchors, header/footer variants, and textbox placement are not modeled.
+  Active PLC ranges are used for textboxes; when the PLC is absent, all text is
+  retained with a warning that the ranges have not been verified.
+- PPT extracts active slides, linked notes, and WordArt from active shapes.
+  Ordinary text from active masters is extracted; master placeholder fields,
+  text in embedded objects, and rare extensions, including Metro blobs,
+  are outside guaranteed coverage. A broader real-world corpus is needed.
+- XLS: BIFF8 is supported; earlier BIFF versions are not. Formulas are not
+  evaluated, and tokens are not translated into expressions; stored results
+  may be stale. General, simple percentages, fixed precision, digit grouping,
+  and scientific notation are supported, with the original number retained
+  separately from display text. Explicit literals and ordinary sign sections
+  are preserved; localized currency formats, negative conditional values,
+  ambiguous conditions/thresholds, empty sections, scaling formats, and other
+  unsupported formats retain the numeric value with a warning, as do ambiguous
+  dates. Charts, macros, and drawings are omitted.
+- RTF: tables in auxiliary stories retain their structure in `story_blocks`.
+  Nested tables, ordinary rectangular merges, and `shptxt` text are supported.
+  Ambiguous/irregular merges are simplified with a warning. Legacy fallback-only
+  shapes, rare destinations, and HTML attachments are outside full coverage.
+- ODT: tables in auxiliary stories are retained in `story_blocks`.
+  Nested tables, ordinary notes, textboxes, and headers/footers from selected
+  page templates are supported. Implicit pagination and visual order are not
+  reproduced; embedded objects, some extensions, and nested/invalid notes are
+  unsupported. Repeated ODS formulas retain their original expression without
+  recalculating references.
+- Images, OCR, and macro execution are not supported.
 
-Проверять `warnings` обязательно. Исторические результаты ниже описывают
-соответствующие версии, а не все сегодняшние ограничения. Более широкий корпус
-и разбор расхождений нужны перед заявлениями о полноте поддержки форматов.
-
-
-## Дополнительные проверки версии 0.3
-
-- Четыре локальных XLS: совпали 41 303 заполненные ячейки по координатам,
-  типам и значениям, а также порядок листов и объединения. Сравнение использует
-  числовой домен модели, не строковое представление десятичного числа.
-- В собственном XLS LibreOffice заменяет два BOOLERR значения на `TRUE()`/
-  `FALSE()`. Значения совпадают, но происхождение формулы не совпадает;
-  отчёт сохраняет `conversion_boolean_formula`, не объявляя полное равенство.
-- Собственные ODT со сносками: обычный документ совпал по основному тексту,
-  footnotes и endnotes. В примере повторяемых строк LibreOffice 7.4.7.2 теряет
-  строку; парсер сохраняет повторяемое содержимое. Исходники, ожидания и
-  записанное поведение находятся в `tests/fixtures/odf_notes/`.
-- RTF: обычные объединения и текст фигур проверены самостоятельными примерами
-  через LibreOffice. Текст горизонтальных продолжений не теряется, fallback
-  фигуры не дублирует основное представление.
-- PPT: дополнительно проверены перестановка слайдов и скрытый слайд на собственной
-  презентации. Текст, заметки, порядок и видимость совпали с конверсией.
-- Независимый аудит ODT notes и RTF merges/shapes не выявил доказанных дефектов;
-  дополнительно проверены 36 синтетических комбинаций повторов, объединений
-  и лимитов. Это ограниченная проверка, не доказательство полноты форматов.
+Always inspect `warnings`. The historical results below describe their respective
+versions, not all current limitations. A broader corpus and investigation of
+differences are needed before claiming complete format support.
 
 
-Повреждённые варианты собственных fixtures проверяются воспроизводимой выборкой:
+## Additional checks for version 0.3
+
+- Four local XLS files: 41 303 populated cells matched by coordinate, type, and
+  value, as did sheet order and merges. The comparison uses the model's numeric
+  domain, not the decimal number's string representation.
+- In a project-authored XLS, LibreOffice replaces two BOOLERR values with `TRUE()`/
+  `FALSE()`. Values match, but formula provenance differs; the report retains
+  `conversion_boolean_formula` rather than declaring full equality.
+- Project-authored ODT files with notes: the ordinary document matched in main
+  text, footnotes, and endnotes. LibreOffice 7.4.7.2 loses a row in the repeated-row
+  example; the parser preserves the repeated content. Sources, expectations, and
+  recorded behavior are in `tests/fixtures/odf_notes/`.
+- RTF: ordinary merges and shape text were checked using independently authored
+  examples through LibreOffice. Text in horizontal continuation cells is retained,
+  and a shape's fallback does not duplicate its primary representation.
+- PPT: slide reordering and a hidden slide were additionally checked in a
+  project-authored presentation. Text, notes, order, and visibility matched the conversion.
+- Independent review of ODT notes and RTF merges/shapes found no confirmed defects;
+  another 36 synthetic combinations of repetition, merges, and limits were checked.
+  This is a bounded check, not proof of complete format coverage.
+
+
+Corrupted variants of project-authored fixtures are checked using a reproducible sample:
 
 ```sh
 timeout 120s python tools/check_mutations.py --seed 143 --cases-per-format 500
 ```
 
-3 500 случаев после исправления границ ZIP прошли без неожиданных исключений.
-Скрипт не проверяет правильность текста повреждённого документа; он проверяет
-возврат результата либо классифицированной `ParseError`. Неожиданный вход
-сохраняется в игнорируемой `tmp/mutation-regressions/` для минимизации.
-Это ограниченная выборка, не исчерпывающая проверка устойчивости.
+After the ZIP boundary fix, 3 500 cases completed without unexpected exceptions.
+The script does not check the correctness of text from a corrupted document;
+it checks that parsing returns a result or a classified `ParseError`. Unexpected
+inputs are saved in the ignored `tmp/mutation-regressions/` directory for minimization.
+This is a bounded sample, not an exhaustive robustness check.
 
 
-На пяти личных DOC отдельно разобраны причины оставшихся различий. После
-исправления `CSymbol` два PUA-кода совпадают с LibreOffice, и целевой документ
-совпадает без учёта whitespace. В остальных четырёх документах выявленные
-числовые расхождения связаны с пересчётом полей `REF`/`PAGE` в LibreOffice;
-парсер сохраняет записанный результат поля и не вычисляет его. Обычные слова
-в этой проверке не потеряны. Это не заменяет проверки всех областей и свойств.
+The causes of the remaining differences in five personal DOC files were examined
+separately. After the `CSymbol` fix, two PUA codes matched LibreOffice, and the
+target document matched when whitespace was ignored. In the other four documents,
+the identified numeric differences came from LibreOffice recalculating `REF`/`PAGE`
+fields; the parser retains the stored field result without evaluating it.
+No ordinary words were lost in this check. It does not replace testing all
+stories and properties.
 
 
-Рамки ODT извлекаются отдельно от основного текста и ячеек. Колонтитулы
-извлекаются из выбранных шаблонов страниц; стили учитывают наследование и
-явные/сохранённые переходы страниц. Неиспользуемые шаблоны и скрытые разделы
-исключены. Основные рамки и сноски предшествуют соответствующим областям
-колонтитулов. Независимый fixture совпал с LibreOffice; подробная семантика
-и ограничения выбора шаблонов — в `tests/fixtures/odf_stories/README.md`.
-Автоматическая пагинация не вычисляется: неявный переход к следующему шаблону
-может быть пропущен с предупреждением. Варианты колонтитулов объединяются без
-привязки к конкретным страницам. Для ODS/ODP мастера остаются вне покрытия.
+ODT textboxes are extracted separately from main text and cells. Headers/footers
+are extracted from selected page templates; styles account for inheritance and
+explicit/stored page breaks. Unused templates and hidden sections are excluded.
+Main-story textboxes and notes precede the corresponding header/footer stories.
+An independent fixture matched LibreOffice; detailed semantics and template
+selection limits are documented in `tests/fixtures/odf_stories/README.md`.
+Automatic pagination is not calculated: an implicit transition to the next template
+may be omitted with a warning. Header/footer variants are combined without links
+to specific pages. Masters remain outside coverage for ODS/ODP.
 
-Итоговый локальный прогон 0.3: 736 обычных тестов и 12 opt-in проверок;
-отдельный запуск с LibreOffice выполняет 136 тестов, включая все opt-in.
-CI запускает обычные проверки на Python 3.11–3.13, отдельный LibreOffice job
-проверяет девять собственных документов всех семи форматов, сноски, рамки и RTF.
-Исключение BOOLERR-конверсии в CI ограничено двумя известными координатами
-одного собственного XLS и не применяется к произвольному корпусу.
+The final local 0.3 run comprised 736 regular tests and 12 opt-in checks;
+a separate LibreOffice run executes 136 tests, including all opt-in checks.
+CI runs regular checks on Python 3.11–3.13; a separate LibreOffice job checks
+nine project-authored documents covering all seven formats, notes, textboxes, and RTF.
+The BOOLERR conversion exception in CI is limited to two known coordinates in
+one project-authored XLS and does not apply to arbitrary corpora.
 
 
-## Проверки 0.4
+## Checks for 0.4
 
-Обычный набор: 877 passed, 14 opt-in skipped. Отдельный запуск LibreOffice:
-235 passed. Вложенный ODT совпадает с независимой DOCX-конверсией, включая
-три таблицы и четыре ячейки. RTF проверяется и на собственном входе, и на
-экспорте LibreOffice. DOC-стили проверяются на оригинальном документе с
-наследованием и явным переопределением видимости; WordArt — на оригинальном PPT.
+Regular suite: 877 passed, 14 opt-in skipped. Separate LibreOffice run:
+235 passed. Nested ODT matched an independent DOCX conversion, including three
+tables and four cells. RTF is checked both on project-authored input and on
+LibreOffice exports. DOC styles are checked in an original document with
+inherited visibility and explicit overrides; WordArt is checked in an original PPT.
 
-`Cell.blocks` содержит порядок вложенных абзацев/таблиц; пустое поле опускается
-в `Document.to_dict()` для совместимости простых ячеек. `Cell.text` содержит
-полный текст ячейки. Лимит текста учитывает и проекции, и сохранённые дочерние
-тексты, лимит ячеек — все уровни. Повторяемые ячейки имеют независимые деревья.
+`Cell.blocks` preserves the order of nested paragraphs/tables; an empty field is
+omitted from `Document.to_dict()` for compatibility with simple cells. `Cell.text`
+contains the complete cell text. The text limit counts both projections and
+retained child text; the cell limit covers every level. Repeated cells have
+independent trees.
 
-Проверка ограничений ресурсов (Linux):
+Resource-limit checks (Linux):
 
 ```sh
 python tools/check_security_resources.py
 python -m pytest -q tests/test_security_side_effects.py
 ```
 
-Каждый ресурсный сценарий запускается в отдельном процессе: 256 МиБ адресного
-пространства, 8 секунд CPU и 15 секунд wall time. Малые синтетические входы
-проверяют ограничение распаковки, глубину XML/RTF, запрет DTD, циклы OLE и
-повторы ODF. Отдельно измеряются удерживаемые Python-выделения после 140
-разборов с прогревом и сборкой мусора; порог роста — 1 МиБ. Это короткая
-регрессия, а не доказательство отсутствия утечек. RSS показывает максимум
-процесса и не заменяет измерение удерживаемой памяти.
+Each resource scenario runs in a separate process: 256 MiB of address space,
+8 seconds of CPU time, and 15 seconds of wall time. Small synthetic inputs test
+decompression limits, XML/RTF depth, DTD rejection, OLE cycles, and ODF repetition.
+Retained Python allocations are also measured after 140 parses with warm-up and
+garbage collection; the growth threshold is 1 MiB. This is a short regression
+check, not proof that there are no leaks. RSS reports the process peak and does
+not replace retained-memory measurements.
 
-Поведенческие тесты устанавливают audit hook после прогрева парсеров:
-входные bytes с внешними ссылками, полями, скриптами и объектами не должны
-открывать файлы, сеть, запускать процессы или менять файловую систему.
-Проверки не исполняют вложенный код и не отправляют такие документы в
-офисный runtime. Сравнение качества через LibreOffice использует только
-отдельные доброкачественные оригинальные fixtures.
+Behavioral tests install an audit hook after warming up the parsers: input bytes
+with external links, fields, scripts, and objects must not open files, access the
+network, start processes, or modify the filesystem. The checks do not execute
+embedded code or pass these documents to an office runtime. Quality comparisons
+through LibreOffice use only separate, benign, originally authored fixtures.
 
-Нужен актуальный Python с обновлёнными Expat/zlib и olefile. Ограничения
-парсера не заменяют системный лимит памяти/CPU в вызывающем процессе.
-
-
-### Проверки 0.4.1
-
-Текст ячейки ODF проверяется по мере накопления абзацев до объединения строки;
-обход стилей видимости ODS/ODP соблюдает `max_depth`. Регрессии проверяют момент
-отказа, все три ODF-формата и сохранение обычного поведения коротких цепочек.
-Ресурсный набор включает 11 сценариев и выводит версии Python, Expat и zlib.
-Проверки внешних действий включают источники таблиц, сохранённые формулы
-и ссылки с подстановкой переменных. Локально: 891 passed, 14 opt-in skipped;
-108 тестов сравнения с LibreOffice проходят для затронутых путей.
+An up-to-date Python with updated Expat/zlib and olefile is required. Parser
+limits do not replace operating-system memory/CPU limits in the calling process.
 
 
-## Проверки версии 0.5
+### Checks for 0.4.1
 
-Вложенные DOC-таблицы проверяются независимыми синтетическими ожиданиями
-и собственным трёхуровневым DOC, экспортированным LibreOffice из минимального
-DOCX. Сравнение подтверждает четыре таблицы, восемь ячеек и порядок текста.
-Таблицы дополнительных областей имеют отдельные регрессии проекции, структуры
-и лимитов. Методика: `research-doc-nested.md`.
-
-Колонтитулы и рамки проверяются по восстанавливаемому тексту. Для нескольких
-областей, порядок которых публичная модель не сохраняет, отчёт оставляет
-равенство неизвестным: совпадение набора слов не считается доказательством.
-Геометрия и привязки не сравниваются. Три живых проверки LibreOffice проверяют
-простой колонтитул RTF и его DOC/ODT-конверсии. Если версия LibreOffice
-создаёт несколько вариантов колонтитула, проверяется содержание каждого,
-а общий порядок остаётся неизвестным. Если DOCX-конверсия объединяет одинаковые
-варианты из DOC, отчёт сохраняет различие количества копий; совпадение текста
-каждого варианта не превращает это различие в полное равенство. Таблицы и рамки дополнительно
-покрыты синтетическим DOCX XML; структура `story_blocks` пока не сравнивается
-этим вспомогательным инструментом.
-
-Крупные обычные документы всех семи форматов измеряет `check_performance.py`;
-объём, воспроизводимость, границы замера и результаты — в `PERFORMANCE.md`.
-После исправления PPT все семь форматов прошли строгое измерение без
-предупреждений (по три повтора). В 0.6 диагностика DOC стала точнее: крупный
-DOC сохраняет содержимое, но получает warning о preferred widths. Поэтому
-текущий строгий замер DOC имеет `validation_failed`; подробности — в
-`PERFORMANCE.md`. Неизвестные расширения PPT по-прежнему отмечаются.
-
-Повторный локальный прогон пяти личных DOC: все разобраны, однако сравнение
-каждого остаётся неполным; у трёх различается непробельная последовательность.
-Это не доказательство эквивалентности. Личное содержимое и сами отчёты не
-включены в репозиторий. Новые публичные fixtures содержат только авторские
-минимальные примеры.
-
-Разрывы разделов DOC проверяются по PLCSED: отдельные регрессии различают
-раздел и ручной разрыв страницы, проверяют границы CP и сохранение таблиц.
-Собственный минимальный DOC с двумя абзацами и таблицей разбирается без
-предупреждений. Спецификация и примеры: `research-doc-sections.md`.
-
-### Проверка классификации расширений PPT
-
-После `ffe781c`: **1044 passed, 17 skipped**, Ruff без замечаний; 3500
-детерминированных мутаций (seed 143) без неожиданных исключений. Добавлены
-47 регрессий: известные метаданные, неизвестный и текстовый контент, неверные
-заголовки/длины, контекст, лимиты записей и глубины, неактивные объекты.
-Пропущенные тесты требуют явного включения внешнего LibreOffice-эталона.
-
-Исследование внешних свойств DOC: `research-doc-external-tables.md`; реализация описана ниже.
-
-### Внешние свойства таблиц DOC (0.6)
-
-**1114 passed, 18 skipped**, Ruff без замечаний. Пропуски требуют явного
-включения LibreOffice. 64 новых синтетических случая проверяют операции
-ячеек, порядок объединений, цепочки, fallback, длины, циклы и лимиты.
-Шесть обычных проверок собственного OLE-файла покрывают публичный API,
-воспроизводимость и повреждённые ссылки; отдельная живая LibreOffice-проверка
-подтвердила содержимое и структуру 3×3. Она включена в CI.
-
-3500 мутаций (seed 143) и 11 проверок ресурсов прошли без неожиданных ошибок.
-Независимое ревью новых операций и обхода ссылок не выявило замечаний.
-Публичные DOC/PPT-эталоны сохранили совпадение с LibreOffice.
-
-Все пять личных DOC разобраны. Число символов, таблиц и набор ранее выявленных
-расхождений с эталоном не изменились; полная эквивалентность не заявляется.
-В двух документах 71 ссылка PTableProps теперь обрабатывается; ограничения
-условных стилей и preferred widths отмечаются отдельно. Личные файлы и отчёты
-не опубликованы. Исследование: `research-doc-external-tables.md`.
-
-### Числовой смысл XLS (0.7)
-
-**1305 passed, 19 skipped** в полном наборе. Отдельный живой прогон нового XLS
-и существующих эталонов всех семи форматов: **13 passed**. Ruff без замечаний.
-3500 мутаций (seed 143) без неожиданных исключений; 11 проверок ресурсов прошли.
-
-Независимые BIFF-тесты проверяют исходные числа, текст процентов/десятичных/
-группированных/научных форматов, округление, крайние конечные значения,
-кеш формул, лимит текста и явный отказ от неподдержанного синтаксиса.
-Регрессия дат с экранированными разделителями исправлена без изменения
-ожидаемого результата старых fixtures.
-
-Собственные `xls_formats/numeric_formats.ods/.xls` содержат семь числовых
-примеров. API и CLI сохраняют raw value отдельно от текста: `0.125` и `12.50%`.
-LibreOffice CSV в режиме отображаемых значений подтвердил все семь текстов;
-обычная XLSX-сверка по значениям сама по себе такую проверку не заменяет.
-Формула не вычисляется парсером, предупреждение о возможной устарелости кеша
-сохранено. Детали и границы: `research-xls-formats.md`.
+ODF cell text is checked as paragraphs accumulate, before joining the string;
+ODS/ODP visibility-style traversal respects `max_depth`. Regressions check the
+point of failure, all three ODF formats, and unchanged normal behavior for short
+chains. The resource suite includes 11 scenarios and reports Python, Expat, and
+zlib versions. External-action checks include table sources, stored formulas,
+and links with variable substitution. Locally: 891 passed, 14 opt-in skipped;
+108 LibreOffice comparison tests pass for the affected paths.
 
 
-### Позиции таблиц DOC (0.8)
+## Checks for version 0.5
 
-Полный набор: **1362 passed, 19 skipped**. Добавлены независимые проверки
-отсутствующих позиций, внутренних и вертикальных объединений, вложенности,
-предварительного ограничения размера сетки, совместимости JSON и инвариантов.
-Собственный OLE-файл проверяется публичным API; генератор воспроизводим.
-Независимое ревью не выявило замечаний. 3500 мутаций — без неожиданных ошибок;
-11 проверок ресурсов пройдены. Текст и размеры сетки собственного файла
-совпадают с LibreOffice; отличие отсутствующей позиции от добавленной пустой
-ячейки сохраняется в отчёте. Детали: `research-doc-offsets.md`.
+Nested DOC tables are checked against independent synthetic expectations and a
+project-authored three-level DOC exported by LibreOffice from a minimal DOCX.
+The comparison confirms four tables, eight cells, and text order. Tables in
+auxiliary stories have separate regressions for projection, structure, and limits.
+Methodology: `research-doc-nested.md`.
+
+Headers/footers and textboxes are checked by recoverable text. For multiple
+stories whose order is not preserved by the public model, the report leaves
+equality unknown: matching word sets are not considered proof. Geometry and
+anchors are not compared. Three live LibreOffice checks test a simple RTF
+header/footer and its DOC/ODT conversions. If a LibreOffice version creates
+multiple header/footer variants, each variant's content is checked while their
+overall order remains unknown. If DOCX conversion combines identical variants
+from DOC, the report retains the difference in copy counts; matching text in
+each variant does not turn that difference into full equality. Tables and
+textboxes are also covered by synthetic DOCX XML; this helper tool does not
+yet compare `story_blocks` structure.
+
+`check_performance.py` measures large ordinary documents in all seven formats;
+size, reproducibility, measurement scope, and results are in `PERFORMANCE.md`.
+After the PPT fix, all seven formats passed strict measurement without warnings
+(three repetitions each). In 0.6, DOC diagnostics became more precise: the large
+DOC retains its content but receives a warning about preferred widths. The
+current strict DOC measurement therefore reports `validation_failed`; details
+are in `PERFORMANCE.md`. Unknown PPT extensions are still reported.
+
+A repeated local run of five personal DOC files parsed all of them, but every
+comparison remained incomplete; three had differing non-whitespace sequences.
+This is not proof of equivalence. Personal content and the reports themselves
+are not included in the repository. New public fixtures contain only original
+minimal examples.
+
+DOC section breaks are checked using PLCSED: separate regressions distinguish
+section breaks from manual page breaks, check CP boundaries, and verify table
+preservation. A project-authored minimal DOC with two paragraphs and a table
+parses without warnings. Specification and examples: `research-doc-sections.md`.
+
+### PPT extension classification checks
+
+After `ffe781c`: **1044 passed, 17 skipped**, Ruff reported no issues; 3500
+deterministic mutations (seed 143) produced no unexpected exceptions. Added
+47 regressions covering known metadata, unknown and textual content, invalid
+headers/lengths, context, record and depth limits, and inactive objects.
+Skipped tests require explicit opt-in to the external LibreOffice reference.
+
+Research on external DOC properties: `research-doc-external-tables.md`; implementation is described below.
+
+### External DOC table properties (0.6)
+
+**1114 passed, 18 skipped**, Ruff reported no issues. Skipped tests require
+explicit opt-in to LibreOffice. The 64 new synthetic cases check cell operations,
+merge order, chains, fallback, lengths, cycles, and limits. Six regular checks
+of the project-authored OLE file cover the public API, reproducibility, and
+corrupted references; a separate live LibreOffice check confirmed its 3×3
+content and structure. That check is included in CI.
+
+3500 mutations (seed 143) and 11 resource checks completed without unexpected
+errors. Independent review of the new operations and reference traversal found
+no issues. Public DOC/PPT reference fixtures continued to match LibreOffice.
+
+All five personal DOC files parsed. Character counts, table counts, and the set
+of previously identified differences from the reference remained unchanged;
+full equivalence is not claimed. In two documents, 71 PTableProps references are
+now processed; conditional-style and preferred-width limitations are reported
+separately. Personal files and reports were not published.
+Research: `research-doc-external-tables.md`.
+
+### XLS numeric semantics (0.7)
+
+**1305 passed, 19 skipped** in the full suite. A separate live run of the new XLS
+and existing reference fixtures for all seven formats: **13 passed**. Ruff reported
+no issues. 3500 mutations (seed 143) produced no unexpected exceptions;
+11 resource checks passed.
+
+Independent BIFF tests check original numbers, percentage/decimal/grouped/
+scientific display text, rounding, extreme finite values, formula caches,
+text limits, and explicit rejection of unsupported syntax. The date regression
+involving escaped separators was fixed without changing the expected results
+of existing fixtures.
+
+The project-authored `xls_formats/numeric_formats.ods/.xls` contain seven numeric
+examples. The API and CLI retain the raw value separately from display text:
+`0.125` and `12.50%`. LibreOffice CSV in displayed-value mode confirmed all seven
+strings; ordinary XLSX value comparisons alone do not replace this check.
+The parser does not evaluate formulas, and the warning about potentially stale
+caches is retained. Details and limits: `research-xls-formats.md`.
 
 
-### Явные подписи XLS (0.9)
+### DOC table positions (0.8)
 
-Полный набор: **1539 passed, 20 skipped**. Новый собственный XLS проверен
-через API, CLI, независимый ODS-источник и отображаемый CSV LibreOffice:
-**5 passed** с включённым oracle. Независимое ревью не выявило замечаний;
-3500 мутаций не дали неожиданных ошибок, 11 проверок ресурсов пройдены.
-Подробный контракт и ограничения: `research-xls-literals.md`.
-
-
-### Секции по знаку XLS (0.10)
-
-Полный набор: **1960 passed, 21 skipped**. Собственный XLS проверен через
-API, CLI и CSV LibreOffice — **5 passed** с включённым oracle. Независимое
-ревью не выявило замечаний; отдельный синтетический LibreOffice-прогон
-подтвердил поведение `General;General`. 3500 мутаций прошли без неожиданных
-исключений, 11 проверок ресурсов пройдены. Контракт: `research-xls-sections.md`.
+Full suite: **1362 passed, 19 skipped**. Added independent checks for omitted
+positions, inner and vertical merges, nesting, grid-size limits before allocation,
+JSON compatibility, and invariants. The project-authored OLE file is checked
+through the public API; its generator is reproducible. Independent review found
+no issues. 3500 mutations produced no unexpected errors; 11 resource checks
+passed. Text and grid dimensions in the project-authored file match LibreOffice;
+the report preserves the distinction between an omitted position and an added
+empty cell. Details: `research-doc-offsets.md`.
 
 
-### Соседние таблицы DOC, мастера PPT и дополнительные таблицы RTF (0.11)
+### Explicit XLS literals (0.9)
 
-Общий набор: **2088 passed, 22 skipped**. Каждый новый путь проверен
-независимыми ожиданиями и авторским документом. Ревью исправило default TPc,
-валидацию ссылки на мастер и бюджет повторного использования кеша.
-RTF проверен прямым сравнением ячеек колонтитула/сноски с DOCX LibreOffice.
-Авторская PPT подтверждена независимым UNO-readback. DOC-фикстура показывает
-оговорённое отличие структуры от LibreOffice при совпадении всех девяти
-ячеек и порядка слов; личные документы не публикуются.
+Full suite: **1539 passed, 20 skipped**. The new project-authored XLS was checked
+through the API, CLI, independent ODS source, and LibreOffice displayed-value CSV:
+**5 passed** with the oracle enabled. Independent review found no issues;
+3500 mutations produced no unexpected errors, and 11 resource checks passed.
+Detailed contract and limitations: `research-xls-literals.md`.
 
 
-### Дополнительные таблицы ODT и условия XLS (0.12)
+### XLS sign sections (0.10)
 
-Полный набор: **2406 passed, 24 skipped**. Живой прогон RTF/условий XLS:
-**300 passed**. Повторный разбор бюджета ODT добавил проверки отказа до
-копирования вложенных повторений. XLS-проба сохраняет исходные байты FORMAT
-для проверки порогов без скрытой нормализации; неоднозначная точность
-возвращает исходное число с предупреждением. Предыдущий CI выявил различие
-числа экспортируемых header-parts между версиями LibreOffice; oracle теперь
-проверяет каждую целую таблицу варианта и не требует одного XML-файла.
+Full suite: **1960 passed, 21 skipped**. The project-authored XLS was checked
+through the API, CLI, and LibreOffice CSV: **5 passed** with the oracle enabled.
+Independent review found no issues; a separate synthetic LibreOffice run confirmed
+`General;General` behavior. 3500 mutations completed without unexpected exceptions,
+and 11 resource checks passed. Contract: `research-xls-sections.md`.
 
 
-### Рамки DOC, inline-объекты ODT, legacy-текст RTF и поля PPT (0.13)
+### Adjacent DOC tables, PPT masters, and auxiliary RTF tables (0.11)
 
-Полный набор: **2685 passed, 27 skipped**; Ruff прошёл. Новый RTF oracle:
-**57 passed**. ODT inline oracle: **41 passed, 1 skipped** (отдельная проверка
-официальной схемы); оба живых сравнения включены в CI. PPT: **252 passed**,
-включая собственный бинарный файл с независимо проверенными строками и
-флагами. Новые пути прошли независимое ревью. 3500 мутаций не дали неожиданных
-ошибок; 11 проверок ресурсов прошли. Метрики текста и таблиц пяти личных DOC
-совпали с предыдущей проверкой; личные файлы не публикуются.
+Combined suite: **2088 passed, 22 skipped**. Each new path was checked against
+independent expectations and a project-authored document. Review led to fixes
+for default TPc, master-reference validation, and the cache-reuse budget.
+RTF was checked by directly comparing header/footer and footnote cells with
+LibreOffice DOCX. The project-authored PPT was confirmed by independent UNO
+readback. The DOC fixture shows the documented structural difference from
+LibreOffice while all nine cells and word order match; personal documents
+are not published.
 
-Рамки DOC проверены по свойствам формата; универсальное совпадение с раскладкой
-LO не заявляется. Неподдержанные автоматические поля PPT не вычисляются.
-Детали: `research-doc-frame-identity.md`, `research-odf-inline-objects.md`,
+
+### Auxiliary ODT tables and XLS conditions (0.12)
+
+Full suite: **2406 passed, 24 skipped**. Live RTF/XLS-condition run:
+**300 passed**. A repeated review of the ODT budget added checks that failure
+occurs before copying nested repetitions. The XLS probe preserves original
+FORMAT bytes to test thresholds without hidden normalization; ambiguous
+precision returns the original number with a warning. Earlier CI found that
+the number of exported header parts differed between LibreOffice versions;
+the oracle now checks each variant's complete table rather than requiring
+one XML file.
+
+
+### DOC frames, ODT inline objects, legacy RTF text, and PPT fields (0.13)
+
+Full suite: **2685 passed, 27 skipped**; Ruff passed. New RTF oracle:
+**57 passed**. ODT inline oracle: **41 passed, 1 skipped** (a separate official
+schema check); both live comparisons are enabled in CI. PPT: **252 passed**,
+including a project-authored binary file with independently verified strings
+and flags. The new paths passed independent review. 3500 mutations produced
+no unexpected errors; 11 resource checks passed. Text and table metrics for
+five personal DOC files matched the previous check; personal files are not published.
+
+DOC frames were checked against format properties; universal agreement with
+LibreOffice layout is not claimed. Unsupported automatic PPT fields are not
+evaluated. Details: `research-doc-frame-identity.md`, `research-odf-inline-objects.md`,
 `research-rtf-legacy-textboxes.md`, `research-ppt-fields.md`.
 
 
-### Мутации расширенного собственного корпуса
+### Mutations of the expanded project-authored corpus
 
-`tools/check_mutations.py --all-fixtures` проверяет все поддерживаемые документы
-в `tests/fixtures`, включая новые подпапки. Счётчики объединяются по формату;
-имя сохранённого воспроизводящего входа включает идентификатор исходной
-фикстуры, чтобы случаи одного формата не перезаписывались. В CI сохраняется
-прежний базовый прогон и добавляется по 100 мутаций каждого публичного примера.
-Это выборочная проверка, а не доказательство отсутствия ошибок.
+`tools/check_mutations.py --all-fixtures` checks every supported document in
+`tests/fixtures`, including new subdirectories. Counts are aggregated by format;
+the name of a saved reproducing input includes its source fixture identifier
+so cases in the same format do not overwrite one another. CI retains the
+previous baseline run and adds 100 mutations per public example.
+This is sampled testing, not proof that there are no defects.
 
 
-### Связи сносок DOC, фигуры ODT и маски XLS (0.14)
+### DOC note relationships, ODT shapes, and XLS format patterns (0.14)
 
-Полный набор: **2937 passed, 34 skipped**, Ruff прошёл. Независимый обзор
-37 авторских файлов семи форматов не выявил новых отказов; различия ограничены
-связями сносок и ожидаемыми числовыми представлениями. Живые проверки:
+Full suite: **2937 passed, 34 skipped**, Ruff passed. An independent review of
+37 authored files in seven formats found no new failures; differences were
+limited to note relationships and expected numeric representations. Live checks:
 DOC notes **79 passed**, XLS **135 passed**, ODT shapes/research **41 passed,
-4 skipped** (отдельные проверки официальной схемы).
+4 skipped** (separate official schema checks).
 
-3700 мутаций 37 авторских файлов — без неожиданных исключений; 11 проверок
-ресурсов пройдены. Путь к сноске строится с памятью, зависящей от глубины:
-регрессия на 31 уровне и 40 030 ячейках требует менее 1 МиБ временной памяти.
-Установленный wheel проверяет семь форматов и совпадение версии metadata/API.
-
-
-### Видимость DOC, рисунки ODS и inline-подписи PPT (0.15)
-
-Полный набор: **3124 passed, 36 skipped**, Ruff прошёл. Живой oracle сносок:
-**94 passed**; он сравнивает сноски со структурой собственного сгенерированного
-DOC и его roundtrip, а не с числом блоков другого выпуска LibreOffice.
-ODS drawings: **23 passed, 1 skipped** с Calc; PPT: **306 passed**.
-Независимое ревью каждого нового пути завершено; пять личных DOC сохранили
-число символов и таблиц.
-
-4200 мутаций 42 авторских файлов — без неожиданных исключений; все 11 проверок
-ресурсов пройдены. Бинарные примеры inline PPT и рисунков ODS входят в общий
-корпус. Поддержка условной табличной видимости ещё не заявляется.
+3700 mutations of 37 authored files produced no unexpected exceptions;
+11 resource checks passed. Note-path construction uses memory proportional to
+depth: a regression with 31 levels and 40 030 cells requires less than 1 MiB
+of temporary memory. The installed wheel checks all seven formats and agreement
+between the metadata and API versions.
 
 
-### Условная видимость DOC и комментарии PPT (0.16)
+### DOC visibility, ODS drawings, and PPT inline literals (0.15)
 
-Полный набор: **3507 passed, 37 skipped**, Ruff прошёл. Живые проверки сносок
-DOC и комментариев PPT: **111 passed**. CI с новым LibreOffice подтвердил
-сверку сносок после исправления выбора AlternateContent; исходная таблица
-в модели сохраняется, специальное преобразование проверяется только для
-собственного эталонного документа.
+Full suite: **3124 passed, 36 skipped**, Ruff passed. Live notes oracle:
+**94 passed**; it compares notes with the structure of the generated DOC and
+its roundtrip, not with the block count from another LibreOffice release.
+ODS drawings: **23 passed, 1 skipped** with Calc; PPT: **306 passed**.
+Independent review of each new path is complete; five personal DOC files
+retained their character and table counts.
 
-4600 мутаций 46 авторских файлов и 3500 мутаций базового корпуса завершились
-без неожиданных исключений. Все 11 проверок ресурсов пройдены. Неверный тип
-OLE-записи проверяется до чтения размера; отдельные регрессии покрывают
-обязательные и необязательные потоки DOC/PPT/XLS. Установленный wheel проверен
-вне дерева исходников для всех семи форматов. Пять личных DOC сохранили
-прежние количества символов и таблиц; содержимое в репозиторий не включается.
+4200 mutations of 42 authored files produced no unexpected exceptions;
+all 11 resource checks passed. Binary examples of inline PPT fields and ODS
+drawings are included in the shared corpus. Conditional table visibility
+is not yet claimed to be supported.
 
-Условная видимость ограничена доказанными полными прямоугольными таблицами;
-это не заявление о поддержке всех условных стилей. Подробности и независимые
-эталоны: `research-doc-conditional-styles.md`, `research-ppt-comments.md`.
+
+### Conditional DOC visibility and PPT comments (0.16)
+
+Full suite: **3507 passed, 37 skipped**, Ruff passed. DOC-note and PPT-comment suites with live reference checks enabled:
+**111 passed**; two tests invoke LibreOffice directly. CI with a newer LibreOffice confirmed the
+notes comparison after the AlternateContent selection fix; the original table
+is retained in the model, and the special transformation is checked only for
+the project-authored reference document.
+
+4600 mutations of 46 authored files and 3500 mutations of the baseline corpus
+completed without unexpected exceptions. All 11 resource checks passed.
+An invalid OLE entry type is checked before its size is read; separate regressions
+cover required and optional DOC/PPT/XLS streams. The installed wheel was checked
+outside the source tree for all seven formats. Five personal DOC files retained
+their previous character and table counts; their content is not included in
+the repository.
+
+Conditional visibility is limited to proven complete rectangular tables;
+this is not a claim to support all conditional styles. Details and independent
+reference fixtures: `research-doc-conditional-styles.md`, `research-ppt-comments.md`.

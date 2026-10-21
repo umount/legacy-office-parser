@@ -1,22 +1,23 @@
-# ODT: структурированные дополнительные области
+# ODT: structured auxiliary stories
 
-Если область сносок, концевых сносок, колонтитулов или рамок содержит таблицу,
-в `Document.story_blocks` сохраняются все её блоки в порядке обхода.
-Обычные текстовые поля остаются прежними, и `Document.text` не дублирует
-структуру. Области только с абзацами не меняют старый JSON.
+If a footnote, endnote, header/footer, or textbox story contains a table,
+`Document.story_blocks` retains all of its blocks in traversal order.
+The existing text fields remain unchanged, and `Document.text` does not
+duplicate the structure. Paragraph-only stories do not change the old JSON.
 
-Пустые таблицы и абзацы сохраняются внутри структурированной области.
-Вложенные рамки и сноски направляются в собственные области, не смешиваясь
-с текстом родителя. Повторённые строки/ячейки ODT создают независимые деревья
-дополнительных блоков; изменение одного результата не меняет соседнюю копию.
-Количество копируемых записей, ячеек и удерживаемого текста ограничено.
+Empty tables and paragraphs are retained within a structured story.
+Nested textboxes and notes are routed to their own stories rather than mixed
+with the parent's text. Repeated ODT rows/cells create independent trees of
+auxiliary blocks; modifying one result does not change the adjacent copy.
+The number of copied records and cells, and the amount of retained text, are bounded.
 
-Привязки к основному тексту, цепочки рамок, идентичность вариантов страниц и
-неявная пагинация не добавляются. Это сохранение представленной структуры,
-а не вычисление раскладки.
+No main-text anchors, textbox chains, page-variant identities, or implicit
+pagination are added. This preserves the represented structure rather than
+calculating layout.
 
-Синтетические авторские ODT покрывают каждый тип области, пустые и вложенные
-таблицы, повторения, лимиты и совместимость. Реальный авторский ODT в
-`tests/fixtures/odf_story_tables` проверяет таблицы колонтитула и рамки.
-Его происхождение и изменение роли исходной RTF-сноски при конвертации
-описаны рядом с файлом; равенство ролей разных форматов не предполагается.
+Authored synthetic ODT documents cover every story type, empty and nested
+tables, repetition, limits, and compatibility. The actual authored ODT in
+`tests/fixtures/odf_story_tables` tests header/footer and textbox tables.
+Its provenance and the change in the source RTF footnote's role during
+conversion are documented alongside the file; equivalent roles across formats
+are not assumed.

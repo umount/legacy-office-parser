@@ -1,92 +1,95 @@
-# План закрытия оставшихся пробелов извлечения
+# Remaining extraction gaps
 
-Рабочий реестр после 0.16. Критерий завершения каждого пункта: подтверждённый
-пример, независимое ожидание, отрицательные проверки и лимиты, проверка API,
-сверка с внешним читателем там, где он поддерживает конструкцию. Отсутствие
-предупреждений само по себе не означает полноту.
+Working register after 0.16. Each item requires a verified example, independent
+expected results, negative tests and limits, API checks, and comparison with an
+external reader where it supports the construct. The absence of warnings alone
+does not establish completeness.
 
-## Завершено в 0.11
+## Completed in 0.11
 
-- DOC: разделение по явным свойствам таблиц, включая позиционирование и стили.
-  Проверка первого абзаца ячейки — следующий отдельный этап.
-- PPT: обычный текст активных мастеров без placeholders и скрытых фигур.
-- RTF: структура таблиц дополнительных областей.
+- DOC: separation using explicit table properties, including positioning and
+  styles. Checking the first cell paragraph is the next separate stage.
+- PPT: ordinary text from active masters, excluding placeholders and hidden shapes.
+- RTF: table structure in auxiliary stories.
 
-## Завершено в 0.12
+## Completed in 0.12
 
-- ODT: структура таблиц дополнительных областей и ограниченные повторения.
-- XLS: проверенное неотрицательное подмножество условий; отрицательные
-  условные значения и неоднозначные пороги остаются открытыми.
+- ODT: table structure in auxiliary stories and bounded repetition.
+- XLS: a verified nonnegative subset of conditions; negative conditional values
+  and ambiguous thresholds remain open.
 
-## Завершено в 0.13
+## Completed in 0.13
 
-- DOC: границы таблиц по первому абзацу первой ячейки, включая наследуемые
-  свойства рамки. Проверены синтетические случаи и прежний личный корпус.
-- ODT: текст и таблицы inline-текстового объекта; выбор одного представления
-  рамки, общий бюджет, без открытия ссылок. Подтверждено отдельным чтением LO.
-- RTF: явный текст standalone legacy-рисунков `do/dptxbxtext`, с сохранением
-  таблиц и области действия управляющих слов. Подтверждён авторский LO-пример.
+- DOC: table boundaries based on the first paragraph of the first cell, including
+  inherited frame properties. Synthetic cases and the existing private corpus
+  were checked.
+- ODT: text and tables from inline text objects; one frame representation is
+  selected, with a shared budget and no link access. Confirmed through independent
+  LibreOffice readback.
+- RTF: explicit text from standalone legacy drawings (`do/dptxbxtext`), preserving
+  tables and control-word scope. Confirmed with an authored LibreOffice example.
+- PPT: stored static footers and dates with verified visibility; computed fields
+  remain outside this subset.
 
-- PPT: сохранённые статические подписи и даты с проверенной видимостью;
-  вычисляемые поля остаются вне этого подмножества.
+## Completed in 0.14
 
-## Завершено в 0.14
+- DOC: separate note bodies, source CPs, visibility flags and paragraph/cell
+  paths; the existing text API is preserved. Authored binary examples and negative
+  tests do not conceal losses introduced by LibreOffice conversion.
+- ODT: rectangle, ellipse and custom-shape text in the shared textbox story.
+- XLS: three verified currency labels, comma scaling and optional trailing
+  fractional digits after a mandatory decimal digit. Nineteen cases are compared
+  using the same XLS with its original FORMAT records preserved.
 
-- DOC: отдельные тела сносок, исходные CP, флаги видимости и пути к абзацам/
-  ячейкам; прежний текстовый API сохранён. Авторские бинарные примеры и
-  отрицательные проверки не скрывают потери при конвертации LibreOffice.
-- ODT: текст прямоугольников, эллипсов и custom-shape в общей области рамок.
-- XLS: три проверенные валютные подписи, масштабирование запятыми,
-  необязательные конечные разряды после обязательного десятичного разряда.
-  19 случаев сверяются по одному XLS с сохранёнными исходными FORMAT.
+## Completed in 0.15
 
-## Завершено в 0.15
+- DOC: unconditional table-style visibility using the innermost row context,
+  followed by paragraph/character/direct overrides. Specification and LibreOffice
+  behavior differ; the research and tests explicitly record this.
+- ODS: ordinary drawing text associated with its sheet in `Sheet.drawings`.
+- PPT: substitution of verified stored footer text in inline FooterMC, preserving
+  equivalence between alternative representations of the same shape.
 
-- DOC: безусловная видимость из табличного стиля по контексту самой внутренней
-  строки, с последующими paragraph/character/direct overrides. Спецификация
-  и LibreOffice расходятся; это явно отражено в исследовании и тестах.
-- ODS: обычный текст рисунков с принадлежностью листу в `Sheet.drawings`.
-- PPT: подстановка подтверждённой сохранённой подписи в inline FooterMC,
-  с сохранением эквивалентности альтернативных представлений одной фигуры.
+## Completed in 0.16
 
-## Завершено в 0.16
+- DOC: conditional CFVanish 0/1 for complete rectangular tables without merges,
+  with proven boundaries and edge, corner and band flags. Ambiguous cases retain
+  unconditional visibility and diagnostics; note-reference visibility is `unknown`.
+- PPT: `Slide.comments` stores the text, author and initials of comments on the
+  current slide. Text follows notes in the projection; an empty field preserves
+  the previous JSON shape.
+- The note oracle distinguishes a DOC table from its verified textbox
+  representation in newer LibreOffice, without weakening general structural checks.
 
-- DOC: условный CFVanish 0/1 для полных прямоугольных таблиц без объединений,
-  с доказанными границами, флагами краёв, углов и полос. Неоднозначные случаи
-  сохраняют безусловную видимость и диагностику, а связи сносок — `unknown`.
-- PPT: `Slide.comments` хранит текст, автора и инициалы комментариев текущего
-  слайда. Текст входит в проекцию после заметок; пустое поле не меняет старый JSON.
-- Эталон сносок различает таблицу DOC и её подтверждённое представление
-  текстовой рамкой в новом LibreOffice, не ослабляя общие структурные проверки.
+## Next areas to verify
 
-## Следующие проверки
+- DOC: header/footer and frame identities; additional comment types and links
+  not covered by the current note model.
+- DOC: remaining conditional table styles and explicit geometry that does not
+  require page layout.
+- PPT: text in extensions and embedded passive documents; agreement with a
+  converted presentation does not substitute for understanding unknown constructs.
+- XLS: general localization, fraction formats and formats that hide values.
+  Hidden values must remain available in typed data.
+- RTF: legacy shape text without primary shptxt; safe selection between primary
+  and fallback representations without duplication.
+- ODF: passive text in embedded objects and extensions where the format defines
+  its document ownership. External resources are not opened.
+- Expansion of a legally usable real-world corpus, kept separate from private files.
 
-- DOC: идентичность колонтитулов и рамок; дополнительные виды комментариев
-  и связей, не покрытые текущей моделью сносок.
-- DOC: условные стили таблиц и явная геометрия, не требующая раскладки страницы.
-- PPT: текст расширений и вложенных пассивных документов; неизвестное не
-  подменяется совпадением с преобразованной презентацией.
-- XLS: общая локализация, дробные и скрывающие маски. Скрытое значение должно оставаться доступным
-  в типизированных данных.
-- RTF: текст legacy-фигур без основного shptxt; безопасный выбор между
-  первичным и запасным представлением без дублирования.
-- ODF: пассивный текст встроенных объектов и расширений, где формат определяет
-  его принадлежность документу. Внешние ресурсы не открываются.
-- Расширение законно доступного реального корпуса, отдельно от личных файлов.
+## Additional evidence required
 
-## Требует дополнительных доказательств
+Negative values in conditional XLS masks and fully optional fractional digits
+still return the original value with a warning. Available primary sources have
+not established unambiguous rules for signs and decimal-point removal;
+individual Calc results do not replace that contract.
+Research: `research-xls-conditions.md`.
 
-Отрицательные значения в условных масках XLS и полностью необязательная
-дробная часть остаются исходным значением с предупреждением. Доступные
-первичные источники не установили однозначного правила знака и удаления
-десятичной точки; отдельные ответы Calc не заменяют такой контракт.
-Исследование: `research-xls-conditions.md`.
+## Scope boundaries
 
-## Границы назначения
-
-Макросы, формулы, скрипты, команды и переходы по внешним ссылкам не выполняются.
-Рендеринг страниц, точная пагинация, оформление, OCR и извлечение изображения
-не входят в текущий контракт текстового парсера. DOC до Word 97, BIFF до 8 и
-зашифрованные документы требуют отдельных декодеров; они не становятся
-поддержанными за счёт исправления известных случаев современных форматов.
-Полная эквивалентность офисному приложению на произвольном файле не обещается.
+Macros, formulas, scripts and commands are not executed, and external links are
+not followed. Page rendering, exact pagination, styling, OCR and image extraction
+are outside the current text-parser contract. Pre-Word-97 DOC, pre-BIFF8 files
+and encrypted documents require separate decoders; fixing known cases in the
+supported formats does not add support for them. Full equivalence to an office
+application on arbitrary files is not promised.
