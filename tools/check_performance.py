@@ -16,7 +16,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -272,7 +271,7 @@ def benchmark(profile, repeats=1, libreoffice=None, timeout=45):
                     result.update(status=run['status'], returncode=run['returncode'])
                 results.append(result)
     return dict(schema_version=1, profile=profile, workload=PROFILES[profile],
-                project_version=tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['version'],
+                project_version=__version__,
                 runtime_version=__version__, parser_defaults=asdict(Limits()),
                 source_sha256_before=source_before, source_sha256_after=source_fingerprint(),
                 rss_source='Linux /proc/self/status VmHWM sampled immediately after parse',

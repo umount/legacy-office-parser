@@ -1,14 +1,16 @@
 """Smoke-check an installed distribution with the original public corpus."""
 import argparse
+from importlib.metadata import version
 from pathlib import Path
 
-from legacy_office_parser import parse
+from legacy_office_parser import __version__, parse
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('fixtures', type=Path)
     args = parser.parse_args()
+    assert __version__ == version('legacy-office-parser'), 'Runtime and wheel versions differ'
     cases = [('ordinary_table.doc', 'doc'), ('slides_notes.ppt', 'ppt'),
              ('extended/ordinary_table.rtf', 'rtf'), ('extended/ordinary_table.odt', 'odt'),
              ('extended/typed_sparse.xls', 'xls'), ('extended/typed_sparse.ods', 'ods'),
