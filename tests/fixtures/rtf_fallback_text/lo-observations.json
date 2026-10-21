@@ -1,0 +1,132 @@
+{
+  "version": "LibreOffice 7.4.7.2 40(Build:2)",
+  "files": {
+    "empty-instructions.rtf": {
+      "sha256": "0f0d8cbcedb8328414c410abac0fed0fa9e351c34ba3d10e20a7fb75b4a7d23c",
+      "lo_textbox_paragraphs": [],
+      "parser_textboxes": "",
+      "all_paragraphs": [
+        "Before",
+        "\n     \n     \n    After",
+        ""
+      ]
+    },
+    "empty-primary.rtf": {
+      "sha256": "414e45238a24d4912d181dd544715f8a28bfc61213baf652c5ee359298eefff2",
+      "lo_textbox_paragraphs": [
+        ""
+      ],
+      "parser_textboxes": "",
+      "all_paragraphs": [
+        "Before",
+        "\n     \n      \n     \n    After",
+        ""
+      ]
+    },
+    "group-fallback.rtf": {
+      "sha256": "d035fe4f9a11d47bc43b126536993a421e1fa77a827b7d4a6746b025af0f3bc4",
+      "lo_textbox_paragraphs": [],
+      "parser_textboxes": "",
+      "all_paragraphs": [
+        "Before",
+        "\n      \n      \n     \n    After",
+        ""
+      ]
+    },
+    "modern-primary.rtf": {
+      "sha256": "9fe2dd7920042cea4e43ddcbaaa919f6ebaef9a80e2068adf0defc35985ebfb9",
+      "lo_textbox_paragraphs": [
+        "Primary text"
+      ],
+      "parser_textboxes": "Primary text",
+      "all_paragraphs": [
+        "Before",
+        "\n     \n      Primary text\n     \n    After",
+        "Primary text"
+      ]
+    },
+    "no-instructions.rtf": {
+      "sha256": "5c0ddddd24297ff97be1c8234b1c46a73944aad32ec28507c10c252524a8ae78",
+      "lo_textbox_paragraphs": [],
+      "parser_textboxes": "",
+      "all_paragraphs": [
+        "Before",
+        "After"
+      ]
+    },
+    "primary-after.rtf": {
+      "sha256": "90c650c7199edda41f7ea236f63dcdf2bd95413e9ff83bcc345303a83fe5c79e",
+      "lo_textbox_paragraphs": [
+        "Primary text"
+      ],
+      "parser_textboxes": "Primary text",
+      "all_paragraphs": [
+        "Before",
+        "\n     \n      Primary text\n     \n    After",
+        "Primary text"
+      ]
+    },
+    "primary-before.rtf": {
+      "sha256": "7e032de1d526b0aea23adfc1f55954bd87878af8acabfb570db18af6a8a38050",
+      "lo_textbox_paragraphs": [
+        "Primary text"
+      ],
+      "parser_textboxes": "Primary text",
+      "all_paragraphs": [
+        "Before",
+        "\n     \n      Primary text\n     \n    After",
+        "Primary text"
+      ]
+    },
+    "standalone.rtf": {
+      "sha256": "6b6d77c61c5a41bb6920217f05aa3515f75d4684ad6e981fd4df40fc7feab854",
+      "lo_textbox_paragraphs": [
+        "Legacy control"
+      ],
+      "parser_textboxes": "Legacy control",
+      "all_paragraphs": [
+        "Before",
+        "\n     \n      Legacy control\n     \n    After",
+        "Legacy control"
+      ]
+    },
+    "typed-no-primary.rtf": {
+      "sha256": "81cff973758628c129b79086457d638ebe14fb06be22c6cc2505575f8c11e680",
+      "lo_textbox_paragraphs": [],
+      "parser_textboxes": "",
+      "all_paragraphs": [
+        "Before",
+        "\n     \n     \n    After",
+        ""
+      ]
+    },
+    "break-controls.rtf": {
+      "sha256": "d02a0f3c64add85b9014fb1a5b565a4ef77b9f77d4222cf29e1f6a6bae712306",
+      "lo_textbox_paragraphs": [],
+      "parser_textboxes": "",
+      "all_paragraphs": [
+        "AB",
+        "CD"
+      ],
+      "parser_text": "AB\n\nCD"
+    },
+    "wordart-property.rtf": {
+      "sha256": "412a64a3bf27ce905eab63d51b956dcfed60b9429d8fb2bab0ef0cd8a05e88e8",
+      "all_paragraphs": [
+        "Before",
+        "\n     Original WordArt\n     \n      \n      \n      \n      \n      \n      \n      \n      \n      \n     \n    After",
+        "Original WordArt"
+      ],
+      "parser_text": "Before\n\nAfter",
+      "lo_shape_paragraphs": [
+        "Original WordArt"
+      ]
+    },
+    "wordart-explicit.rtf": {
+      "sha256": "cdd46755dc0edd7ad003f80167da603fc8d74db2f8dde8e300feb73220f28ec9",
+      "lo_shape_paragraphs": [
+        "Original WordArt"
+      ]
+    }
+  }
+}

@@ -124,6 +124,133 @@ def _tokens(data: bytes, start: int, limits: Limits):
                 yield 'word', word, number
 
 
+class _WordArt:
+    """Strict, passive observer for one standalone, explicitly enabled shape.
+
+    This does not reopen property destinations in the story parser. Only flat
+    ASCII string values are supported; unknown syntax invalidates the candidate.
+    The grammar stack has at most four entries, independent of hostile nesting.
+    """
+    _NUMERIC = {'shapeType', 'fGtext', 'fGtextOK', 'fHidden', 'fBackground',
+                'fIsButton', 'gtextSize'}
+    _NAMES = _NUMERIC | {'gtextUNICODE', 'gtextFont'}
+    _GEOMETRY = {'shpleft', 'shptop', 'shpright', 'shpbottom'}
+
+    def __init__(self, depth: int):
+        self.depth = depth
+        self.frames = ['shp']
+        self.valid = True
+        self.instructions = False
+        self.attempted = False
+        self.text_overflow = False
+        self.ignored = 0
+        self.starred = False
+        self.props: dict[str, str] = {}
+        self.name = ''
+        self.parts: list[str] = []
+        self.size = 0
+        self.phase = 0
+
+    def token(self, kind, value, number, depth, limit):
+        if not self.valid:
+            return
+        if self.ignored:
+            if kind == 'close' and depth == self.ignored:
+                self.ignored = 0
+                self.frames.pop()
+            return
+        frame = self.frames[-1]
+        if kind == 'open':
+            if frame not in {'shp', 'shpinst', 'sp'}:
+                self.valid = False
+            else:
+                self.frames.append('pending')
+                self.starred = False
+        elif kind == 'close':
+            if frame in {'sn', 'sv'}:
+                text = ''.join(self.parts)
+                self.parts.clear()
+                self.size = 0
+                if frame == 'sn':
+                    self.name = text
+                    self.attempted |= text == 'gtextUNICODE'
+                    self.valid = text in self._NAMES and text not in self.props
+                    self.phase = 1
+                else:
+                    if self.name in self._NUMERIC:
+                        self.valid = (bool(text) and len(text) <= 11
+                                      and (text[1:] if text.startswith('-') else text).isascii()
+                                      and (text[1:] if text.startswith('-') else text).isdigit()
+                                      and -2147483648 <= int(text) <= 2147483647)
+                    self.props[self.name] = text
+                    self.phase = 2
+            elif frame == 'sp':
+                self.valid = self.phase == 2
+            elif frame == 'pending':
+                self.valid = False
+            self.frames.pop()
+        elif kind == 'symbol' and value == '*' and frame == 'pending':
+            self.valid = not self.starred and self.frames[-2] == 'shp'
+            self.starred = True
+        elif kind == 'word':
+            if frame == 'pending':
+                parent = self.frames[-2]
+                if parent == 'shp' and value == 'shpinst' and not self.instructions:
+                    self.instructions = True
+                elif parent == 'shp' and value == 'shprslt' and not self.starred:
+                    self.ignored = depth
+                elif parent == 'shpinst' and value == 'sp':
+                    self.name = ''
+                    self.phase = 0
+                elif parent == 'sp' and ((value == 'sn' and self.phase == 0)
+                                         or (value == 'sv' and self.phase == 1)):
+                    pass
+                else:
+                    self.valid = False
+                self.frames[-1] = value
+                self.valid = self.valid and number is None
+            elif frame == 'shp':
+                self.valid = (value in self._GEOMETRY and number is not None
+                              and -2147483648 <= number <= 2147483647)
+            else:
+                self.valid = False
+        elif kind == 'bytes':
+            if frame not in {'sn', 'sv'}:
+                self.valid = not value.strip(b' \t')
+            elif any(b < 32 or b > 126 for b in value):
+                self.valid = False
+            else:
+                bound = (min(65536, limit) if frame == 'sv' and self.name == 'gtextUNICODE'
+                         else 128 if frame == 'sv' and self.name == 'gtextFont' else 32)
+                if frame == 'sv' and self.name == 'gtextUNICODE' and self.text_overflow:
+                    # Still validate every token, but never retain an overflowed value.
+                    return
+                if len(value) > bound - self.size:
+                    if frame == 'sv' and self.name == 'gtextUNICODE':
+                        # Later flags or properties may make this text ineligible.
+                        # Defer the limit error until the complete shape is validated.
+                        self.text_overflow = True
+                        self.parts.clear()
+                        self.size = 0
+                    else:
+                        self.valid = False
+                else:
+                    self.parts.append(value.decode('ascii'))
+                    self.size += len(value)
+        else:
+            self.valid = False
+
+    def text(self):
+        p = self.props
+        if (self.valid and self.instructions and p.get('shapeType') == '136'
+                and p.get('fGtext') == p.get('fGtextOK') == '1'
+                and all(p.get(k, '0') == '0' for k in ('fHidden', 'fBackground', 'fIsButton'))):
+            if self.text_overflow:
+                raise LimitExceededError('RTF WordArt property text limit exceeded')
+            return p.get('gtextUNICODE')
+        return None
+
+
 @dataclass(slots=True)
 class _State:
     skip: bool = False
@@ -404,6 +531,8 @@ class _Parser:
         self.cells = 0
         self.definitions = 0
         self.has_nested = False
+        self.wordart: _WordArt | None = None
+        self.uncertain_encoding = False
 
     def warn(self, message: str):
         if message not in self.document.warnings:
@@ -441,6 +570,7 @@ class _Parser:
         try:
             codecs.lookup(name)
         except LookupError:
+            self.uncertain_encoding = True
             self.warn('Unsupported code page replaced with Windows-1252.')
             return 'cp1252'
         return name
@@ -533,6 +663,11 @@ class _Parser:
         elif word == 'dptxbxtext' and not s.legacy_container:
             s.skip = True
         elif word in _SHAPE_CONTAINERS:
+            if (word == 'shp' and s.first and not s.starred
+                    and not s.shape_ancestor and not s.font_table
+                    and not s.hidden and not s.deleted and self.wordart is None
+                    and not self.uncertain_encoding and self.encoding() == 'cp1252'):
+                self.wordart = _WordArt(len(self.stack))
             # Traverse only recognized shape containers, never reopen a skipped
             # ancestor. Property values and the legacy rendering are hard skips.
             self.high_end()
@@ -563,6 +698,8 @@ class _Parser:
         if s.first or s.starred:
             self.destination(word)
         s.first = s.starred = False
+        if word == 'shp' and number is not None and self.wordart is not None:
+            self.wordart.valid = False
         if s.skip:
             return
         if s.font_table:
@@ -576,6 +713,7 @@ class _Parser:
                 else:
                     charset = _CHARSETS.get(number)
                     if number not in {0, 1} and charset is None:
+                        self.uncertain_encoding = True
                         self.warn('Unsupported font charset or symbol font; using document code page.')
                 self.fonts[s.font] = charset, explicit
             return
@@ -698,6 +836,19 @@ class _Parser:
                 if kind == 'bytes' and all(b in b' \t\r\n' for b in value):
                     continue
                 raise InvalidDocumentError('Data after RTF root group')
+            if self.wordart is not None:
+                candidate = self.wordart
+                candidate.token(kind, value, number, len(self.stack), self.limits.max_text_chars)
+                if kind == 'close' and len(self.stack) == candidate.depth:
+                    text = candidate.text()
+                    self.wordart = None
+                    if text:
+                        sink = _Sink(self, 'textboxes')
+                        sink.text(text)
+                        sink.finish()
+                        self.sinks.append(sink)
+                    elif text is None and candidate.attempted:
+                        self.warn('Unsupported or disabled WordArt property text omitted.')
             if kind == 'bytes':
                 self.state.first = False
                 self.byte_text(value)
