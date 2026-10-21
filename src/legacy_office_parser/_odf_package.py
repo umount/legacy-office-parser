@@ -109,6 +109,11 @@ def read_package(data, budget, expected):
                 raise InvalidDocumentError('Duplicate ODF ZIP member')
             if any(e.flag_bits & 1 for e in entries):
                 raise EncryptedDocumentError('Encrypted ODF ZIP member')
+            # ODF packages use Stored/Deflate. Validate the full inventory before
+            # opening members: optional ZIP codecs have their own memory models.
+            if any(e.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+                   for e in entries):
+                raise UnsupportedFormatError('Unsupported ODF ZIP compression')
             if sum(e.file_size for e in entries) > cap(budget.limits, 'max_uncompressed_bytes', 128 * 1024**2):
                 raise LimitExceededError('ODF ZIP expansion limit exceeded')
             if any(e.file_size > cap(budget.limits, 'max_stream_bytes', 64 * 1024**2) for e in entries):
