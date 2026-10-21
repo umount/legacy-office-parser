@@ -1,0 +1,22 @@
+{
+  "sheets": [
+    {
+      "name": "Данные", "hidden": false, "rows": 6, "columns": 6,
+      "merges": [{"start_row": 5, "start_column": 1, "end_row": 5, "end_column": 2}],
+      "cells": [
+        {"row": 1, "column": 1, "value": "Label / Метка", "value_type": "string", "text": "Label / Метка", "formula": null, "is_formula": false},
+        {"row": 1, "column": 2, "value": "Значение", "value_type": "string", "text": "Значение", "formula": null, "is_formula": false},
+        {"row": 1, "column": 4, "value": "Sparse / Разрежено", "value_type": "string", "text": "Sparse / Разрежено", "formula": null, "is_formula": false},
+        {"row": 2, "column": 1, "value": "alpha beta", "value_type": "string", "text": "alpha beta", "formula": null, "is_formula": false},
+        {"row": 2, "column": 2, "value": 12.5, "value_type": "number", "text": "12.5", "formula": null, "is_formula": false},
+        {"row": 2, "column": 4, "value": true, "value_type": "boolean", "text": "TRUE", "formula": null, "is_formula": false},
+        {"row": 2, "column": 5, "value": "2024-02-29", "value_type": "date", "text": "2024-02-29", "formula": null, "is_formula": false},
+        {"row": 2, "column": 6, "value": 25, "value_type": "number", "text": "25", "formula": "of:=[.B2]*2", "is_formula": true},
+        {"row": 5, "column": 1, "value": "Общий итог", "value_type": "string", "text": "Общий итог", "formula": null, "is_formula": false},
+        {"row": 5, "column": 4, "value": -7, "value_type": "number", "text": "-7", "formula": null, "is_formula": false},
+        {"row": 6, "column": 3, "value": false, "value_type": "boolean", "text": "FALSE", "formula": null, "is_formula": false}
+      ]
+    },
+    {"name": "Пустой", "hidden": false, "rows": 0, "columns": 0, "merges": [], "cells": []}
+  ]
+}

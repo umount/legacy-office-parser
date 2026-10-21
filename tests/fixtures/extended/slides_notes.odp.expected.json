@@ -1,0 +1,33 @@
+{
+  "format": "odp",
+  "blocks": [],
+  "slides": [
+    {
+      "number": 1,
+      "title": "First title / Первый заголовок",
+      "text": "English body with two words\nРусский текст с пробелами",
+      "notes": "",
+      "hidden": false
+    },
+    {
+      "number": 2,
+      "title": "",
+      "text": "",
+      "notes": "",
+      "hidden": false
+    },
+    {
+      "number": 3,
+      "title": "Third title / Третий заголовок",
+      "text": "Last body / Последний текст",
+      "notes": "Third slide notes only / Заметки только третьего слайда",
+      "hidden": false
+    }
+  ],
+  "footnotes": "",
+  "endnotes": "",
+  "headers_footers": "",
+  "textboxes": "",
+  "warnings": [],
+  "sheets": []
+}

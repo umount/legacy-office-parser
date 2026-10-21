@@ -1,0 +1,85 @@
+{
+  "format": "odt",
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "text": "Synthetic document / Синтетический документ"
+    },
+    {
+      "kind": "table",
+      "rows": [
+        [
+          {
+            "text": "Key",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "Value",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "Примечание",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          }
+        ],
+        [
+          {
+            "text": "alpha beta",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "два слова",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          }
+        ],
+        [
+          {
+            "text": "",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "42",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "English and русский",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          }
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "After table / После таблицы"
+    }
+  ],
+  "slides": [],
+  "footnotes": "",
+  "endnotes": "",
+  "headers_footers": "",
+  "textboxes": "",
+  "warnings": [],
+  "sheets": []
+}

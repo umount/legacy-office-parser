@@ -1,0 +1,85 @@
+{
+  "format": "odt",
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "text": "Merged cells / Объединённые ячейки"
+    },
+    {
+      "kind": "table",
+      "rows": [
+        [
+          {
+            "text": "Wide heading / Общий заголовок",
+            "row_span": 1,
+            "col_span": 2,
+            "covered": false
+          },
+          {
+            "text": "",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": true
+          },
+          {
+            "text": "Right",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          }
+        ],
+        [
+          {
+            "text": "Tall / Высокая",
+            "row_span": 2,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "middle one",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          }
+        ],
+        [
+          {
+            "text": "",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": true
+          },
+          {
+            "text": "middle two",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          },
+          {
+            "text": "Конец",
+            "row_span": 1,
+            "col_span": 1,
+            "covered": false
+          }
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "After merged table / После объединения"
+    }
+  ],
+  "slides": [],
+  "footnotes": "",
+  "endnotes": "",
+  "headers_footers": "",
+  "textboxes": "",
+  "warnings": [],
+  "sheets": []
+}
