@@ -18,6 +18,7 @@ from struct import unpack_from
 from typing import Iterator
 
 from ._ole import open_ole, read_stream
+from ._ppt_extensions import slide_metadata_only
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
@@ -317,7 +318,8 @@ class _Parser:
                 self.size(child, 16, exact=True)
                 hidden = bool(self.data[child.start + 10] & 4)
             elif child.type == 5000:
-                self.warn('PPT extension records are not extracted; extension-only content may be omitted.')
+                if typ != 1006 or not slide_metadata_only(self, child):
+                    self.warn('PPT extension records are not extracted; extension-only content may be omitted.')
         if link is None:
             raise InvalidDocumentError('missing PPT slide/notes atom')
         return blocks, link, hidden
