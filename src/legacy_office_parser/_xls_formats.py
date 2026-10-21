@@ -141,6 +141,34 @@ def _split_sections(code: str) -> list[str] | None:
     return sections
 
 
+def _text_parts(section: str) -> tuple[str, str] | None:
+    """One @ surrounded only by quoted or escaped literals; no evaluation."""
+    prefix, suffix = [], []
+    placeholder = False
+    pos = 0
+    while pos < len(section):
+        char = section[pos]
+        if char == '@':
+            if placeholder:
+                return None
+            placeholder = True
+            pos += 1
+            continue
+        if char == '"':
+            end = section.find('"', pos + 1)
+            if end < 0:
+                return None
+            literal = section[pos + 1:end]
+            pos = end + 1
+        elif char == chr(92) and pos + 1 < len(section):
+            literal = section[pos + 1]
+            pos += 2
+        else:
+            return None
+        (suffix if placeholder else prefix).append(literal)
+    return (''.join(prefix), ''.join(suffix)) if placeholder else None
+
+
 def _with_affixes(text: str, prefix: str, suffix: str) -> str:
     # The implicit single-section minus precedes the whole display, including
     # its literal prefix. Use the rendered sign so rounded zero stays unsigned.
@@ -159,8 +187,10 @@ def render_number(value: int | float, code: str) -> str | None:
     sections = _split_sections(code)
     if sections is None:
         return None
+    text_section = ''
     if len(sections) == 4:
-        if sections.pop() not in ('', '@'):
+        text_section = sections.pop()
+        if text_section != '' and _text_parts(text_section) is None:
             return None
     has_empty = '' in sections
     parsed = []
@@ -212,6 +242,8 @@ def render_number(value: int | float, code: str) -> str | None:
     # condition in section two alone: importers disagree on these combinations.
     conditional = any(condition is not None for condition in conditions)
     if conditional:
+        if text_section not in ('', '@'):
+            return None
         if has_empty:
             return None
         if conditions[0] is None or (len(parsed) == 3 and conditions[1] is None):
@@ -302,3 +334,20 @@ def hides_text(code: str) -> bool:
     sections = _split_sections(code)
     return (sections is not None and len(sections) == 4 and sections[-1] == ''
             and all(render_number(value, code) is not None for value in (-1, 0, 1)))
+
+
+def text_affixes(code: str) -> tuple[str, str] | None:
+    """Return affixes only for a fully validated ordinary four-section mask.
+
+    Negative conditional values remain unsupported, so validating all three
+    signs also excludes conditional routing without interpreting string signs.
+    The caller charges expansion before concatenating the retained string.
+    """
+    sections = _split_sections(code)
+    if sections is None or len(sections) != 4:
+        return None
+    parts = _text_parts(sections[-1])
+    if parts is None or not all(render_number(value, code) is not None
+                                for value in (-1, 0, 1)):
+        return None
+    return parts

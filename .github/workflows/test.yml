@@ -82,7 +82,7 @@ jobs:
                 'tests/test_rtf_fallback_text.py', 'tests/test_rtf_wordart_unicode.py',
                 'tests/test_xls_scaled_currency_ole.py', 'tests/test_odf_passive_research.py',
                 'tests/test_doc_notes.py', 'tests/test_doc_comments_ole.py', 'tests/test_ods_floating_research.py',
-                'tests/test_ppt_comments_research.py', 'tests/test_xls_hidden_sections_ole.py'], None),
+                'tests/test_ppt_comments_research.py', 'tests/test_xls_hidden_sections_ole.py', 'tests/test_xls_text_sections_ole.py'], None),
               ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures', '--libreoffice',
                 '--fail-on-difference'], 'reference-report.json'),
               ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures/doc_nested', '--libreoffice',
