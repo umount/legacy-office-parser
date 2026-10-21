@@ -1,6 +1,6 @@
 # Testing
 
-For current 0.16 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
+For current 0.17 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
 For achievements and comparisons with other libraries and LibreOffice, see
 [Comparison](COMPARISON.md). Version-specific results below are historical snapshots.
 
@@ -481,3 +481,39 @@ the repository.
 Conditional visibility is limited to proven complete rectangular tables;
 this is not a claim to support all conditional styles. Details and independent
 reference fixtures: `research-doc-conditional-styles.md`, `research-ppt-comments.md`.
+
+
+### DOC comments, hidden XLS displays and literal RTF WordArt (0.17)
+
+The combined suite passed **3804 tests**, with **51 optional checks skipped**
+in the ordinary run; Ruff passed. With live LibreOffice checks enabled, the
+DOC-comment suite passed **95 tests**, the hidden-XLS suite **93**, and the
+RTF fallback/WordArt suites **122**. These totals include unit and saved-fixture
+checks, not just converter invocations.
+
+The new DOC fixture preserves three comments, two authors, duplicate body text,
+source CPs 20/38/61 and verified ordinary ranges, including a cell anchor and an
+astral character before a reference. Independent review covered missing or
+malformed ownership records, metadata limits, note compatibility and linear
+anchor collection. A separate model review checked serialization and combined
+note/comment path budgets.
+
+All 31 preserved-XLS displays match independent LibreOffice readback; raw numeric
+and string values remain available even when their display is empty. Independent
+section-selection and whole-mask rejection probes supplement the regression suite.
+RTF WordArt has positive authored readback for the explicitly enabled subset.
+Fallback-only observations remain a documented boundary, not recovered content.
+Oversized inactive candidates do not reject valid body text; accepted oversized
+candidates still fail the text limit.
+
+Post-integration checks passed **6000 mutations of 60 authored documents** using
+seed 20261022, **3500 baseline mutations** using seed 143, and all **11 resource
+checks**. Five private DOC documents retained their previous character/table
+counts. No private document contents were published. Before this work, the 0.16
+baseline separately passed 23,000 mutations with seed 20261022; that earlier run
+is not included in the post-integration totals.
+
+The installed 0.17 wheel passed all seven formats outside the source tree,
+including DOC comment ownership and hidden XLS raw values. The source archive
+contains all 127 tracked fixture files, including DOCX/XLSX/FODT reference sources
+and CSV observations; no private `tmp/` data is included.

@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register after 0.16. Each item requires a verified example, independent
+Working register after 0.17. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -61,16 +61,28 @@ does not establish completeness.
 - The note oracle distinguishes a DOC table from its verified textbox
   representation in newer LibreOffice, without weakening general structural checks.
 
+## Completed in 0.17
+
+- XLS: empty ordinary numeric sections and a validated empty fourth text section;
+  raw values and formula flags remain available. A preserved XLS is checked
+  against LibreOffice without resaving its source FORMAT records.
+- DOC: PLC-owned comments, authors, initials, reference-container paths and
+  verified ordinary source selections. Shared body blocks avoid duplicate text.
+  Unproven ownership is omitted with diagnostics; complex selections remain unknown.
+- RTF: explicit type-136 WordArt with enable flags and a bounded literal ASCII
+  property grammar. Independent LibreOffice readback confirms the original example.
+  Fallback-only shape probes did not establish a safe recovery rule.
+
 ## Next areas to verify
 
-- DOC: header/footer and frame identities; additional comment types and links
-  not covered by the current note model.
+- DOC: header/footer and frame identities; comment reply trees, ink and complex
+  source selections beyond the verified ordinary text/within-cell subset.
 - DOC: remaining conditional table styles and explicit geometry that does not
   require page layout.
 - PPT: text in extensions and embedded passive documents; agreement with a
   converted presentation does not substitute for understanding unknown constructs.
-- XLS: general localization, fraction formats and formats that hide values.
-  Hidden values must remain available in typed data.
+- XLS: general localization, fraction formats, conditional hiding and arbitrary
+  text-section formats. Hidden values must remain available in typed data.
 - RTF: legacy shape text without primary shptxt; safe selection between primary
   and fallback representations without duplication.
 - ODF: passive text in embedded objects and extensions where the format defines

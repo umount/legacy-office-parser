@@ -60,7 +60,16 @@ The underlying investigations and upstream links are in [RESEARCH.md](RESEARCH.m
 [OpenDocument research](research-odf.md). Attribution is recorded in
 [THIRD_PARTY.md](../THIRD_PARTY.md).
 
-## Evidence behind the extraction claim
+## Version 0.17 follow-up
+
+The next verified step adds DOC comments with authors and source ownership,
+empty XLS display sections without losing typed values, and a conservative
+literal RTF WordArt subset. The combined local suite passed 3,804 tests (51
+optional skips), 9,500 mutations and 11 resource checks. New original fixtures
+were also checked with LibreOffice; see [validation details](TESTING.md).
+These additions extend measured coverage, not the claim to arbitrary documents.
+
+## Recorded 0.16 evidence behind the extraction claim
 
 For version 0.16, the full local suite passed **3,507 tests**, with **37 optional
 tests skipped** in the ordinary run. The DOC-note and PPT-comment suites passed **111 tests** with live reference

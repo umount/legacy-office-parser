@@ -100,6 +100,20 @@ slide. `Document.text` includes comment text after notes; authorship remains
 structured. Empty lists are not serialized. All strings and records count
 toward shared limits; macros and external links are not executed.
 
+`Document.comments` stores DOC comment metadata and references into
+`story_blocks['comment_text']` through `CommentBodyRange`. The combined
+`comment_text` projection appears once in `Document.text`. Source reference CPs
+and optional selection ranges use UTF-16 units, independently of output text.
+The final container path is resolved after table assembly. Metadata, paths,
+source strings and retained projections remain bounded; unresolved ownership
+cannot turn arbitrary comment-story bytes into active comments.
+
+XLS empty format sections affect display text only. Hidden strings still consume
+the raw-value budget, including repeated SST references, and typed values remain
+in JSON. RTF WordArt uses a bounded observer for explicitly enabled standalone
+shapes; it neither reopens suppressed destinations nor recovers unproven fallback
+stories.
+
 ## Process boundary
 
 The parser is synchronous. The calling process sets timeouts, forced termination

@@ -30,13 +30,13 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.16 adds conditional text visibility for a verified subset of DOC tables
-and slide-owned PPT comments. Full compatibility with arbitrary documents has not
+Version 0.17 adds source-linked DOC comments, hidden XLS display sections with
+raw values preserved, and a narrow subset of explicitly enabled RTF WordArt. Full compatibility with arbitrary documents has not
 yet been established; [coverage and limitations](docs/TESTING.md) are documented
 separately.
 
 - DOC 97–2003: paragraphs, nested tables and merges; separate text stories and
-  inherited style visibility.
+  inherited style visibility; comments with authors and source references.
 - XLS BIFF8: sheets, sparse typed cells, merges and stored formula results;
   percentages, decimals, digit grouping and scientific notation; explicit text
   labels before/after numbers and sign-based sections. Older BIFF versions are
@@ -44,7 +44,7 @@ separately.
 - PPT 97–2003: current slides, titles, text, WordArt, ordinary text from active
   masters, stored static dates/footers, notes and comments.
 - RTF: code pages and Unicode, paragraphs, tables with ordinary rectangular
-  merges, nested tables, shape text and auxiliary text stories. Ambiguous merges
+  merges, nested tables, shape text, explicitly enabled literal WordArt and auxiliary text stories. Ambiguous merges
   produce warnings.
 - ODT: paragraphs, nested tables, notes, frames and headers/footers from selected
   master pages; ODS: sheets and cells; ODP: slides and notes.
@@ -60,8 +60,8 @@ construct in the document was extracted. See [support and limitations](docs/TEST
 
 On verified extraction cases, the parser matches the content and structure
 checked against LibreOffice. In specific documented cases, it preserves tables
-or repeated content lost during LibreOffice conversion. Version 0.16 passed
-3,507 tests, 8,100 deterministic mutations and the LibreOffice reference CI job.
+or repeated content lost during LibreOffice conversion. Version 0.17 passed
+3,804 tests, 9,500 deterministic mutations and local LibreOffice reference checks.
 This is measured coverage, not a claim of complete office-suite compatibility.
 Apache OpenOffice has not been tested separately.
 
@@ -102,6 +102,21 @@ note bodies to source references. `body` identifies a block range in
 `visibility` records hidden, deleted or unknown reference visibility. Empty
 `notes` is omitted from JSON. Printed note numbering and frame placement are
 not reconstructed.
+
+For DOC, `Document.comments` stores authors, initials and source relationships.
+Each `Comment.body` references a block range in `story_blocks['comment_text']`;
+`Document.comment_text` is the combined projection, included once in
+`Document.text`. `source_cp` locates the reference in source UTF-16 units;
+`anchor_path` identifies its final main-story paragraph or cell. Selection bounds
+are half-open source CP ranges when verified, otherwise `None`. Reply trees,
+ink and page placement are not reconstructed. Empty comment fields are omitted
+from JSON.
+
+Supported empty XLS format sections produce an empty `SpreadsheetCell.text`,
+while `value`, `value_type` and `is_formula` remain available in structured data.
+An empty display is omitted from `Document.text`; it does not mean the cell's
+stored value is absent. General conditional hiding and arbitrary text masks are
+not supported.
 
 The package also provides `parse_doc`, `parse_ppt`, `parse_rtf`, `parse_odt`,
 `parse_ods` and `parse_odp`. Each accepts a path or `bytes` and returns `Document`.
