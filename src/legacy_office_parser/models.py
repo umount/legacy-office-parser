@@ -17,6 +17,8 @@ class Cell:
     covered: bool = False
     # Ordered content for cells containing nested tables; text is its plain projection.
     blocks: list[Block] = field(default_factory=list)
+    # No source cell occupies this coordinate; distinct from empty or covered cells.
+    omitted: bool = False
 
 @dataclass(slots=True)
 class Table:
@@ -109,8 +111,11 @@ class Document:
     def to_dict(self) -> dict:
         def compatible_cells(items):
             result = dict(items)
-            if 'row_span' in result and not result.get('blocks'):
-                result.pop('blocks', None)
+            if 'row_span' in result:
+                if not result.get('blocks'):
+                    result.pop('blocks', None)
+                if not result.get('omitted'):
+                    result.pop('omitted', None)
             if 'format' in result and not result.get('story_blocks'):
                 result.pop('story_blocks', None)
             return result
@@ -119,7 +124,7 @@ class Document:
 
 def _clone_cell(source: Cell) -> Cell:
     """Copy a nested cell iteratively; repeated source rows must not share trees."""
-    result = Cell(source.text, source.row_span, source.col_span, source.covered)
+    result = Cell(source.text, source.row_span, source.col_span, source.covered, omitted=source.omitted)
     pending = [(source.blocks, result.blocks)]
     while pending:
         src, dst = pending.pop()
@@ -133,7 +138,7 @@ def _clone_cell(source: Cell) -> Cell:
                     copied = []
                     table.rows.append(copied)
                     for cell in row:
-                        item = Cell(cell.text, cell.row_span, cell.col_span, cell.covered)
+                        item = Cell(cell.text, cell.row_span, cell.col_span, cell.covered, omitted=cell.omitted)
                         copied.append(item)
                         pending.append((cell.blocks, item.blocks))
     return result

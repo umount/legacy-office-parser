@@ -930,17 +930,15 @@ class _TableLevel:
             return
         if not valid:
             return
-        left, right = valid[0][1][0], valid[0][1][-1]
-        if any(edges[0] != left or edges[-1] != right for _, edges in valid):
-            self.doc.warn('Rows with different outer boundaries retain their physical cell coordinates.')
-            return
         grid = sorted({edge for _, edges in valid for edge in edges})
         indexes = {edge: i for i, edge in enumerate(grid)}
+        # Exact source edges only: no rounding/snap-to-grid heuristics. Coordinates
+        # outside a physical row are absent, not empty cells or merge continuations.
         # Check before constructing the expanded coordinate matrix.
         extra = sum(len(grid) - 1 - len(row) for row, _ in valid)
         self.doc.budget.cell(extra)
         for row, edges in valid:
-            expanded = []
+            expanded = [Cell(omitted=True) for _ in range(indexes[edges[0]])]
             for i, cell in enumerate(row):
                 start = indexes[edges[i]]
                 end = indexes[edges[i + 1]]
@@ -948,6 +946,8 @@ class _TableLevel:
                     cell.col_span = indexes[edges[min(i + cell.col_span, len(row))]] - start
                 expanded.append(cell)
                 expanded.extend(Cell(covered=True) for _ in range(end - start - 1))
+            expanded.extend(Cell(omitted=True)
+                            for _ in range(len(grid) - 1 - indexes[edges[-1]]))
             row[:] = expanded
 
 

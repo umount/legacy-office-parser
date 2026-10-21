@@ -15,8 +15,9 @@ A single nonempty story has recoverable order; multiple stories expose token
 multiset diagnostics only, with order/equality explicitly unknown.
 Notes compare pooled text in XML order, not note identity or anchor positions.
 Note tables use row-major text with explicit cell/row separators, not structure.
-Omitted grid coordinates are absent, not empty or covered cells; the dense model
-cannot express interior omissions. Legacy hMerge is unsupported. Cell tables compare recursively in reading order.
+Omitted grid coordinates are absent, not empty or covered cells; model omitted
+slots retain their indices and row widths. Legacy hMerge is unsupported. Cell
+tables compare recursively in reading order.
 This is a developer oracle for trusted converted files, not a hardened ZIP reader.
 """
 from __future__ import annotations
@@ -201,11 +202,19 @@ def _segments(blocks):
     return segments, tables
 
 
+def _invalid_omitted(cell):
+    return cell.omitted and (cell.covered or cell.text != '' or bool(cell.blocks) or
+                             cell.row_span != 1 or cell.col_span != 1)
+
+
 def _table_check(model, reference, number, path=None):
     expected, widths, complete = reference.rows, reference.widths, reference.complete
     path = [number] if path is None else path
     nested_checks = []
-    actual = [{i: c for i, c in enumerate(row)} for row in model.rows]
+    if any(_invalid_omitted(cell) for row in model.rows for cell in row):
+        complete = False
+    # Omission changes presence only: never compact indices or shrink row widths.
+    actual = [{i: c for i, c in enumerate(row) if not c.omitted} for row in model.rows]
     mismatches = []
     for r in range(max(len(actual), len(expected))):
         left = actual[r] if r < len(actual) else {}
@@ -226,6 +235,8 @@ def _table_check(model, reference, number, path=None):
                 children = [_table_check(x, y, i + 1, path + [r + 1, col + 1, i + 1])
                             for i, (x, y) in enumerate(zip(a_tables, b_tables))]
                 nested_checks.extend(children)
+                if any(not child['complete'] for child in children):
+                    complete = False
                 check['blocks_equal'] = (
                     len(a_tables) == len(b_tables) and
                     list(map(_normal, a_segments)) == list(map(_normal, b_segments)) and
@@ -272,6 +283,10 @@ def _model_counts(blocks, unsupported):
             tables += 1
             for row in block.rows:
                 for cell in row:
+                    if cell.omitted:
+                        if _invalid_omitted(cell):
+                            unsupported['invalid_model_omitted'] += 1
+                        continue
                     cells += 1
                     pending.extend(cell.blocks)
         elif not isinstance(block, Paragraph):

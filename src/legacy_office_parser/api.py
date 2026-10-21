@@ -1,7 +1,8 @@
 from pathlib import Path
 import math
 from ._ole import open_ole
-from .errors import EncryptedDocumentError, LimitExceededError, UnsupportedFormatError
+from .errors import (EncryptedDocumentError, InvalidDocumentError, LimitExceededError,
+                     UnsupportedFormatError)
 from .limits import Limits
 from .models import Document
 
@@ -36,6 +37,9 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
             for row in block.rows:
                 cells += len(row)
                 for cell in row:
+                    if cell.omitted and (cell.covered or cell.text or cell.blocks or
+                                         cell.row_span != 1 or cell.col_span != 1):
+                        raise InvalidDocumentError('invalid omitted table position')
                     total += len(cell.text)
                     stack.extend((child, depth + 1) for child in cell.blocks)
         if cells > limits.max_cells:
@@ -58,7 +62,6 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
             if isinstance(cell.value, str) and cell.value != cell.text:
                 total += len(cell.value)
             if isinstance(cell.value, float) and not math.isfinite(cell.value):
-                from .errors import InvalidDocumentError
                 raise InvalidDocumentError('non-finite spreadsheet value')
         for merged in sheet.merges:
             if not (1 <= merged.start_row <= merged.end_row <= limits.max_rows and
