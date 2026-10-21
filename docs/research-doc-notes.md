@@ -239,5 +239,4 @@ parity with LibreOffice.
 
 Actual validation after this correction: **106 passed, 1 skipped** normally;
 **107 passed** with local LO 7.4 live conversion; Ruff passed. The newer CI case
-is covered by the evidence-based synthetic regression; the real newer CI rerun
-remains pending. Only the notes tests and this research file changed.
+is covered by the evidence-based synthetic regression; the real newer CI rerun also passed in run 39673338931 (commit 8a949ba).
