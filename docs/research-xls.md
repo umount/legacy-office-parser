@@ -91,7 +91,7 @@ and do not include extracted private text.
 ## Validation
 
 `tests/test_xls.py` contains original synthetic BIFF and CFB construction only.
-55 tests pass, including:
+64 tests pass, including:
 
 - encoding transitions both ways, rich/phonetic continuation, a new-string boundary,
   and a surrogate pair crossing CONTINUE;

@@ -136,6 +136,8 @@ def _worker(source: Path, reference: Path | None) -> dict:
         result['reference_word_recall'] = round(common / sum(expected.values()), 6) if expected else None
         result['reference_word_precision'] = round(common / sum(got.values()), 6) if got else None
         result['reference_words'] = sum(expected.values())
+        result['reference_nonspace_equal'] = (re.sub(r'\s+', '', body) ==
+                                              re.sub(r'\s+', '', ref_text))
         # Bag-of-words is a diagnostic only, not a claim of ordering/table fidelity.
     return result
 

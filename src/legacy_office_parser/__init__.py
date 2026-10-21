@@ -1,4 +1,4 @@
-"""Extract binary Office documents without a running office suite."""
+"""Extract legacy Office, RTF and OpenDocument without an office runtime."""
 from .api import parse, parse_doc, parse_ppt, parse_xls, parse_rtf, parse_odt, parse_ods, parse_odp
 from .errors import (ParseError, InvalidDocumentError, UnsupportedFormatError,
                      EncryptedDocumentError, LimitExceededError)

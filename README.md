@@ -1,47 +1,80 @@
 # legacy-office-parser
 
-Небольшая Python-библиотека для извлечения текста и структуры из бинарных Word
-97–2003 (`.doc`) и PowerPoint 97–2003 (`.ppt`). Без LibreOffice, Java и сетевых
-сервисов во время работы. Первая версия предназначена для проверки на корпусе,
-а не для заявления о полной совместимости с Microsoft Office.
+Небольшой Python-пакет для извлечения текста и структуры из DOC, XLS, PPT,
+RTF и OpenDocument (ODT, ODS, ODP). Один API, отдельные модули форматов,
+без LibreOffice, Java и сети во время работы. Единственная внешняя
+runtime-зависимость — `olefile` для бинарных OLE-контейнеров.
 
-- DOC: абзацы и таблицы; дополнительный текст документа хранится отдельно.
-- PPT: слайды в исходном порядке, заголовки, текст и заметки. Структура таблиц PPT
-  не входит в контракт; содержащийся в них доступный текст нужен.
-- Единственная внешняя runtime-зависимость — `olefile` для OLE/CFB-контейнера.
-- Никакого рендеринга, OCR, макросов, извлечения изображений или загрузок из сети.
+Версия 0.2 — начальная реализация с проверенным корпусом и явными ограничениями,
+а не обещание полной совместимости с Microsoft Office или LibreOffice.
 
-## Использование
+- DOC 97–2003: абзацы, таблицы и объединения; отдельные области текста.
+- XLS BIFF8: листы, разреженные типизированные ячейки, объединения,
+  сохранённые результаты формул. Более старые версии BIFF не поддержаны.
+- PPT 97–2003: действующие слайды, заголовки, текст и связанные заметки.
+- RTF: кодовые страницы и Unicode, абзацы, строки/ячейки таблиц, дополнительные
+  области текста. Объединения и вложенные таблицы пока упрощаются с предупреждением.
+- ODT: абзацы и таблицы; ODS: листы и ячейки; ODP: слайды и заметки.
 
-```python
-from legacy_office_parser import parse_doc, parse_ppt, Limits
+Пакет не выполняет макросы и формулы, не открывает внешние ссылки и не рендерит
+изображения. Проверяйте `warnings`: успешный разбор не означает, что извлечены
+все конструкции документа. [Поддержка и ограничения](docs/TESTING.md).
 
-doc = parse_doc("example.doc")
-print(doc.text)
-structured = doc.to_dict()
-slides = parse_ppt("example.ppt", limits=Limits(max_file_bytes=32 * 1024 * 1024))
-```
+## Установка и использование
+
+Из локального репозитория:
 
 ```sh
-python -m pip install -e '.[dev]'
+python -m pip install .
+```
+
+```python
+from legacy_office_parser import parse, parse_xls, Limits
+
+# Формат определяется по содержимому, а не расширению имени.
+document = parse("example.odt", limits=Limits(max_file_bytes=32 * 1024 * 1024))
+print(document.text)
+structured = document.to_dict()
+
+workbook = parse_xls("example.xls")
+for sheet in workbook.sheets:
+    for cell in sheet.cells:
+        print(sheet.name, cell.address, cell.value_type, cell.value, cell.is_formula)
+```
+
+Есть также `parse_doc`, `parse_ppt`, `parse_rtf`, `parse_odt`, `parse_ods`,
+`parse_odp`. Все принимают путь или `bytes` и возвращают `Document`.
+Координаты ячеек и границы объединений — с единицы. Отсутствующие ячейки
+не разворачиваются в плотную сетку. `formula` содержит исходное выражение,
+если формат/парсер его предоставляет; `is_formula` сохраняется и для XLS,
+где бинарные токены формулы не переводятся в выражение.
+
+```sh
 legacy-office-parser example.doc --json
-legacy-office-parser example.ppt --json --strict
-python -m pytest
+legacy-office-parser example.ods --json --strict
 ```
 
 CLI: код 0 — результат получен; 2 — ошибка; 3 с `--strict` — результат содержит
-предупреждения о неполном/упрощённом разборе. `warnings` нужно проверять и при
-использовании Python API. Наличие результата не является обещанием полной
-поддержки всех конструкций формата.
+предупреждения. Лимиты структуры и текста применяются внутри парсеров;
+системный лимит памяти и таймаут задаёт вызывающий процесс.
 
-Личные лекции и книги хранятся только в `tmp/` (игнорируется Git). Их нельзя
-переносить в публичные fixtures или цитировать в отчётах. Для открытых тестов
-используются искусственные документы с известным содержимым.
+## Разработка
+
+```sh
+python -m pip install -e '.[dev]'
+python -m pytest -q
+ruff check src tests tools
+python -m build
+```
+
+Личные файлы и отчёты помещаются в игнорируемую Git папку `tmp/`.
+Публичные fixtures содержат только специально созданные документы.
 
 ## Документация
 
 - [План и состояние](docs/PLAN.md)
 - [Принципы и архитектура](docs/ARCHITECTURE.md)
-- [Результаты исследования](docs/RESEARCH.md)
-- [Проверка](docs/TESTING.md)
+- [Исследование DOC/PPT и сравнение с WordCraft](docs/RESEARCH.md)
+- [XLS](docs/research-xls.md), [RTF](docs/research-rtf.md), [OpenDocument](docs/research-odf.md)
+- [Проверка и ограничения](docs/TESTING.md)
 - [Источники и происхождение](THIRD_PARTY.md)

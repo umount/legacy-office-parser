@@ -15,3 +15,8 @@ jobs:
       - run: ruff check src tests tools
       - run: python -m pytest -q
       - run: python -m build
+      - name: Verify installed wheel outside the source import path
+        run: |
+          python -m venv /tmp/legacy-wheel-check
+          /tmp/legacy-wheel-check/bin/python -m pip install dist/*.whl
+          /tmp/legacy-wheel-check/bin/python -I tools/check_wheel.py tests/fixtures

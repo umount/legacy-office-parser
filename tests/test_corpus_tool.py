@@ -124,3 +124,17 @@ def test_presentation_reference_joins_formatting_runs(tmp_path, monkeypatch):
                    '<a:r><a:t>alpha</a:t></a:r><a:r><a:t>bet</a:t></a:r></a:p>')
     result = corpus._worker(tmp_path / 'unused.odp', reference)
     assert result['reference_word_recall'] == result['reference_word_precision'] == 1
+
+
+def test_reference_collapsed_cell_boundaries_are_distinguished_from_lost_characters(tmp_path, monkeypatch):
+    import legacy_office_parser
+    from legacy_office_parser import Table, Cell
+    monkeypatch.setattr(legacy_office_parser, 'parse', lambda source: Document(
+        format='doc', blocks=[Table([[Cell('one'), Cell('two')], [Cell('three'), Cell('four')]])]))
+    reference = tmp_path / 'reference.docx'
+    with zipfile.ZipFile(reference, 'w') as z:
+        z.writestr('word/document.xml', ET.tostring(xml(paragraph('onetwothreefour'))))
+    result = corpus._worker(tmp_path / 'unused.doc', reference)
+    assert result['reference_word_recall'] == 0
+    assert result['reference_nonspace_equal'] is True
+    assert result['tables'] == 1 and result['reference_tables'] == 0
