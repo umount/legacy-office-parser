@@ -64,6 +64,10 @@ def read_stream(ole, name: str, limits: Limits, *, required: bool = True) -> byt
         if required:
             raise InvalidDocumentError(f'missing required stream: {name}')
         return b''
+    # A directory name may resolve to a storage or malformed unused entry.
+    # olefile.get_size raises TypeError for those; reject by type before access.
+    if ole.get_type(name) != olefile.STGTY_STREAM:
+        raise InvalidDocumentError(f'expected an OLE stream: {name}')
     if ole.get_size(name) > limits.max_stream_bytes:
         raise LimitExceededError('OLE stream size limit exceeded')
     try:
