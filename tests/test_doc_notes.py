@@ -27,13 +27,13 @@ def text_plc(cps, sentinel=0xffffffff):
     return struct.pack('<' + 'I' * (len(cps) + 1), *cps, sentinel)
 
 
-def raw_fixture():
+def raw_fixture(path=FIXTURE / 'authored.doc'):
     """Independent CLX walk: fixture-only, no production decoder imports.
 
     Return raw UTF-16 CP storage and the four PLCs. Do not normalize controls,
     strip labels or filter deleted references before ordinal pairing.
     """
-    with olefile.OleFileIO(FIXTURE / 'authored.doc') as compound:
+    with olefile.OleFileIO(path) as compound:
         word = compound.openstream('WordDocument').read()
         name = '1Table' if struct.unpack_from('<H', word, 10)[0] & 0x200 else '0Table'
         table = compound.openstream(name).read()
@@ -285,6 +285,151 @@ def resolve(doc, path):
     return result
 
 
+def xml_note_oracle(path, kind):
+    """Independent OOXML ID links, container paths and complete body structure."""
+    with ZipFile(path) as archive:
+        main = ET.fromstring(archive.read('word/document.xml'))
+        notes = ET.fromstring(archive.read(f'word/{kind}s.xml'))
+    parents = {child: node for node in main.iter() for child in node}
+
+    def blocks(node):
+        return [child for child in node if child.tag in (W+'p', W+'tbl')]
+
+    def paragraph_text(node):
+        # Field instructions and drawing payloads are not visible paragraph text.
+        return ''.join(n.text or '' for n in node.iter() if n.tag in (W+'t', W+'delText'))
+
+    def signature(node):
+        if node.tag == W+'p':
+            return ('p', paragraph_text(node))
+        assert node.tag == W+'tbl'
+        rows = []
+        for row in node.findall(W+'tr'):
+            cells = []
+            for cell in row.findall(W+'tc'):
+                children = blocks(cell)
+                cells.append(tuple(signature(c) for c in children) if any(c.tag == W+'tbl' for c in children)
+                             else '\n'.join(paragraph_text(c) for c in children))
+            rows.append(tuple(cells))
+        return ('table', tuple(rows))
+
+    def anchor(node):
+        if node.tag == W+'body':
+            return []
+        parent = parents[node]
+        if node.tag == W+'tc':
+            table = parents[parent]
+            return anchor(table) + ['rows', table.findall(W+'tr').index(parent), parent.findall(W+'tc').index(node)]
+        assert node.tag in (W+'p', W+'tbl')
+        if node.tag == W+'p' and parent.tag == W+'tc' and not parent.findall(W+'tbl'):
+            return anchor(parent)  # Simple cells project their paragraphs into Cell.text.
+        return anchor(parent) + ['blocks', blocks(parent).index(node)]
+
+    bodies = {n.get(W+'id'): tuple(signature(c) for c in blocks(n))
+              for n in notes if n.get(W+'type') is None}
+    result = []
+    for reference in main.iter(W+kind+'Reference'):
+        node = parents[reference]
+        while node.tag != W+'p':
+            node = parents[node]
+        result.append((anchor(node), bodies[reference.get(W+'id')]))
+    return result
+
+
+def model_body_signature(blocks):
+    from legacy_office_parser import Paragraph, Table
+    result = []
+    for block in blocks:
+        if isinstance(block, Paragraph):
+            result.append(('p', block.text))
+        else:
+            assert isinstance(block, Table)
+            assert all(not c.omitted and not c.covered and c.row_span == c.col_span == 1
+                       for row in block.rows for c in row)
+            result.append(('table', tuple(tuple(model_body_signature(c.blocks) if c.blocks else c.text
+                                                for c in row) for row in block.rows)))
+    return tuple(result)
+
+
+def raw_body_words(raw):
+    """Fixture-only passive field-result projection, independent of DOC parser."""
+    fields, visible = [], []
+    for char in raw:
+        if char == '\x13':
+            fields.append(False)
+        elif char == '\x14':
+            assert fields
+            fields[-1] = True
+        elif char == '\x15':
+            assert fields
+            fields.pop()
+        elif all(fields):
+            if char in ('\r', '\7'):
+                visible.append(' ')
+            elif ord(char) >= 32 or char in ('\t', '\n'):
+                visible.append(char)
+    assert not fields
+    return ''.join(visible).split()
+
+
+def signature_words(signature):
+    parts = []
+    for kind, value in signature:
+        if kind == 'p':
+            parts.extend(value.split())
+        else:
+            for row in value:
+                for cell in row:
+                    parts.extend(cell.split() if isinstance(cell, str) else signature_words(cell))
+    return parts
+
+
+def assert_generated_note_model(doc, raw, roundtrip):
+    """No production PLC decoder and no offsets from another producer version."""
+    counts, units, plcs = raw
+    expected_total = 0
+    for kind, story_index, ref_index, text_index in [('footnote', 1, 2, 3), ('endnote', 4, 46, 47)]:
+        refs, texts = plcs[ref_index], plcs[text_index]
+        assert len(refs) >= 4 and (len(refs) - 4) % 6 == 0
+        count = (len(refs) - 4) // 6
+        assert len(texts) == (count + 2) * 4
+        cps = struct.unpack_from('<'+'I'*count, refs)
+        flags = struct.unpack_from('<'+'H'*count, refs, (count + 1) * 4)
+        boundaries = struct.unpack_from('<'+'I'*(count + 1), texts)
+        assert boundaries[0] == 0 and boundaries[-1] == counts[story_index] - 1
+        assert all(a < b for a, b in zip(boundaries, boundaries[1:]))
+        assert all(0 <= cp < counts[0] for cp in cps)
+        assert list(cps) == sorted(set(cps))
+        expected = xml_note_oracle(roundtrip, kind)
+        relationships = xml_relationships(roundtrip, kind)
+        actual = [n for n in doc.notes if n.kind == kind]
+        assert len(actual) == len(expected) == len(relationships) == count
+        expected_total += count
+        end = 0
+        story = kind+'s'
+        base = sum(counts[:story_index])
+        for i, (note, (path, signature), relationship) in enumerate(zip(actual, expected, relationships, strict=True)):
+            assert note.ordinal == i + 1 and note.source_cp == cps[i]
+            assert note.reference_kind == ('automatic' if flags[i] else 'custom')
+            assert (not flags[i]) == relationship[2]
+            assert note.anchor_path == path
+            assert resolve(doc, path).text == relationship[0]
+            assert note.visibility == (['hidden'] if relationship[3] else []) + (['deleted'] if relationship[4] else [])
+            assert note.body.story == story and note.body.block_start == end
+            assert note.body.block_end > end
+            body = doc.story_blocks[story][end:note.body.block_end]
+            assert model_body_signature(body) == signature  # Includes every empty paragraph and table.
+            source = units[(base + boundaries[i])*2:(base + boundaries[i+1])*2].decode('utf-16le')
+            assert source.endswith('\r')
+            assert raw_body_words(source) == signature_words(signature)
+            if flags[i]:
+                assert units[cps[i]*2:cps[i]*2+2] == b'\x02\0'
+            end = note.body.block_end
+        if count:
+            assert model_body_signature(doc.story_blocks[story][end:]) == (('p', ''),)
+    assert len(doc.notes) == expected_total
+
+
 def test_live_binary_fixture_exposes_body_ranges_and_structural_anchor_paths():
     from legacy_office_parser import parse_doc
     from legacy_office_parser.models import Cell, Paragraph
@@ -529,6 +674,57 @@ def test_fixture_unordered_source_reproducible(tmp_path):
     assert (tmp_path / 'source.docx').read_bytes() == (FIXTURE/'unordered.docx').read_bytes()
 
 
+def test_generated_oracle_checks_persisted_binary_and_roundtrip():
+    from legacy_office_parser import parse_doc
+    assert_generated_note_model(parse_doc(FIXTURE/'authored.doc'), raw_fixture(), FIXTURE/'roundtrip.docx')
+
+
+@pytest.mark.parametrize('extra_paragraph', [False, True])
+@pytest.mark.parametrize('corruption', [None, 'cp', 'anchor', 'range', 'missing', 'content', 'structure'])
+def test_generated_oracle_accepts_own_block_counts_but_rejects_wrong_links(tmp_path, extra_paragraph, corruption):
+    from legacy_office_parser import Document, Note, NoteBodyRange, Paragraph
+    body_texts = ['*Body', 'Tail']
+    if extra_paragraph:
+        body_texts.insert(1, '')
+    main = 'Anchor *\r'
+    story = '\r'.join(body_texts) + '\r\r'
+    units = (main + story + '\r').encode('utf-16le')
+    raw = ([len(main), len(story), 0, 0, 1, 0, 0], units,
+           {2: reference_plc([7], [0]), 3: text_plc([0, len(story)-1]),
+            46: reference_plc([]), 47: text_plc([0])})
+    note = Note('footnote', 1, NoteBodyRange('footnotes', 0, len(body_texts)),
+                source_cp=7, reference_kind='custom', anchor_path=['blocks', 0], visibility=[])
+    doc = Document('doc', blocks=[Paragraph('Anchor *'), Paragraph('Wrong')], notes=[note],
+                   story_blocks={'footnotes': [Paragraph(t) for t in body_texts] + [Paragraph('')]})
+    path = tmp_path/'independent.docx'
+    with ZipFile(path, 'w') as archive:
+        archive.writestr('word/document.xml', '<w:document xmlns:w="'+W[1:-1]+'"><w:body><w:p><w:r>'
+                         '<w:t>Anchor </w:t><w:footnoteReference w:id="9" w:customMarkFollows="1"/>'
+                         '<w:t>*</w:t></w:r></w:p><w:p><w:r><w:t>Wrong</w:t></w:r></w:p></w:body></w:document>')
+        archive.writestr('word/footnotes.xml', '<w:footnotes xmlns:w="'+W[1:-1]+'"><w:footnote w:id="9">'
+                         + ''.join('<w:p><w:r><w:t>'+t+'</w:t></w:r></w:p>' for t in body_texts)
+                         + '</w:footnote></w:footnotes>')
+        archive.writestr('word/endnotes.xml', '<w:endnotes xmlns:w="'+W[1:-1]+'"/>')
+    if corruption == 'cp':
+        note.source_cp = 6
+    elif corruption == 'anchor':
+        note.anchor_path = ['blocks', 1]
+    elif corruption == 'range':
+        note.body.block_end -= 1
+    elif corruption == 'missing':
+        doc.notes.clear()
+    elif corruption == 'content':
+        doc.story_blocks['footnotes'][0].text = '*Wrong'
+    elif corruption == 'structure':
+        doc.story_blocks['footnotes'].insert(1, Paragraph(''))
+        note.body.block_end += 1
+    if corruption is None:
+        assert_generated_note_model(doc, raw, path)
+    else:
+        with pytest.raises(AssertionError):
+            assert_generated_note_model(doc, raw, path)
+
+
 # Keep converters strictly outside runtime. This test consumes only authored
 # numeric/text XML and uses the generator's bounded, private-profile subprocess.
 @pytest.mark.skipif(os.environ.get('OFFICE_CORPUS_LIBREOFFICE') != '1',
@@ -543,8 +739,11 @@ def test_independent_live_note_roundtrip(tmp_path):
     finally:
         sys.path.pop(0)
     doc = parse_doc(tmp_path/'authored.doc')
-    saved = parse_doc(FIXTURE/'authored.doc')
-    assert doc.notes == saved.notes
-    assert doc.footnotes == saved.footnotes and doc.endnotes == saved.endnotes
+    assert_generated_note_model(doc, raw_fixture(tmp_path/'authored.doc'), tmp_path/'roundtrip.docx')
     for kind in ('footnote', 'endnote'):
-        assert xml_relationships(tmp_path/'roundtrip.docx', kind) == xml_relationships(FIXTURE/'roundtrip.docx', kind)
+        source = xml_relationships(tmp_path/'authored.docx', kind)
+        exported = xml_relationships(tmp_path/'roundtrip.docx', kind)
+        assert len(source) == len(exported)
+        # The source reference contexts/flags must survive; exporter-dependent
+        # body structure is checked against this run's binary and roundtrip.
+        assert [(r[0], *r[2:]) for r in source] == [(r[0], *r[2:]) for r in exported]

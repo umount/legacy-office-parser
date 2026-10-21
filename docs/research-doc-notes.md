@@ -178,3 +178,32 @@ Zero-body tests cover absent, empty and dangling reference PLCs. Leading
 automatic/custom body markers and astral characters retain their literal bytes.
 A range splitting a surrogate pair cannot satisfy the final-CR requirement;
 that check is not a general UTF-16 validator. Printed labels are not inferred.
+
+### Live conversion oracle correction (2026-10-21)
+
+Newer LibreOffice CI reported footnote 4's range as [3, 7), versus [3, 6) in
+the saved 7.4 fixture, with source CP 60 and its nested-cell anchor unchanged.
+Comparing complete Note records across producer versions incorrectly made the
+saved block layout a live oracle. The newer binary was not available locally;
+the extra block's contents have not been guessed. Inspection of the saved binary
+and XML shows ` Note table.`, an empty paragraph from a stored SHAPE field, and
+`NoteTail` in its fourth body.
+
+The live test now reads the generated DOC's CLX and raw reference/text PLCs
+independently, without the production note decoder. It checks exact counts,
+ordinals/source CPs, automatic/custom references and contiguous nonempty body
+ranges. A separate OOXML oracle resolves roundtrip references by ID, derives
+their structural container paths, and compares complete body signatures with
+the generated model. Empty paragraphs, tables, cells, content, visibility and
+the reserved final block remain checked. A fixture-specific passive field-result
+projection checks raw body content against the associated XML. Source DOCX
+reference contexts and custom/hidden/deleted flags must also survive conversion.
+
+Persisted-fixture literal assertions remain unchanged. Added regressions accept
+different valid block counts only when their own binary/XML evidence agrees;
+wrong CPs, anchors, ranges, missing notes, changed content and extra structural
+blocks fail. The saved binary also passes this oracle independently.
+
+Actual validation: **93 passed, 1 skipped** normally; **94 passed** with local
+LibreOffice 7.4 conversion; Ruff passed. The newer CI converter must still be
+rerun. No blanket structural exception or missing-note allowance was introduced.
