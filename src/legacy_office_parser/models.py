@@ -105,6 +105,28 @@ class Note:
         default_factory=lambda: ['unknown'])
 
 @dataclass(slots=True)
+class CommentBodyRange:
+    story: Literal['comment_text']
+    block_start: int
+    block_end: int
+
+
+@dataclass(slots=True)
+class Comment:
+    ordinal: int
+    body: CommentBodyRange
+    author: str | None = None
+    initials: str | None = None
+    # Source UTF-16 positions, never offsets into normalized output text.
+    source_cp: int | None = None
+    selection_start: int | None = None
+    selection_end: int | None = None
+    anchor_path: list[str | int] | None = None
+    visibility: list[Literal['hidden', 'deleted', 'field_hidden', 'field_instruction', 'unknown']] = field(
+        default_factory=lambda: ['unknown'])
+
+
+@dataclass(slots=True)
 class Document:
     format: Literal['doc', 'xls', 'ppt', 'rtf', 'odt', 'ods', 'odp']
     blocks: list[Block] = field(default_factory=list)
@@ -120,6 +142,8 @@ class Document:
     # Keys name existing story fields; notes separately reference body ranges.
     story_blocks: dict[str, list[Block]] = field(default_factory=dict)
     notes: list[Note] = field(default_factory=list)
+    comments: list[Comment] = field(default_factory=list)
+    comment_text: str = ''
 
     @property
     def text(self) -> str:
@@ -139,7 +163,7 @@ class Document:
                 parts.append(b.text)
             else:
                 parts.append('\n'.join('\t'.join(c.text for c in row) for row in b.rows))
-        parts.extend(p for p in (self.footnotes, self.endnotes, self.headers_footers, self.textboxes) if p)
+        parts.extend(p for p in (self.footnotes, self.endnotes, self.headers_footers, self.textboxes, self.comment_text) if p)
         return '\n\n'.join(p for p in parts if p)
 
     def to_dict(self) -> dict:
@@ -159,6 +183,8 @@ class Document:
                     result.pop('story_blocks', None)
                 if not result.get('notes'):
                     result.pop('notes', None)
+                if not result.get('comment_text'):
+                    result.pop('comment_text', None)
             return result
         return asdict(self, dict_factory=compatible_cells)
 

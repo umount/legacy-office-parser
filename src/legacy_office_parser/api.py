@@ -24,6 +24,7 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
     # Defence in depth; individual parsers enforce limits during decoding too.
     from .models import Paragraph, SlideComment
     _validate_notes(doc, limits)
+    _validate_comments(doc, limits)
     total = 0
     cells = 0
     stack = [(block, 1) for block in doc.blocks]
@@ -104,7 +105,8 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
                 raise LimitExceededError('merged cell coordinates exceed limits')
     if drawing_records and sheet_visible > limits.max_text_chars:
         raise LimitExceededError('sheet rendered text limit exceeded')
-    total += sum(len(s) for s in (doc.footnotes, doc.endnotes, doc.headers_footers, doc.textboxes))
+    total += sum(len(s) for s in (doc.footnotes, doc.endnotes, doc.headers_footers, doc.textboxes, doc.comment_text))
+    total += sum(len(c.author or '') + len(c.initials or '') for c in doc.comments)
     if total > limits.max_text_chars:
         raise LimitExceededError('output text size limit exceeded')
     if cells > limits.max_cells:
@@ -115,7 +117,7 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
 
 
 def _validate_notes(doc: Document, limits: Limits) -> None:
-    from .models import Cell, Note, NoteBodyRange, Paragraph, Table
+    from .models import Note, NoteBodyRange
 
     def index(value):
         return type(value) is int and value >= 0
@@ -163,25 +165,102 @@ def _validate_notes(doc: Document, limits: Limits) -> None:
         metadata += len(path)
         if metadata > limits.max_records:
             raise LimitExceededError('note metadata limit exceeded')
-        current, at = doc, 0
-        while at < len(path):
-            if isinstance(current, (Document, Cell)):
-                if (at + 1 >= len(path) or path[at] != 'blocks'
-                        or not index(path[at+1]) or path[at+1] >= len(current.blocks)):
-                    raise InvalidDocumentError('invalid note block path')
-                current = current.blocks[path[at+1]]
-                at += 2
-            elif isinstance(current, Table):
-                if (at + 2 >= len(path) or path[at] != 'rows'
-                        or not index(path[at+1]) or path[at+1] >= len(current.rows)
-                        or not index(path[at+2]) or path[at+2] >= len(current.rows[path[at+1]])):
-                    raise InvalidDocumentError('invalid note cell path')
-                current = current.rows[path[at+1]][path[at+2]]
-                at += 3
-            else:
-                raise InvalidDocumentError('note path continues beyond a paragraph')
-        if not isinstance(current, (Paragraph, Cell)) or (isinstance(current, Cell) and current.omitted):
-            raise InvalidDocumentError('note anchor is not a source paragraph or cell')
+        _validate_anchor_path(doc, path, 'note')
+
+def _validate_comments(doc: Document, limits: Limits) -> None:
+    from .models import Comment, CommentBodyRange
+
+    def index(value):
+        return type(value) is int and value >= 0
+
+    if not doc.comments:
+        return
+    if doc.format != 'doc':
+        raise InvalidDocumentError('document comments require DOC format')
+    # Notes and comments share the metadata budget, including copied anchor paths.
+    metadata = sum(1 + len(note.anchor_path or []) for note in doc.notes)
+    if metadata + len(doc.comments) > limits.max_records:
+        raise LimitExceededError('document comment record limit exceeded')
+    previous_ordinal = previous_end = 0
+    previous_cp = -1
+    for comment in doc.comments:
+        if not isinstance(comment, Comment):
+            raise InvalidDocumentError('invalid document comment')
+        if not index(comment.ordinal) or comment.ordinal <= previous_ordinal:
+            raise InvalidDocumentError('unordered or invalid document comment ordinal')
+        if any(value is not None and not isinstance(value, str)
+               for value in (comment.author, comment.initials)):
+            raise InvalidDocumentError('invalid document comment author metadata')
+        if (not isinstance(comment.visibility, list) or any(flag not in (
+                'hidden', 'deleted', 'field_hidden', 'field_instruction', 'unknown')
+                for flag in comment.visibility)):
+            raise InvalidDocumentError('invalid document comment visibility')
+        if len(comment.visibility) != len(set(comment.visibility)):
+            raise InvalidDocumentError('duplicate document comment visibility flag')
+        cp = comment.source_cp
+        if cp is not None:
+            if not index(cp) or not previous_cp < cp < 0x7FFFFFFF:
+                raise InvalidDocumentError('unordered or invalid document comment source CP')
+            if cp >= limits.max_text_chars:
+                raise LimitExceededError('document comment source CP limit exceeded')
+            previous_cp = cp
+        start, end = comment.selection_start, comment.selection_end
+        if (start is None) != (end is None):
+            raise InvalidDocumentError('incomplete document comment selection')
+        if start is not None:
+            if cp is None or not index(start) or not index(end) or not start <= end < 0x7FFFFFFF:
+                raise InvalidDocumentError('invalid document comment selection')
+            if end >= limits.max_text_chars:
+                raise LimitExceededError('document comment selection limit exceeded')
+        body = comment.body
+        if (not isinstance(body, CommentBodyRange) or body.story != 'comment_text'
+                or not index(body.block_start) or not index(body.block_end)
+                or not previous_end <= body.block_start < body.block_end <=
+                len(doc.story_blocks.get('comment_text', []))):
+            raise InvalidDocumentError('invalid document comment body range')
+        previous_ordinal, previous_end = comment.ordinal, body.block_end
+        metadata += 1
+        if metadata > limits.max_records:
+            raise LimitExceededError('document comment metadata limit exceeded')
+        path = comment.anchor_path
+        if path is None:
+            continue
+        if not isinstance(path, list) or cp is None:
+            raise InvalidDocumentError('invalid document comment anchor path')
+        if len(path) > 5 * limits.max_depth + 2:
+            raise LimitExceededError('document comment anchor depth limit exceeded')
+        metadata += len(path)
+        if metadata > limits.max_records:
+            raise LimitExceededError('document comment metadata limit exceeded')
+        _validate_anchor_path(doc, path, 'comment')
+
+
+def _validate_anchor_path(doc, path, label):
+    from .models import Cell, Paragraph, Table
+
+    def index(value):
+        return type(value) is int and value >= 0
+
+    current, at = doc, 0
+    while at < len(path):
+        if isinstance(current, (Document, Cell)):
+            if (at + 1 >= len(path) or path[at] != 'blocks'
+                    or not index(path[at+1]) or path[at+1] >= len(current.blocks)):
+                raise InvalidDocumentError(f'invalid {label} block path')
+            current = current.blocks[path[at+1]]
+            at += 2
+        elif isinstance(current, Table):
+            if (at + 2 >= len(path) or path[at] != 'rows'
+                    or not index(path[at+1]) or path[at+1] >= len(current.rows)
+                    or not index(path[at+2]) or path[at+2] >= len(current.rows[path[at+1]])):
+                raise InvalidDocumentError(f'invalid {label} cell path')
+            current = current.rows[path[at+1]][path[at+2]]
+            at += 3
+        else:
+            raise InvalidDocumentError(f'{label} path continues beyond a paragraph')
+    if not isinstance(current, (Paragraph, Cell)) or (isinstance(current, Cell) and current.omitted):
+        raise InvalidDocumentError(f'{label} anchor is not a source paragraph or cell')
+
 
 def parse_doc(source: Source, *, limits: Limits | None = None) -> Document:
     from .doc import parse_doc_bytes
