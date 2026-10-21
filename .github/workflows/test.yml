@@ -59,10 +59,32 @@ jobs:
           OFFICE_CORPUS_LIBREOFFICE: '1'
           AUXILIARY_REFERENCE_LO: '1'
         run: |
-          python -m pytest -q tests/test_rtf_fidelity.py tests/test_odf_notes.py tests/test_odf_stories.py tests/test_live_corpus.py tests/test_doc_styles.py tests/test_nested_reference.py tests/test_rtf_nested.py tests/test_doc_nested.py tests/test_doc_sections.py tests/test_auxiliary_reference.py
-          python tools/check_corpus.py tests/fixtures --libreoffice --fail-on-difference > reference-report.json
-          python tools/check_corpus.py tests/fixtures/doc_nested --libreoffice --fail-on-difference > nested-reference-report.json
-          python tools/check_corpus.py tests/fixtures/doc_sections/clean_section_before_table.doc --libreoffice --fail-on-difference > section-reference-report.json
+          python - <<'REFERENCE'
+          import pathlib
+          import subprocess
+          import sys
+          commands = [
+              ([sys.executable, '-m', 'pytest', '-q', 'tests/test_rtf_fidelity.py',
+                'tests/test_odf_notes.py', 'tests/test_odf_stories.py', 'tests/test_live_corpus.py',
+                'tests/test_doc_styles.py', 'tests/test_nested_reference.py', 'tests/test_rtf_nested.py',
+                'tests/test_doc_nested.py', 'tests/test_doc_sections.py', 'tests/test_auxiliary_reference.py'], None),
+              ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures', '--libreoffice',
+                '--fail-on-difference'], 'reference-report.json'),
+              ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures/doc_nested', '--libreoffice',
+                '--fail-on-difference'], 'nested-reference-report.json'),
+              ([sys.executable, 'tools/check_corpus.py', 'tests/fixtures/doc_sections/clean_section_before_table.doc',
+                '--libreoffice', '--fail-on-difference'], 'section-reference-report.json'),
+          ]
+          for command, report in commands:
+              result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+              print(result.stdout, end='')
+              if report:
+                  pathlib.Path(report).write_text(result.stdout)
+              if result.returncode:
+                  detail = result.stdout[-24000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print('::error title=Reference check failure::' + detail)
+                  raise SystemExit(result.returncode)
+          REFERENCE
       - uses: actions/upload-artifact@v4
         if: always()
         with:

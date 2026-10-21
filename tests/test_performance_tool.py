@@ -80,7 +80,11 @@ def test_timeout_kills_descendants(tmp_path):
     # A dead descendant may briefly remain a zombie until the host init reaps it.
     for _ in range(100):
         stat = Path(f'/proc/{pid}/stat')
-        if not stat.exists() or stat.read_text().split()[2] == 'Z':
+        try:
+            state = stat.read_text().split()[2]
+        except FileNotFoundError:
+            break  # init may reap the child at any point during observation.
+        if state == 'Z':
             break
         time.sleep(0.01)
     else:
