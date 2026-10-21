@@ -14,7 +14,8 @@ ROW_WRAPPERS = {q('table:table-header-rows'), q('table:table-rows'), q('table:ta
 BLOCK_WRAPPERS = {q('text:section'), q('text:list'), q('text:list-item'),
                   q('text:list-header'), q('text:numbered-paragraph'),
                   q('text:index-body'), q('text:table-of-content')}
-DRAW_STORIES = {q('draw:frame'), q('draw:text-box'), q('draw:g'), q('draw:a')}
+TEXT_SHAPES = {q('draw:rect'), q('draw:ellipse'), q('draw:custom-shape')}
+DRAW_STORIES = {q('draw:frame'), q('draw:text-box'), q('draw:g'), q('draw:a')} | TEXT_SHAPES
 HEADER_FOOTER = {q('style:' + name) for name in (
     'header', 'footer', 'header-left', 'footer-left', 'header-first', 'footer-first')}
 INLINE = {q('text:span'), q('text:a'), q('text:meta'), q('text:meta-field'), q('text:ruby-base')}
@@ -248,6 +249,18 @@ class _Parser:
         return bodies[0][0]
 
     def drawing(self, element):
+        if element.tag in TEXT_SHAPES:
+            # ODF 1.3 draw-text admits only direct paragraphs and lists. Do not
+            # recursively scrape geometry, metadata, or extension containers.
+            content = []
+            for child in element:
+                if child.tag in {q('text:p'), q('text:list')}:
+                    content.append(child)
+                else:
+                    self.unsupported(child)
+            self.warn('ODF shape text pooled with text boxes without anchor or layout identities.')
+            self.story(content, self.stories['textboxes'])
+            return
         if element.tag == q('draw:frame'):
             # ODF 1.3 §10.4.1: children are alternative representations, in
             # preference order. Even an empty supported representation wins.
