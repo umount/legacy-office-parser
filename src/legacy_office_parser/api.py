@@ -23,6 +23,7 @@ def _read(source: Source, limits: Limits) -> bytes:
 def _validate_result(doc: Document, limits: Limits) -> Document:
     # Defence in depth; individual parsers enforce limits during decoding too.
     from .models import Paragraph
+    _validate_notes(doc, limits)
     total = 0
     cells = 0
     stack = [(block, 1) for block in doc.blocks]
@@ -75,6 +76,76 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
     if len(doc.slides) > limits.max_slides:
         raise LimitExceededError('slide count limit exceeded')
     return doc
+
+
+def _validate_notes(doc: Document, limits: Limits) -> None:
+    from .models import Cell, Note, NoteBodyRange, Paragraph, Table
+
+    def index(value):
+        return type(value) is int and value >= 0
+
+    if len(doc.notes) > limits.max_records:
+        raise LimitExceededError('note record limit exceeded')
+    previous = {}
+    metadata = 0
+    for note in doc.notes:
+        if not isinstance(note, Note) or note.kind not in ('footnote', 'endnote'):
+            raise InvalidDocumentError('invalid note kind')
+        if not index(note.ordinal) or note.ordinal == 0:
+            raise InvalidDocumentError('invalid note ordinal')
+        if note.reference_kind not in ('automatic', 'custom', 'unknown'):
+            raise InvalidDocumentError('invalid note reference kind')
+        if note.source_cp is not None and (not index(note.source_cp) or note.source_cp >= 0x7FFFFFFF):
+            raise InvalidDocumentError('invalid note source CP')
+        if note.source_cp is not None and note.source_cp >= limits.max_text_chars:
+            raise LimitExceededError('note source CP limit exceeded')
+        if not isinstance(note.visibility, list) or any(flag not in (
+                'hidden', 'deleted', 'field_hidden', 'field_instruction', 'unknown') for flag in note.visibility):
+            raise InvalidDocumentError('invalid note visibility')
+        if len(note.visibility) != len(set(note.visibility)):
+            raise InvalidDocumentError('duplicate note visibility flag')
+        body = note.body
+        story = note.kind + 's'
+        if (not isinstance(body, NoteBodyRange) or body.story != story
+                or not index(body.block_start) or not index(body.block_end)
+                or not body.block_start < body.block_end <= len(doc.story_blocks.get(story, []))):
+            raise InvalidDocumentError('invalid note body range')
+        ordinal, end = previous.get(story, (0, 0))
+        if note.ordinal <= ordinal or body.block_start < end:
+            raise InvalidDocumentError('unordered or overlapping note body ranges')
+        previous[story] = note.ordinal, body.block_end
+        path = note.anchor_path
+        metadata += 1
+        if metadata > limits.max_records:
+            raise LimitExceededError('note metadata limit exceeded')
+        if path is None:
+            continue
+        if not isinstance(path, list) or note.source_cp is None:
+            raise InvalidDocumentError('invalid note anchor path')
+        if len(path) > 5 * limits.max_depth + 2:
+            raise LimitExceededError('note anchor depth limit exceeded')
+        metadata += len(path)
+        if metadata > limits.max_records:
+            raise LimitExceededError('note metadata limit exceeded')
+        current, at = doc, 0
+        while at < len(path):
+            if isinstance(current, (Document, Cell)):
+                if (at + 1 >= len(path) or path[at] != 'blocks'
+                        or not index(path[at+1]) or path[at+1] >= len(current.blocks)):
+                    raise InvalidDocumentError('invalid note block path')
+                current = current.blocks[path[at+1]]
+                at += 2
+            elif isinstance(current, Table):
+                if (at + 2 >= len(path) or path[at] != 'rows'
+                        or not index(path[at+1]) or path[at+1] >= len(current.rows)
+                        or not index(path[at+2]) or path[at+2] >= len(current.rows[path[at+1]])):
+                    raise InvalidDocumentError('invalid note cell path')
+                current = current.rows[path[at+1]][path[at+2]]
+                at += 3
+            else:
+                raise InvalidDocumentError('note path continues beyond a paragraph')
+        if not isinstance(current, (Paragraph, Cell)) or (isinstance(current, Cell) and current.omitted):
+            raise InvalidDocumentError('note anchor is not a source paragraph or cell')
 
 def parse_doc(source: Source, *, limits: Limits | None = None) -> Document:
     from .doc import parse_doc_bytes

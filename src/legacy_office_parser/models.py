@@ -74,6 +74,26 @@ class Sheet:
     columns: int = 0
 
 
+
+@dataclass(slots=True)
+class NoteBodyRange:
+    story: Literal['footnotes', 'endnotes']
+    block_start: int
+    block_end: int
+
+
+@dataclass(slots=True)
+class Note:
+    kind: Literal['footnote', 'endnote']
+    ordinal: int
+    body: NoteBodyRange
+    # Source CP is NOT an offset into any normalized output string.
+    source_cp: int | None = None
+    reference_kind: Literal['automatic', 'custom', 'unknown'] = 'unknown'
+    anchor_path: list[str | int] | None = None
+    visibility: list[Literal['hidden', 'deleted', 'field_hidden', 'field_instruction', 'unknown']] = field(
+        default_factory=lambda: ['unknown'])
+
 @dataclass(slots=True)
 class Document:
     format: Literal['doc', 'xls', 'ppt', 'rtf', 'odt', 'ods', 'odp']
@@ -87,8 +107,9 @@ class Document:
     sheets: list[Sheet] = field(default_factory=list)
 
     # Optional structured auxiliary content; the matching string is its projection.
-    # Keys name existing story fields, without claiming note anchors or placement.
+    # Keys name existing story fields; notes separately reference body ranges.
     story_blocks: dict[str, list[Block]] = field(default_factory=dict)
+    notes: list[Note] = field(default_factory=list)
 
     @property
     def text(self) -> str:
@@ -116,8 +137,11 @@ class Document:
                     result.pop('blocks', None)
                 if not result.get('omitted'):
                     result.pop('omitted', None)
-            if 'format' in result and not result.get('story_blocks'):
-                result.pop('story_blocks', None)
+            if 'format' in result:
+                if not result.get('story_blocks'):
+                    result.pop('story_blocks', None)
+                if not result.get('notes'):
+                    result.pop('notes', None)
             return result
         return asdict(self, dict_factory=compatible_cells)
 

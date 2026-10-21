@@ -14,12 +14,13 @@ import struct
 
 from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
+from ._doc_notes import decode_note_ranges
 from ._doc_table import FrameIdentity, TableIdentity, apply_table, frame_change
 from ._doc_styles import Styles, character_ops, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
-from .models import Cell, Document, Paragraph, Table
+from .models import Cell, Document, Paragraph, Table, Note, NoteBodyRange
 
 
 __all__ = ['parse_doc_bytes']
@@ -119,6 +120,11 @@ class _Doc:
         self.symbol_prms = {}
         self.symbol_fonts = None
         self.fields = []
+        self.note_references = {}
+        self.note_targets = {}
+        self.note_object_cps = {}
+        self.note_visibility = {}
+        self.paragraph_anchors = []
         self.paragraph_cache = None
         self.character_cache = None
         self._fib()
@@ -482,6 +488,7 @@ class _Doc:
             self.chpx_bins = fcs, pages
         fcs, pages = self.chpx_bins
         i = bisect_right(fcs, fc) - 1
+        self.character_coverage_known = 0 <= i < len(pages)
         if i < 0 or i >= len(pages):
             if pages:
                 self.warn('Some characters have no CHPX coverage; symbol and visibility properties may be missing.')
@@ -630,6 +637,7 @@ class _Doc:
             mark_props = self._character_props(end, paragraph_style)
             if any(mark_props.get(name) for name in ('hidden', 'deleted', 'field_hidden')):
                 self.warn('Hidden or deleted paragraph/cell marks retain their structural boundaries; revision merging is not modeled.')
+        self.paragraph_anchors = []
         raw = bytes(self.text[start * 2:end * 2])
         try:
             value = raw.decode('utf-16le')
@@ -641,6 +649,25 @@ class _Doc:
         for ch in value:
             cp = next_cp
             next_cp += 2 if ord(ch) > 0xFFFF else 1
+            if cp in self.note_references:
+                props = self._character_props(cp, paragraph_style)
+                flags = [name for name in ('hidden', 'deleted') if props.get(name)]
+                if props.get('field_hidden'):
+                    flags.append('field_hidden')
+                if self.fields and not all(self.fields):
+                    flags.append('field_instruction')
+                if not self.character_coverage_known or not self.styles.present:
+                    flags.append('unknown')
+                automatic = self.note_references[cp] == 'automatic'
+                if automatic and ch != '\x02':
+                    raise InvalidDocumentError('DOC automatic note reference has no U+0002 marker')
+                if automatic and props.get('special') is not True:
+                    if 'unknown' not in flags:
+                        flags.append('unknown')
+                    self.warn('Note reference CFSpec is not established; its output anchor is unresolved.')
+                else:
+                    self.paragraph_anchors.append(cp)
+                self.note_visibility[cp] = flags
             if ch == '\x13':
                 if len(self.fields) >= self.limits.max_depth:
                     raise LimitExceededError('DOC field nesting limit exceeded')
@@ -700,14 +727,93 @@ class _Doc:
             self.warn('A DOC story has no final paragraph mark; trailing text is retained.')
             yield self.clean(begin, start + count, start + count - 1), start + count - 1, 0
 
+    def _prepare_notes(self):
+        self.note_ranges = {}
+        for index, ref_pair, text_pair in ((1, 2, 3), (4, 46, 47)):
+            start, count = sum(self.counts[:index]), self.counts[index]
+            refs, texts = self.table_part(ref_pair), self.table_part(text_pair)
+            if not count and not refs and not texts:
+                continue
+            ranges = decode_note_ranges(refs, texts, self.counts[0],
+                                        memoryview(self.text)[start * 2:(start + count) * 2],
+                                        self.limits, record=self.budget.record, warn=self.warn)
+            self.note_ranges[index] = ranges
+            for note in ranges or ():
+                if note.source_cp is not None:
+                    if note.source_cp in self.note_references:
+                        raise InvalidDocumentError('DOC note references share a source CP')
+                    if (note.reference_kind == 'automatic' and
+                            self.text[note.source_cp * 2:note.source_cp * 2 + 2] != b'\x02\0'):
+                        raise InvalidDocumentError('DOC automatic note reference has no U+0002 marker')
+                    self.note_references[note.source_cp] = note.reference_kind
+
+    def _bind_note_anchors(self, cps, target):
+        if cps:
+            self.note_object_cps.setdefault(id(target), []).extend(cps)
+            for cp in cps:
+                self.note_targets[cp] = target
+
+    def _flatten_note_anchors(self, paragraphs, cell):
+        for paragraph in paragraphs:
+            self._bind_note_anchors(self.note_object_cps.pop(id(paragraph), ()), cell)
+
+    def _resolve_note_paths(self):
+        wanted = {}
+        for note in self.document.notes:
+            target = self.note_targets.get(note.source_cp)
+            if target is not None:
+                wanted.setdefault(id(target), []).append(note)
+        if not wanted:
+            if self.document.notes:
+                self.warn('Note output anchors are unresolved; source CPs are not output offsets.')
+            return
+        def children(node):
+            if isinstance(node, Table):
+                for row_index, row in enumerate(node.rows):
+                    for column, cell in enumerate(row):
+                        yield cell, ('rows', row_index, column)
+            elif isinstance(node, (Document, Cell)):
+                for index, block in enumerate(node.blocks):
+                    yield block, ('blocks', index)
+
+        # Lazy sibling iterators and one mutable path keep traversal storage
+        # proportional to depth, even for wide tables below deep nesting.
+        path = []
+        stack = [(children(self.document), 0)]
+        while stack and wanted:
+            iterator, base = stack[-1]
+            del path[base:]
+            entry = next(iterator, None)
+            if entry is None:
+                stack.pop()
+                continue
+            block, steps = entry
+            path.extend(steps)
+            matched = wanted.pop(id(block), ())
+            if matched:
+                # Charge all copies before allocating or publishing any of
+                # them, including multiple references in the same container.
+                self.budget.record(len(path) * len(matched))
+                for note in matched:
+                    note.anchor_path = list(path)
+            if isinstance(block, (Table, Cell)):
+                stack.append((children(block), len(path)))
+        for note in self.document.notes:
+            if note.anchor_path is None and note.source_cp is not None:
+                if 'unknown' not in note.visibility:
+                    note.visibility.append('unknown')
+                self.warn('Some note references could not be linked to an output paragraph or cell.')
+
     def parse(self):
+        self._prepare_notes()
         assembler = _Tables(self)
         for text, cp, mark in self.paragraphs(0, self.counts[0]):
-            assembler.add(text, mark, self.properties(cp))
+            assembler.add(text, mark, self.properties(cp), self.paragraph_anchors)
         assembler.finish()
         self._end_fields()
         start = self.counts[0]
         stories = {}
+        note_stories = set()
         for index, count in enumerate(self.counts[1:], 1):
             if count:
                 if index == 3:
@@ -716,7 +822,13 @@ class _Doc:
                     attr = {1: 'footnotes', 2: 'headers_footers', 4: 'endnotes',
                             5: 'textboxes', 6: 'textboxes'}[index]
                     blocks = stories.setdefault(attr, [])
-                    ranges = [(0, count)]
+                    source_notes = self.note_ranges.get(index)
+                    ranges = ([(n.body_start, n.body_end) for n in source_notes]
+                              if source_notes is not None else [(0, count)])
+                    if source_notes is not None:
+                        # The reserved final CP belongs to the legacy story
+                        # projection, but never to the last discrete note.
+                        ranges.append((count - 1, count))
                     textbox_plc = b''
                     if index in (5, 6):
                         textbox_plc = self.table_part(56 if index == 5 else 58)
@@ -724,26 +836,39 @@ class _Doc:
                             textbox_plc, count, self.limits,
                             record=self.budget.record, warn=self.warn,
                         )
-                    for begin, end in ranges:
+                    for range_index, (begin, end) in enumerate(ranges):
                         if textbox_plc and self.text[(start + end - 1) * 2:(start + end) * 2] != b'\r\0':
                             raise InvalidDocumentError('DOC live textbox has no final paragraph mark')
+                        block_start = len(blocks)
                         assembler = _Tables(self, blocks)
                         for text, cp, mark in self.paragraphs(start + begin, end - begin):
                             assembler.add(text, mark, self.properties(cp))
                         assembler.finish()
                         self._end_fields()
-                    self.warn('Auxiliary stories are separated by type; note anchors, header variants and textbox placement are not modeled.')
+                        if source_notes is not None and range_index < len(source_notes):
+                            source = source_notes[range_index]
+                            self.budget.record()
+                            self.document.notes.append(Note(
+                                kind='footnote' if index == 1 else 'endnote',
+                                ordinal=source.ordinal, source_cp=source.source_cp,
+                                reference_kind=source.reference_kind,
+                                visibility=list(self.note_visibility.get(source.source_cp, ['unknown'])),
+                                body=NoteBodyRange(attr, block_start, len(blocks)),
+                            ))
+                            note_stories.add(attr)
+                    if index in (2, 5, 6):
+                        self.warn('Header variants and textbox placement are not modeled.')
                 self._end_fields()
             start += count
         for attr, blocks in stories.items():
-            structured = any(isinstance(block, Table) for block in blocks)
+            structured = attr in note_stories or any(isinstance(block, Table) for block in blocks)
             size = _projection_size(blocks)
-            # For ordinary stories paragraphs are replaced by their joined text;
-            # for tables the structured tree and projection are both retained.
+            # Note bodies reference retained blocks; no additional text copy.
             self.budget.text(size if structured else max(0, len(blocks) - 1))
             setattr(self.document, attr, _projection(blocks))
             if structured:
                 self.document.story_blocks[attr] = blocks
+        self._resolve_note_paths()
         return self.document
 
     def _end_fields(self):
@@ -777,7 +902,7 @@ class _Tables:
         self.destination = doc.document.blocks if destination is None else destination
         self.levels = []
 
-    def add(self, text, mark, props):
+    def add(self, text, mark, props, anchors=()):
         depth = props.depth or (1 if props.in_table else 0)
         if props.inner and depth < 2:
             raise InvalidDocumentError('DOC inner table marker has no nested table depth')
@@ -789,7 +914,9 @@ class _Tables:
             if mark == 7:
                 self.doc.warn('Cell mark without table membership was retained as a paragraph boundary.')
             self.doc.budget.text(len(text))
-            self.destination.append(Paragraph(text))
+            paragraph = Paragraph(text)
+            self.destination.append(paragraph)
+            self.doc._bind_note_anchors(anchors, paragraph)
             return
         # A cell can begin with another table, without a preceding paragraph at
         # its own depth. Materialize its enclosing cells, not invented text.
@@ -801,7 +928,7 @@ class _Tables:
                 parent.ensure_table()
                 destination = parent.paras
             self.levels.append(_TableLevel(self.doc, destination, len(self.levels) + 1))
-        self.levels[-1].add(text, mark, props)
+        self.levels[-1].add(text, mark, props, anchors)
 
     def finish(self):
         while self.levels:
@@ -831,7 +958,10 @@ class _TableLevel:
         retained_paragraphs = (sum(len(b.text) for b in self.paras if isinstance(b, Paragraph))
                                if complex_cell else 0)
         self.doc.budget.text(size + retained_paragraphs)
-        self.cells.append(Cell(text=_projection(self.paras), blocks=self.paras if complex_cell else []))
+        cell = Cell(text=_projection(self.paras), blocks=self.paras if complex_cell else [])
+        if not complex_cell:
+            self.doc._flatten_note_anchors(self.paras, cell)
+        self.cells.append(cell)
         self.paras = []
 
     def row(self, props, *, complete=True):
@@ -906,7 +1036,7 @@ class _TableLevel:
             self.table = Table()
             self.destination.append(self.table)
 
-    def add(self, text, mark, props):
+    def add(self, text, mark, props, anchors=()):
         self.ensure_table()
         row_end = props.row_end if self.depth == 1 else props.inner_ttp
         cell_end = mark == 7 if self.depth == 1 else props.inner_cell
@@ -916,21 +1046,23 @@ class _TableLevel:
             self.first_frame = props.frame
         if self.depth > 1 and (props.row_end or mark == 7):
             self.doc.warn('Outer table markers at nested depth were retained as paragraph boundaries.')
+        paragraph = Paragraph(text)
+        self.doc._bind_note_anchors(anchors, paragraph)
         if row_end:
             # TTP is a separate empty paragraph, not an additional cell.
-            if text or self.paras:
-                if text:
-                    self.paras.append(Paragraph(text))
+            if text or self.paras or anchors:
+                if text or anchors:
+                    self.paras.append(paragraph)
                 self.cell()
                 self.doc.warn('Row terminator contains content; content is retained as a cell.')
             if not self.cells:
                 self.cell()
             self.row(props)
         elif cell_end:
-            self.paras.append(Paragraph(text))
+            self.paras.append(paragraph)
             self.cell()
         else:
-            self.paras.append(Paragraph(text))
+            self.paras.append(paragraph)
 
     def finish(self):
         if self.table is None:
