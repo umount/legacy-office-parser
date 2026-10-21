@@ -13,6 +13,8 @@ from pathlib import Path
 import re
 import resource
 import shutil
+import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -55,7 +57,8 @@ def _worker(source: Path, reference: Path | None) -> dict:
                 ns = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
                 ref_text = ' '.join(t.text or '' for n in names for t in ET.fromstring(z.read(n)).iter(ns + 't'))
                 result['reference_slides'] = len(names)
-        words = lambda s: Counter(re.findall(r'\w+', s.casefold()))
+        def words(s):
+            return Counter(re.findall(r'\w+', s.casefold()))
         got, expected = words(body), words(ref_text)
         common = sum((got & expected).values())
         result['reference_word_recall'] = round(common / sum(expected.values()), 6) if expected else None
@@ -95,7 +98,14 @@ def main() -> int:
                            '--headless', '--convert-to', target, '--outdir', str(temp), str(copied)]
                 started = time.perf_counter()
                 try:
-                    run = subprocess.run(command, capture_output=True, timeout=args.timeout)
+                    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                          start_new_session=True) as run:
+                        try:
+                            run.wait(timeout=args.timeout)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(run.pid, signal.SIGKILL)
+                            run.wait()
+                            raise
                     candidate = temp / ('input.' + target)
                     if run.returncode == 0 and candidate.exists():
                         reference = candidate

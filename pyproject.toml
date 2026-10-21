@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,6 +9,7 @@ description = "Focused text and structure extraction from binary DOC and PPT fil
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE", "licenses/*.txt", "THIRD_PARTY.md"]
 dependencies = ["olefile>=0.47,<1"]
 
 [project.optional-dependencies]

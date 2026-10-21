@@ -1,0 +1,3 @@
+recursive-include docs *.md
+recursive-include tests *.py *.md *.json *.doc *.ppt *.odt *.pptx
+include tools/*.py
