@@ -224,3 +224,51 @@ def test_bounded_token_mutations_are_classified():
         except ParseError:
             continue
         document.text.encode('utf-8')  # No bare UTF-16 surrogates escape the API.
+
+
+@pytest.mark.parametrize('escaped,expected', [(r'\\', 'ソ'), (r'\{', 'ボ'), (r'\}', 'マ')])
+def test_escaped_syntax_bytes_complete_multibyte_text(escaped, expected):
+    body = r"\ansi\ansicpg932 \'83" + escaped
+    document = parse(body + '!')
+    assert document.text == expected + '!'
+    assert not document.warnings
+    # Exercise incremental decoding with a one-byte scratch buffer as well.
+    assert parse(body, max_text_chars=1).text == expected
+
+
+@pytest.mark.parametrize('escaped', [r'\\', r'\{', r'\}'])
+def test_escaped_syntax_bytes_still_count_as_unicode_fallback(escaped):
+    assert parse(r'\uc1\u945' + escaped + '!').text == 'α!'
+    assert parse(r'{\*\unknown ' + escaped + '}visible').text == 'visible'
+
+
+def test_repeated_row_properties_do_not_create_empty_row():
+    document = parse(r'\trowd\cellx100\cellx200\intbl A\cell B\cell'
+                     r'\trowd\cellx100\cellx200\row')
+    assert len(document.blocks) == 1
+    assert [[cell.text for cell in row] for row in document.blocks[0].rows] == [['A', 'B']]
+    assert not document.warnings
+
+
+def test_repeated_row_properties_preserve_unterminated_cell_and_replace_definition():
+    document = parse(r'\trowd\cellx100\cellx200\cellx300\intbl A\cell B'
+                     r'\trowd\cellx100\cellx200\cell\row'
+                     r'\trowd\cellx100 C\cell\row')
+    assert [[cell.text for cell in row] for row in document.blocks[0].rows] == [
+        ['A', 'B'], ['C'],
+    ]
+    assert not document.warnings
+
+
+def test_repeated_row_properties_without_row_terminator_recover_once():
+    document = parse(r'\trowd\cellx100 A\cell'
+                     r'\trowd\cellx100\cellx200 B')
+    assert [[cell.text for cell in row] for row in document.blocks[0].rows] == [['A', 'B']]
+    assert document.warnings == ['Incomplete table row recovered.']
+    with pytest.raises(InvalidDocumentError):
+        parse_rtf_bytes(b'{\\rtf1\\trowd A\\cell\\trowd B', Limits())
+
+
+def test_repeated_row_properties_do_not_bypass_cell_definition_budget():
+    with pytest.raises(LimitExceededError):
+        parse(r'\trowd\cellx100 A\cell\trowd\cellx100\row', max_cells=1)

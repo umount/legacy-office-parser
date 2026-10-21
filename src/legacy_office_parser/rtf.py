@@ -80,7 +80,12 @@ def _tokens(data: bytes, start: int, limits: Limits):
             i += 1
             if symbol == '\r' and i < size and data[i] == 10:
                 i += 1
-            yield 'symbol', symbol, None
+            if symbol in {'\\', '{', '}'}:
+                # Escaped syntax characters are encoded bytes too: in DBCS
+                # documents they can complete a preceding lead byte.
+                yield 'bytes', symbol.encode('ascii'), None
+            else:
+                yield 'symbol', symbol, None
         else:
             begin = i
             while i < size and _letter(data[i]):
@@ -158,11 +163,11 @@ class _Sink:
             self.table = None
 
     def start_row(self):
-        if self.row is not None:
-            self.parser.warn('Incomplete table row recovered.')
-            self.end_row()
-        self.paragraph()
-        self.row = []
+        # Writers may repeat row properties after cell content, before \row.
+        # Only \row (or final recovery) ends a row; \trowd resets definitions.
+        if self.row is None:
+            self.paragraph()
+            self.row = []
         self.expected = 0
 
     def cell(self):
@@ -465,8 +470,7 @@ class _Parser:
                             self.high_end()
                             self.sink.paragraph(force=True)
                     else:
-                        self.emit({'~': '\xa0', '-': '\xad', '_': '\u2011',
-                                   '{': '{', '}': '}', '\\': '\\'}.get(value, ''))
+                        self.emit({'~': '\xa0', '-': '\xad', '_': '\u2011'}.get(value, ''))
             else:
                 self.word(value, number)
         if not closed or self.stack:
