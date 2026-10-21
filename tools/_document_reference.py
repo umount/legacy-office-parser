@@ -10,8 +10,9 @@ It preserves case, punctuation, word order and inline run adjacency. Consecutive
 body paragraphs may differ in newline placement; table/cell boundaries may not.
 
 Unsupported XML is never silently flattened. Equality is gated by completeness.
-Headers/footers are reference-only part scopes: the model's pooled string cannot
-be mapped to section/first/even/default stories. Textboxes are likewise unpaired.
+Auxiliary metrics cover pooled text only, never section/variant/anchor equality.
+A single nonempty story has recoverable order; multiple stories expose token
+multiset diagnostics only, with order/equality explicitly unknown.
 Notes compare pooled text in XML order, not note identity or anchor positions.
 Note tables use row-major text with explicit cell/row separators, not structure.
 Omitted grid coordinates are absent, not empty or covered cells; the dense model
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 from collections import Counter
 import re
+import posixpath
 import xml.etree.ElementTree as ET
 from zipfile import BadZipFile
 import zlib
@@ -290,11 +292,96 @@ def _reference_counts(tables):
     return count, cells
 
 
+def _pooled_check(actual, pieces, unsupported):
+    """No source story IDs/boundaries survive in the current pooled-string model.
+
+    A token multiset is a content diagnostic, never proof of ordered equality.
+    Even matching sorted part text does not establish source inter-story order.
+    """
+    nonempty = [value for value in pieces if _normal(value)]
+    expected = '\n'.join(pieces)
+    content_complete = not unsupported
+    order_comparable = content_complete and len(nonempty) <= 1
+    complete = content_complete and order_comparable
+    return {
+        'model_chars': len(actual), 'reference_chars': len(expected),
+        'reference_stories': len(pieces), 'reference_nonempty_stories': len(nonempty),
+        'content_complete': content_complete,
+        'token_multiset_equal': (Counter(actual.split()) == Counter(expected.split())
+                                 if content_complete else None),
+        'order_comparable': order_comparable,
+        'text_equal': _normal(actual) == _normal(expected) if order_comparable else None,
+        'comparable': complete, 'complete': complete,
+        'equal': _normal(actual) == _normal(expected) if complete else None,
+        'pooled_text_only': True, 'tables_text_only': True,
+        'placement_comparable': False, 'anchors_comparable': False,
+        'story_identity_comparable': False,
+    }
+
+
+def _auxiliary_parts(archive, body, unsupported):
+    """Validate referenced part coverage without inventing section reading order."""
+    names = sorted(name for name in archive.namelist()
+                   if re.fullmatch(r'word/(header|footer)[^/]*\.xml', name))
+    refs = [node for node in body.iter()
+            if node.tag in {_W + 'headerReference', _W + 'footerReference'}]
+    relationships = {}
+    relpath = 'word/_rels/document.xml.rels'
+    if relpath in archive.namelist():
+        ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+        try:
+            root = ET.fromstring(archive.read(relpath))
+        except (ET.ParseError, LookupError, BadZipFile, OSError, EOFError, ValueError,
+                RuntimeError, NotImplementedError, zlib.error):
+            raise _InvalidReference from None
+        if root.tag != ns + 'Relationships':
+            raise _InvalidReference
+        for rel in root:
+            key = rel.get('Id')
+            if key in relationships:
+                unsupported['relationships'] += 1
+            relationships[key] = rel
+    used = set()
+    for ref in refs:
+        rel = relationships.get(ref.get(
+            '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'))
+        kind = 'header' if ref.tag == _W + 'headerReference' else 'footer'
+        if rel is None or rel.get('TargetMode') == 'External' or rel.get('Type') != (
+                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/' + kind):
+            unsupported['relationships'] += 1
+            continue
+        target = rel.get('Target', '')
+        name = posixpath.normpath(posixpath.join('word', target)).lstrip('/')
+        if name not in names or not name.startswith('word/' + kind):
+            unsupported['relationships'] += 1
+        else:
+            used.add(name)
+    if set(names) != used:
+        unsupported['part_coverage'] += 1
+    # Read even unreferenced parts: malformed present parts remain invalid.
+    return [_read_part(archive, name, 'hdr' if name.startswith('word/header') else 'ftr')
+            for name in names]
+
+
+def _auxiliary_text(root, unsupported):
+    pieces = []
+    for child in root:
+        if child.tag == _W + 'tbl':
+            rows, widths = _table(child, unsupported)
+            pieces.append(_projection(_ReferenceTable(rows, widths, not unsupported)))
+        elif child.tag in {_W + 'sdt', _W + 'sdtContent'}:
+            pieces.append(_auxiliary_text(child, unsupported))
+        elif child.tag not in {_W + 'sdtPr', _W + 'sdtEndPr'}:
+            pieces.append(_text(child, unsupported))
+    return '\n'.join(pieces)
+
+
 def _compare_document(doc, zipfile) -> dict:
     """Compare DOC/RTF/ODT Document with an open DOCX ZipFile, without text leaks.
 
     ``body.equal`` covers ordered body text and tables only. ``equal`` additionally
-    requires equal notes and no unsupported scopes anywhere. Inspect ``complete``
+    requires equal notes and recoverable auxiliary pooled text, with no unsupported
+    scopes anywhere. It never establishes header variants or textbox placement. Inspect ``complete``
     before interpreting partial text metrics. No XML, filenames, hashes, model
     warnings, note IDs or exception messages are copied to the report.
 
@@ -369,28 +456,48 @@ def _compare_document(doc, zipfile) -> dict:
                       tables_text_only=True)
         report[kind] = metric
         unsupported.update({kind + '_' + k: v for k, v in local.items()})
-    # Part numbers below are report ordinals, not a claimed reading order.
-    headers = []
-    for name in sorted(zipfile.namelist()):
-        if re.fullmatch(r'word/(header|footer)[^/]*\.xml', name):
-            part = _read_part(zipfile, name,
-                              'hdr' if name.startswith('word/header') else 'ftr')
-            headers.append({'number': len(headers) + 1,
-                            'header': part.tag == _W + 'hdr',
-                            'reference_paragraphs': sum(1 for _ in part.iter(_W + 'p')),
-                            'reference_tables': sum(1 for _ in part.iter(_W + 'tbl')),
-                            'comparable': False})
-    report['headers_footers'] = {'reference_parts': headers,
-                                 'model_chars': len(doc.headers_footers), 'comparable': False}
-    if headers or doc.headers_footers:
-        unsupported['headers_footers'] += max(1, len(headers))
-    if doc.textboxes:
+    local = Counter()
+    parts = _auxiliary_parts(zipfile, body, local)
+    coverage = local.copy()
+    pieces = [_auxiliary_text(part, local) for part in parts]
+    report['headers_footers'] = _pooled_check(doc.headers_footers, pieces, local)
+    report['headers_footers']['reference_parts'] = [
+        {'number': i + 1, 'header': part.tag == _W + 'hdr',
+         'reference_paragraphs': sum(1 for _ in part.iter(_W + 'p')),
+         'reference_tables': sum(1 for _ in part.iter(_W + 'tbl')),
+         'comparable': False} for i, part in enumerate(parts)]
+    unsupported.update({'headers_footers_' + k: v for k, v in local.items()})
+    if not report['headers_footers']['complete']:
+        unsupported['headers_footers'] += 1
+
+    local = coverage.copy()
+    boxes = []
+    for kind in ('footnotes', 'endnotes'):
+        path = f'word/{kind}.xml'
+        if path in zipfile.namelist():
+            notes = _read_part(zipfile, path, kind)
+            if any(True for _ in notes.iter(_W + 'txbxContent')):
+                local['note_textboxes'] += 1
+    # Main and header/footer textbox pools are shared in all three source models.
+    # Note textboxes remain unsupported by the note comparison above.
+    for part in [body, *parts]:
+        if any(node.tag == '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+               'AlternateContent' for node in part.iter()):
+            local['alternate_content'] += 1
+        for box in part.iter(_W + 'txbxContent'):
+            if any(node is not box for node in box.iter(_W + 'txbxContent')):
+                local['nested_textboxes'] += 1
+            boxes.append(_auxiliary_text(box, local))
+    report['textboxes'] = _pooled_check(doc.textboxes, boxes, local)
+    unsupported.update({'textboxes_' + k: v for k, v in local.items()})
+    if not report['textboxes']['complete']:
         unsupported['model_textboxes'] += 1
     report['unsupported_scopes'] = dict(unsupported)
     report['whitespace_normalized'] = True
     report['complete'] = not unsupported
     report['equal'] = ((report['body']['equal'] and report['footnotes']['equal'] and
-                        report['endnotes']['equal']) if report['complete'] else None)
+                        report['endnotes']['equal'] and report['headers_footers']['equal'] and
+                        report['textboxes']['equal']) if report['complete'] else None)
     report['status'] = 'ok' if report['complete'] else 'inconclusive'
     return report
 

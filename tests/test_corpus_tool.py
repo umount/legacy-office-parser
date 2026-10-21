@@ -94,7 +94,7 @@ def test_worker_compares_body_and_all_textboxes_only(tmp_path, monkeypatch):
     assert result['reference_words'] == 4
     assert result['reference_word_recall'] == 1
     assert result['reference_word_precision'] == 1
-    assert result['reference_tables'] == 0
+    assert result['reference_xml_tables'] == 0
 
 
 def test_spreadsheet_reference_does_not_claim_formatted_word_fidelity(tmp_path, monkeypatch):
@@ -152,7 +152,7 @@ def test_reference_collapsed_cell_boundaries_are_distinguished_from_lost_charact
         format='doc', blocks=[Table([[Cell('one'), Cell('two')], [Cell('three'), Cell('four')]])]))
     reference = tmp_path / 'reference.docx'
     with zipfile.ZipFile(reference, 'w') as z:
-        z.writestr('word/document.xml', ET.tostring(xml(paragraph('onetwothreefour'))))
+        z.writestr('word/document.xml', ET.tostring(xml('<w:body>' + paragraph('onetwothreefour') + '</w:body>')))
     result = corpus._worker(tmp_path / 'unused.doc', reference)
     assert result['reference_word_recall'] == 0
     assert result['reference_nonspace_equal'] is True
@@ -214,3 +214,12 @@ def test_reference_difference_gate_is_not_fooled_by_equal_counts():
     assert corpus._reference_differences(result) == ['reference_presentation_equal', 'reference_tables']
     # Missing measurements must not be invented as passes or failures.
     assert corpus._reference_differences({'status': 'ok'}) == []
+
+
+def test_nested_table_counts_compare_matching_scopes():
+    root = Path(__file__).parent / 'fixtures' / 'doc_nested'
+    result = corpus._worker(root / 'own_nested.doc', root / 'own_nested.docx')
+    assert result['tables'] == result['reference_tables'] == 1
+    assert result['total_tables'] == result['reference_total_tables'] == 4
+    assert result['reference_document_equal'] is True
+    assert corpus._reference_differences(result) == []

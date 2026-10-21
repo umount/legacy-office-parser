@@ -44,11 +44,15 @@ jobs:
           ODF_NOTES_LIBREOFFICE: '1'
           ODF_STORIES_LIBREOFFICE: '1'
           OFFICE_CORPUS_LIBREOFFICE: '1'
+          AUXILIARY_REFERENCE_LO: '1'
         run: |
-          python -m pytest -q tests/test_rtf_fidelity.py tests/test_odf_notes.py tests/test_odf_stories.py tests/test_live_corpus.py tests/test_doc_styles.py tests/test_nested_reference.py tests/test_rtf_nested.py
+          python -m pytest -q tests/test_rtf_fidelity.py tests/test_odf_notes.py tests/test_odf_stories.py tests/test_live_corpus.py tests/test_doc_styles.py tests/test_nested_reference.py tests/test_rtf_nested.py tests/test_doc_nested.py tests/test_auxiliary_reference.py
           python tools/check_corpus.py tests/fixtures --libreoffice --fail-on-difference > reference-report.json
+          python tools/check_corpus.py tests/fixtures/doc_nested --libreoffice --fail-on-difference > nested-reference-report.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: original-fixture-reference-report
-          path: reference-report.json
+          path: |
+            reference-report.json
+            nested-reference-report.json

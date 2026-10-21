@@ -161,9 +161,16 @@ def _worker(source: Path, reference: Path | None) -> dict:
         with zipfile.ZipFile(reference) as z:
             if doc.format in ('doc', 'rtf', 'odt'):
                 from _document_reference import compare_document
-                ref_text, result['reference_tables'] = _docx_reference(z)
+                ref_text, result['reference_xml_tables'] = _docx_reference(z)
                 result['reference_document'] = compare_document(doc, z)
                 result['reference_document_equal'] = result['reference_document']['equal']
+                checked_body = result['reference_document'].get('body', {})
+                # Compare identical scopes: top-level body tables separately
+                # from all nested tables. Raw XML also contains drawing tables.
+                if 'reference_tables' in checked_body:
+                    result['reference_tables'] = checked_body['reference_tables']
+                    result['total_tables'] = checked_body['model_total_tables']
+                    result['reference_total_tables'] = checked_body['reference_total_tables']
             elif doc.format in ('xls', 'ods'):
                 from _spreadsheet_reference import compare_spreadsheets
                 comparison = compare_spreadsheets(doc, z)
@@ -212,7 +219,7 @@ def _reference_differences(result):
     """List failed checked properties; absence of failures is not full coverage."""
     differences = [key for key, value in result.items()
                    if key.startswith('reference_') and key.endswith('_equal') and value is False]
-    for key in ('tables', 'slides', 'sheets', 'cells', 'populated_cells'):
+    for key in ('tables', 'total_tables', 'slides', 'sheets', 'cells', 'populated_cells'):
         reference = 'reference_' + key
         if reference in result and key in result and result[reference] != result[key]:
             differences.append(reference)

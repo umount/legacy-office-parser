@@ -267,7 +267,7 @@ def test_empty_document_is_complete_and_equal():
 def test_incomplete_root_equality_is_unknown_even_with_known_differences(known_difference):
     doc = Document('doc', blocks=[Paragraph('different' if known_difference else 'same')],
                    textboxes='unpaired')
-    result = compare(doc, p('same'))
+    result = compare(doc, p('same'), header1=('hdr', p('unpaired')))
     assert result['equal'] is None
     assert result['complete'] is False
     assert result['status'] == 'inconclusive'
