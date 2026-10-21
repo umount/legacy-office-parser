@@ -29,6 +29,8 @@ jobs:
           PYTEST
       - name: Sample malformed public fixtures
         run: timeout 120s python tools/check_mutations.py --seed 143 --cases-per-format 500
+      - name: Sample the complete authored fixture corpus
+        run: timeout 120s python tools/check_mutations.py --seed 143 --cases-per-format 100 --all-fixtures
       - name: Check bounded parsing and repeated allocations
         run: python tools/check_security_resources.py
       - run: python -m build
