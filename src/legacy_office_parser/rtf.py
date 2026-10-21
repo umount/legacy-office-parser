@@ -20,7 +20,7 @@ hlinkbase creatim revtim printim buptim
 colortbl stylesheet info filetbl revtbl rsidtbl listtable listoverridetable
 latentstyles generator xmlnstbl datastore themedata colorschememapping
 pict object objdata objclass objname objalias result shppict nonshppict
-shp shpinst shpgrp background do private datafield fontemb fontfile
+shprslt sp sn sv background do private datafield fontemb fontfile
 fldinst fldtype formfield annotation atnauthor atnid atndate
 bkmkstart bkmkend xe tc txe rxe pn pntxta pntxtb
 ftnsep ftnsepc ftncn aftnsep aftnsepc aftncn
@@ -28,6 +28,7 @@ userprops docvar template nextfile htmltag mhtmltag xmlopen xmlclose
 xmlattrname xmlattrvalue mmath mmathPict moMath moMathPara
 nesttableprops nonesttables
 """.split())
+_SHAPE_CONTAINERS = {'shp', 'shpinst', 'shpgrp'}
 _HEADERS = set('header headerl headerr headerf footer footerl footerr footerf'.split())
 _CHARS = dict(zip(
     'tab line emdash endash bullet lquote rquote ldblquote rdblquote emspace enspace '
@@ -127,6 +128,7 @@ def _tokens(data: bytes, start: int, limits: Limits):
 class _State:
     skip: bool = False
     font_table: bool = False
+    shape_container: bool = False
     font: int | None = None
     encoding: str = 'cp1252'
     uc: int = 1
@@ -148,6 +150,11 @@ class _Sink:
         self.row: list[Cell] | None = None
         self.expected = 0
         self.table: Table | None = None
+        self.definitions: list[tuple[int | None, str, str]] = []
+        self.horizontal = self.vertical = ''
+        self.left = 0
+        self.nested = False
+        self.vertical_anchors: dict[tuple[int, int, int, int], Cell] = {}
 
     def text(self, text: str):
         if text:
@@ -161,6 +168,7 @@ class _Sink:
             self.blocks.append(Paragraph(''.join(self.parts)))
             self.parts.clear()
             self.table = None
+            self.vertical_anchors.clear()
 
     def start_row(self):
         # Writers may repeat row properties after cell content, before \row.
@@ -169,6 +177,76 @@ class _Sink:
             self.paragraph()
             self.row = []
         self.expected = 0
+        self.definitions.clear()
+        self.horizontal = self.vertical = ''
+        self.left = 0
+
+    def define_cell(self, right: int | None):
+        self.expected += 1
+        self.definitions.append((right, self.horizontal, self.vertical))
+        self.horizontal = self.vertical = ''
+
+    def merge_cells(self, complete: bool):
+        """Reconstruct only explicit, rectangular merges on an unambiguous grid.
+
+        Coordinates remain in the model as covered cells. Active vertical spans
+        live for one adjacent row only; no guessed merges across recovery, nested
+        tables, changed column indices or body paragraphs.
+        """
+        previous, self.vertical_anchors = self.vertical_anchors, {}
+        definitions = self.definitions
+        marked = any(h or v for _, h, v in definitions)
+
+        def unsupported():
+            if marked:
+                self.parser.warn(
+                    'Merged table cells retained as separate cells; spans not reconstructed.')
+
+        if not complete or self.nested:
+            unsupported()
+            return
+        left = self.left
+        groups = []
+        for i, (right, horizontal, vertical) in enumerate(definitions):
+            if right is None or right <= left:
+                unsupported()
+                return
+            if horizontal == 'clmrg':
+                if not groups or definitions[groups[-1][0]][1] != 'clmgf':
+                    unsupported()
+                    return
+                start, _, x, _, v = groups[-1]
+                if v != vertical:
+                    unsupported()
+                    return
+                groups[-1] = (start, i + 1, x, right, v)
+            else:
+                groups.append((i, i + 1, left, right, vertical))
+            left = right
+        for start, end, left, right, vertical in groups:
+            anchor = self.row[start]
+            # Join original fragments once, retaining continuation text. Charge
+            # only newly inserted separators; input text was already budgeted.
+            fragments = [c.text for c in self.row[start:end] if c.text]
+            self.parser.charge(max(0, len(fragments) - 1))
+            anchor.text = '\n'.join(fragments)
+            anchor.col_span = end - start
+            for cell in self.row[start + 1:end]:
+                cell.text = ''
+                cell.covered = True
+            key = (left, right, start, end)
+            if vertical == 'clvmgf':
+                self.vertical_anchors[key] = anchor
+            elif vertical == 'clvmrg':
+                top = previous.get(key)
+                if top is not None and not anchor.text:
+                    top.row_span += 1
+                    anchor.col_span = 1
+                    anchor.covered = True
+                    self.vertical_anchors[key] = top
+                else:
+                    self.parser.warn(
+                        'Vertical merge continuation ambiguous or nonempty; cells retained.')
 
     def cell(self):
         if self.row is None:
@@ -180,11 +258,12 @@ class _Sink:
         self.row.append(Cell(''.join(self.parts)))
         self.parts.clear()
 
-    def end_row(self):
+    def end_row(self, recovered: bool = False):
         if self.row is None:
             self.start_row()
         if self.parts or not self.row:
             self.cell()
+        complete = bool(self.expected) and len(self.row) == self.expected
         while len(self.row) < self.expected:
             self.cell()
         if self.expected and len(self.row) != self.expected:
@@ -192,14 +271,18 @@ class _Sink:
         if self.table is None:
             self.table = Table()
             self.blocks.append(self.table)
+        self.merge_cells(complete and not recovered)
         self.table.rows.append(self.row)
         self.row = None
         self.expected = 0
+        self.definitions.clear()
+        self.horizontal = self.vertical = ''
+        self.nested = False
 
     def finish(self):
         if self.row is not None:
             self.parser.warn('Incomplete table row recovered.')
-            self.end_row()
+            self.end_row(recovered=True)
         self.paragraph()
 
 
@@ -234,7 +317,8 @@ class _Parser:
         return self.sinks[self.state.target]
 
     def visible(self):
-        return not (self.state.skip or self.state.font_table or self.state.hidden or self.state.deleted)
+        return not (self.state.skip or self.state.font_table or self.state.shape_container
+                    or self.state.hidden or self.state.deleted)
 
     def high_end(self):
         if self.pending_high is not None:
@@ -315,7 +399,7 @@ class _Parser:
             return
         if word in _SKIP:
             s.skip = True
-            if word in {'pict', 'object', 'shp', 'shpgrp', 'mmath', 'moMath', 'moMathPara'}:
+            if word in {'pict', 'object', 'mmath', 'moMath', 'moMathPara'}:
                 self.warn('Pictures, objects, shapes or equations omitted.')
             elif word == 'annotation':
                 self.warn('Annotations omitted.')
@@ -323,14 +407,24 @@ class _Parser:
             s.font_table = True
         elif s.font_table:
             return
+        elif word in _SHAPE_CONTAINERS:
+            # Traverse only recognized shape containers, never reopen a skipped
+            # ancestor. Property values and the legacy rendering are hard skips.
+            self.high_end()
+            s.shape_container = True
+            self.warn('Shape drawing and layout omitted.')
+        elif s.shape_container and word in _HEADERS | {'footnote'}:
+            s.skip = True
         elif word in _HEADERS or word in {'footnote', 'shptxt'}:
             self.high_end()
             story = 'headers_footers' if word in _HEADERS else (
                 'footnotes' if word == 'footnote' else 'textboxes')
             self.sinks.append(_Sink(self, story))
             s.target = len(self.sinks) - 1
-            s.hidden = False
-            s.deleted = False
+            s.shape_container = False
+            if word != 'shptxt':
+                s.hidden = False
+                s.deleted = False
         elif s.starred and word not in {'fldrslt', 'ud'}:
             s.skip = True
             self.warn('Unknown optional destinations omitted.')
@@ -356,8 +450,11 @@ class _Parser:
                         self.warn('Unsupported font charset or symbol font; using document code page.')
                 self.fonts[s.font] = charset, explicit
             return
-        if word in _SKIP or word == 'fonttbl':
+        if word in _SKIP or word in _SHAPE_CONTAINERS or word == 'fonttbl':
             self.destination(word)
+        elif s.shape_container:
+            # Shape controls/stray text cannot modify the surrounding story.
+            return
         elif word == 'upr':
             s.upr = True
             s.children = 0
@@ -404,7 +501,9 @@ class _Parser:
                 self.definitions += 1
                 if self.definitions > self.limits.max_cells:
                     raise LimitExceededError('RTF cell definition limit exceeded')
-                self.sink.expected += 1
+                self.sink.define_cell(number)
+            elif word == 'trleft':
+                self.sink.left = number if number is not None else 0
             elif word == 'cell':
                 self.high_end()
                 self.sink.cell()
@@ -412,8 +511,12 @@ class _Parser:
                 self.high_end()
                 self.sink.end_row()
             elif word in {'clmgf', 'clmrg', 'clvmgf', 'clvmrg'}:
-                self.warn('Merged table cells retained as separate cells; spans not reconstructed.')
+                if word in {'clmgf', 'clmrg'}:
+                    self.sink.horizontal = word
+                else:
+                    self.sink.vertical = word
             elif word in {'nestcell', 'nestrow'} or (word == 'itap' and number and number > 1):
+                self.sink.nested = True
                 self.warn('Nested table structure flattened; cell spans not reconstructed.')
                 if word in {'nestcell', 'nestrow'}:
                     self.emit('\t' if word == 'nestcell' else '\n')
