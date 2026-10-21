@@ -82,7 +82,7 @@ def xml(data, budget):
         for offset in range(0, len(data), 16384):
             parser.feed(data[offset:offset + 16384])
         return parser.close()
-    except (ET.ParseError, ValueError) as exc:
+    except (ET.ParseError, ValueError, LookupError) as exc:
         if isinstance(exc, (InvalidDocumentError, LimitExceededError)):
             raise
         raise InvalidDocumentError('Malformed ODF XML') from exc
