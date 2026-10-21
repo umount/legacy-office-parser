@@ -84,6 +84,10 @@ class Document:
     warnings: list[str] = field(default_factory=list)
     sheets: list[Sheet] = field(default_factory=list)
 
+    # Optional structured auxiliary content; the matching string is its projection.
+    # Keys name existing story fields, without claiming note anchors or placement.
+    story_blocks: dict[str, list[Block]] = field(default_factory=dict)
+
     @property
     def text(self) -> str:
         if self.format in ('xls', 'ods'):
@@ -107,6 +111,8 @@ class Document:
             result = dict(items)
             if 'row_span' in result and not result.get('blocks'):
                 result.pop('blocks', None)
+            if 'format' in result and not result.get('story_blocks'):
+                result.pop('story_blocks', None)
             return result
         return asdict(self, dict_factory=compatible_cells)
 

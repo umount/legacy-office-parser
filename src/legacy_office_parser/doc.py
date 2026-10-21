@@ -43,6 +43,7 @@ class _Budget:
         self.limits = limits
         self.records = 0
         self.cells = 0
+        self.text_chars = 0
 
     def record(self, count=1):
         self.records += count
@@ -53,6 +54,11 @@ class _Budget:
         self.cells += count
         if self.cells > self.limits.max_cells:
             raise LimitExceededError('DOC cell limit exceeded')
+
+    def text(self, count):
+        self.text_chars += count
+        if self.text_chars > self.limits.max_text_chars:
+            raise LimitExceededError('DOC output text limit exceeded')
 
 
 def _ascending(values):
@@ -633,12 +639,15 @@ class _Doc:
         assembler.finish()
         self._end_fields()
         start = self.counts[0]
+        stories = {}
         for index, count in enumerate(self.counts[1:], 1):
             if count:
                 if index == 3:
                     self.warn('Comment story text is omitted; the output model has no comments field.')
                 else:
-                    parts = []
+                    attr = {1: 'footnotes', 2: 'headers_footers', 4: 'endnotes',
+                            5: 'textboxes', 6: 'textboxes'}[index]
+                    blocks = stories.setdefault(attr, [])
                     ranges = [(0, count)]
                     textbox_plc = b''
                     if index in (5, 6):
@@ -650,22 +659,23 @@ class _Doc:
                     for begin, end in ranges:
                         if textbox_plc and self.text[(start + end - 1) * 2:(start + end) * 2] != b'\r\0':
                             raise InvalidDocumentError('DOC live textbox has no final paragraph mark')
+                        assembler = _Tables(self, blocks)
                         for text, cp, mark in self.paragraphs(start + begin, end - begin):
-                            props = self.properties(cp)
-                            if props.in_table or props.depth or props.inner:
-                                self.warn('Tables in auxiliary stories are flattened to text.')
-                            if props.depth > 1 or props.inner:
-                                self.warn('Nested tables are unsupported and flattened in CP order.')
-                            parts.append(text)
+                            assembler.add(text, mark, self.properties(cp))
+                        assembler.finish()
                         self._end_fields()
-                    value = '\n'.join(parts)
-                    attr = {1: 'footnotes', 2: 'headers_footers', 4: 'endnotes',
-                            5: 'textboxes', 6: 'textboxes'}[index]
-                    old = getattr(self.document, attr)
-                    setattr(self.document, attr, old + ('\n' if old and value else '') + value)
                     self.warn('Auxiliary stories are separated by type; note anchors, header variants and textbox placement are not modeled.')
                 self._end_fields()
             start += count
+        for attr, blocks in stories.items():
+            structured = any(isinstance(block, Table) for block in blocks)
+            size = _projection_size(blocks)
+            # For ordinary stories paragraphs are replaced by their joined text;
+            # for tables the structured tree and projection are both retained.
+            self.budget.text(size if structured else max(0, len(blocks) - 1))
+            setattr(self.document, attr, _projection(blocks))
+            if structured:
+                self.document.story_blocks[attr] = blocks
         return self.document
 
     def _end_fields(self):
@@ -674,9 +684,67 @@ class _Doc:
             self.fields.clear()
 
 
+def _projection_size(blocks):
+    size = max(0, len(blocks) - 1)
+    for block in blocks:
+        if isinstance(block, Paragraph):
+            size += len(block.text)
+        else:
+            size += max(0, len(block.rows) - 1)
+            size += sum(sum(len(c.text) for c in row) + max(0, len(row) - 1)
+                        for row in block.rows)
+    return size
+
+
+def _projection(blocks):
+    return '\n'.join(b.text if isinstance(b, Paragraph) else
+                     '\n'.join('\t'.join(c.text for c in row) for row in b.rows)
+                     for b in blocks)
+
+
 class _Tables:
-    def __init__(self, doc):
+    """Route CP-ordered paragraphs through an iterative stack of table depths."""
+    def __init__(self, doc, destination=None):
         self.doc = doc
+        self.destination = doc.document.blocks if destination is None else destination
+        self.levels = []
+
+    def add(self, text, mark, props):
+        depth = props.depth or (1 if props.in_table else 0)
+        if props.inner and depth < 2:
+            raise InvalidDocumentError('DOC inner table marker has no nested table depth')
+        if depth > self.doc.limits.max_depth:
+            raise LimitExceededError('DOC table depth limit exceeded')
+        while len(self.levels) > depth:
+            self.levels.pop().finish()
+        if not depth:
+            if mark == 7:
+                self.doc.warn('Cell mark without table membership was retained as a paragraph boundary.')
+            self.doc.budget.text(len(text))
+            self.destination.append(Paragraph(text))
+            return
+        # A cell can begin with another table, without a preceding paragraph at
+        # its own depth. Materialize its enclosing cells, not invented text.
+        while len(self.levels) < depth:
+            self.doc.budget.record()
+            destination = self.destination
+            if self.levels:
+                parent = self.levels[-1]
+                parent.ensure_table()
+                destination = parent.paras
+            self.levels.append(_TableLevel(self.doc, destination, len(self.levels) + 1))
+        self.levels[-1].add(text, mark, props)
+
+    def finish(self):
+        while self.levels:
+            self.levels.pop().finish()
+
+
+class _TableLevel:
+    def __init__(self, doc, destination, depth):
+        self.doc = doc
+        self.destination = destination
+        self.depth = depth
         self.table = None
         self.cells = []
         self.paras = []
@@ -686,7 +754,13 @@ class _Tables:
 
     def cell(self):
         self.doc.budget.cell()
-        self.cells.append(Cell(text='\n'.join(self.paras)))
+        complex_cell = any(isinstance(block, Table) for block in self.paras)
+        # Check the retained projection before allocating separators or copies.
+        size = _projection_size(self.paras)
+        retained_paragraphs = (sum(len(b.text) for b in self.paras if isinstance(b, Paragraph))
+                               if complex_cell else 0)
+        self.doc.budget.text(size + retained_paragraphs)
+        self.cells.append(Cell(text=_projection(self.paras), blocks=self.paras if complex_cell else []))
         self.paras = []
 
     def row(self, props):
@@ -696,7 +770,7 @@ class _Tables:
             # Close only the completed rows; keep this pending row intact.
             self._normalize_grid()
             self.table = Table()
-            self.doc.document.blocks.append(self.table)
+            self.destination.append(self.table)
             self.vertical = {}
             self.row_edges = []
         self.direction = direction
@@ -755,41 +829,32 @@ class _Tables:
                 self.doc.warn('Vertical merge without a matching explicit grid was not applied.')
         self.vertical = current
 
-    def add(self, text, mark, props):
-        nested = props.depth > 1 or props.inner
-        if nested:
-            self.doc.warn('Nested tables are unsupported and flattened in CP order.')
-            # Preserve nested paragraphs inside the currently open outer cell.
-            if self.table is not None:
-                self.paras.append(text)
-            else:
-                self.doc.document.blocks.append(Paragraph(text))
-            return
-        in_table = props.in_table or props.depth == 1
-        if not in_table:
-            self.finish()
-            if mark == 7:
-                self.doc.warn('Cell mark without table membership was retained as a paragraph boundary.')
-            self.doc.document.blocks.append(Paragraph(text))
-            return
+    def ensure_table(self):
         if self.table is None:
             self.table = Table()
-            self.doc.document.blocks.append(self.table)
-        if props.row_end:
-            # A TTP is a separate, empty paragraph after the final cell mark.
+            self.destination.append(self.table)
+
+    def add(self, text, mark, props):
+        self.ensure_table()
+        row_end = props.row_end if self.depth == 1 else props.inner_ttp
+        cell_end = mark == 7 if self.depth == 1 else props.inner_cell
+        if self.depth > 1 and (props.row_end or mark == 7):
+            self.doc.warn('Outer table markers at nested depth were retained as paragraph boundaries.')
+        if row_end:
+            # TTP is a separate empty paragraph, not an additional cell.
             if text or self.paras:
                 if text:
-                    self.paras.append(text)
+                    self.paras.append(Paragraph(text))
                 self.cell()
                 self.doc.warn('Row terminator contains content; content is retained as a cell.')
             if not self.cells:
                 self.cell()
             self.row(props)
-        elif mark == 7:
-            self.paras.append(text)
+        elif cell_end:
+            self.paras.append(Paragraph(text))
             self.cell()
         else:
-            self.paras.append(text)
+            self.paras.append(Paragraph(text))
 
     def finish(self):
         if self.table is None:

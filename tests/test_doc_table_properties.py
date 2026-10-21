@@ -78,8 +78,8 @@ def test_clearing_one_inner_flag_preserves_the_other(monkeypatch, cleared, retai
     group = (IN + sprm(0x6649, u32(2)) + sprm(retained, 1)
              + sprm(cleared, 1) + sprm(cleared, 0))
     out = parse(monkeypatch, table_fixture('A\r', [group]))
-    assert out.blocks[0].text == 'A'
-    assert any('Nested tables' in warning for warning in out.warnings)
+    assert out.blocks[0].rows[0][0].blocks[0].rows[0][0].text == 'A'
+    assert any('without a row terminator' in warning for warning in out.warnings)
 
 
 @pytest.mark.parametrize('opcode', [0x560B, 0x5664])

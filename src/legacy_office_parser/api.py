@@ -25,6 +25,7 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
     total = 0
     cells = 0
     stack = [(block, 1) for block in doc.blocks]
+    stack.extend((block, 1) for blocks in doc.story_blocks.values() for block in blocks)
     while stack:
         block, depth = stack.pop()
         if depth > limits.max_depth:

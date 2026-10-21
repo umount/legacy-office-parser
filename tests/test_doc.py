@@ -185,7 +185,8 @@ def test_nested_tables_keep_text_inside_outer_cell(monkeypatch):
     streams = fixture([('outer\rinner\rrest\7\7', True)], props=[IN, nested, IN, ROW + definition([0])])
     out = parse(monkeypatch, streams)
     assert out.blocks[0].rows[0][0].text == 'outer\ninner\nrest'
-    assert any('Nested tables' in w for w in out.warnings)
+    assert any('without a row terminator' in w for w in out.warnings)
+    assert out.blocks[0].rows[0][0].blocks[1].rows[0][0].text == 'inner'
 
 
 def test_prc_piece_override_and_paragraph_final_piece(monkeypatch):
@@ -340,13 +341,14 @@ def test_logical_piece_order_is_not_physical_stream_order(monkeypatch):
     assert parse(monkeypatch, streams).blocks == [Paragraph('other'), Paragraph('first')]
 
 
-def test_auxiliary_table_flattening_is_explicit(monkeypatch):
+def test_auxiliary_table_structure_and_projection(monkeypatch):
     streams = fixture([('main\rnote\7\7', True)], counts=[5, 6, 0, 0, 0, 0, 0],
                       props=[b'', IN, ROW])
     out = parse(monkeypatch, streams)
     assert out.blocks == [Paragraph('main')]
-    assert out.footnotes == 'note\n'
-    assert any('auxiliary stories are flattened' in w for w in out.warnings)
+    assert out.footnotes == 'note'
+    assert out.story_blocks['footnotes'][0].rows[0][0].text == 'note'
+    assert 'story_blocks' in out.to_dict()
 
 
 def test_record_budget_is_enforced_during_sprm_iteration(monkeypatch):
