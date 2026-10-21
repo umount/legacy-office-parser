@@ -24,7 +24,9 @@ _COMPARE = {'<': operator.lt, '<=': operator.le, '>': operator.gt,
             '>=': operator.ge, '=': operator.eq, '<>': operator.ne}
 _MAX_THRESHOLD = Decimal('1.7976931348623157E+308')
 _MIN_THRESHOLD = Decimal('5E-324')
-_FIXED = re.compile(r'(0|#,##0)(?:\.(0{1,15}))?(%)?')
+_FIXED = re.compile(r'(0|#,##0)(?:\.(0{1,15}#{0,14}))?(,{0,63})(%)?')
+# Deliberate evidence-backed whitelist, not a general locale interpreter.
+_CURRENCY = {'[$$-409]': '$', '[$€-407]': '€', '[$USD-409]': 'USD'}
 _SCIENTIFIC = re.compile(r'0(?:\.(0{1,15}))?([Ee])([+-])(0{1,3})')
 _DATE_TOKEN = re.compile(
     r'am/pm|a/p|y+|m+|d+|h+|s+|[ /:.,-]+|\\[ /:.,-]|"[ /:.,-]+"', re.I,
@@ -60,6 +62,7 @@ def _numeric_parts(code: str, *, allow_literal: bool = False) -> tuple[str, str,
     prefix, suffix = [], []
     core = None
     bare_affix = False
+    currency = False
     pos = 0
     while pos < len(code):
         char = code[pos]
@@ -74,6 +77,13 @@ def _numeric_parts(code: str, *, allow_literal: bool = False) -> tuple[str, str,
                 return None
             literal = code[pos + 1]
             pos += 2
+        elif char == '[':
+            token = next((tag for tag in _CURRENCY if code.startswith(tag, pos)), None)
+            if token is None or currency:
+                return None
+            literal = _CURRENCY[token]
+            currency = True
+            pos += len(token)
         elif char in '+-()':
             literal = char
             bare_affix = True
@@ -92,6 +102,13 @@ def _numeric_parts(code: str, *, allow_literal: bool = False) -> tuple[str, str,
         if not allow_literal or bare_affix or not ''.join(prefix):
             return None
         core = ''
+    fixed = _FIXED.fullmatch(core)
+    if currency and (fixed is None or fixed.group(4)):
+        return None
+    if fixed is not None:
+        _, fraction, commas, percent = fixed.groups()
+        if len(fraction or '') > 15 or (percent and (commas or '#' in (fraction or ''))):
+            return None
     return ''.join(prefix), core, ''.join(suffix)
 
 
@@ -240,15 +257,23 @@ def render_number(value: int | float, code: str) -> str | None:
         if not core:  # Explicit, nonempty literal-only third section.
             return prefix
         if fixed is not None:
-            integer, fraction, percent = fixed.groups()
+            integer, fraction, commas, percent = fixed.groups()
             places = len(fraction or '')
+            # Scale before rounding; scaleb is exact within the private context.
+            number = number.scaleb(-3 * len(commas))
             if percent:
                 number *= 100
             number = number.quantize(Decimal(1).scaleb(-places))
             if not number:
                 number = number.copy_abs()
             grouping = ',' if integer == '#,##0' else ''
-            text = format(number, f'{grouping}.{places}f') + ('%' if percent else '')
+            text = format(number, f'{grouping}.{places}f')
+            optional = (fraction or '').count('#')
+            if optional:
+                removable = min(optional, len(text) - len(text.rstrip('0')))
+                if removable:
+                    text = text[:-removable]
+            text += '%' if percent else ''
             return _with_affixes(text, prefix, suffix)
         fraction, letter, sign, zeros = scientific.groups()
         places = len(fraction or '')

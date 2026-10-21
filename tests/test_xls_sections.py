@@ -15,6 +15,7 @@ from test_xls_formats import parse_number, record, workbook
 @pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('code,value,expected', [
     ('0.00;[Red]-0.00', -12.345, '-12.35'),
+    ('0;0,', 12.5, '13'), ('0;0,', -12.5, '0'), ('0;0,', 0.0, '0'),
     ('0.00;(0.00);"zero"', -.001, '(0.00)'),
     ('0.00;(0.00);"zero"', 0, 'zero'),
     ('0.00;0.00;"zero";@', -12.5, '12.50'),
@@ -109,7 +110,7 @@ def test_sections_integer_records(kind, value, expected):
     '0;0;"unfinished', '0;0;\\', '0;0;"x"\\',
     '0;0;"x";"@', '0;0;0;@\\',
     '0;0+0', '0;0(0)', '0;0E+"x"00', '0;0.00E+00%',
-    '0;0.0000000000000000', '0;0E+0000', '0;0.##', '0;0,',
+    '0;0.0000000000000000', '0;0E+0000', '0;0.##',
     '0;General"x"', '0;-General', '0;_(0)', '0;*0',
 ])
 def test_all_sections_validated_even_when_unused(code, value, kind):

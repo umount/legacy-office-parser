@@ -17,6 +17,7 @@ from test_xls_formats import parse_number, workbook
 @pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('code,value,expected', [
     ('0.00" kg"', 12.5, '12.50 kg'),
+    ('"USD "#,##0,', .125, 'USD 0'), ('0.0,,"M"', .125, '0.0M'),
     ('"USD "#,##0.00', 12345.5, 'USD 12,345.50'),
     ('"USD "#,##0.00', -12.5, '-USD 12.50'),
     ('"USD "0.00', -12.5, '-USD 12.50'),
@@ -91,7 +92,7 @@ def test_literal_integer_records(code, expected, kind):
     '0" kg";', '[>0]"USD "0',
     '[$-409]0" kg"', '_("USD "0_)', '* "USD "0',
     '$0.00', 'USD 0.00', '0.00 kg', ' "USD "0', '0" kg" ',
-    '"USD "$0', '"USD "#,##0,', '0.0,,"M"',
+    '"USD "$0',
     '"USD "General', 'General" kg"', '"USD "0.##',
     '"USD "0.0000000000000000', '0E+0000" kg"', '0.00E+00%" kg"',
     '"USD "yyyy-mm-dd', 'yyyy"days"mm', '0"days"yyyy',

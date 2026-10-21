@@ -48,6 +48,8 @@ def parse_number(value, fmt=0, custom=None, kind='number', **kwargs):
 @pytest.mark.parametrize('fmt,custom,value,expected', [
     (0, None, 12.5, '12.5'), (164, 'General', 12.5, '12.5'),
     (164, 'general', 12.5, '12.5'),
+    (164, '0,,', .125, '0'), (164, '#,##0,', .125, '0'),
+    (164, '0.0,,"M"', .125, '0.0M'),
     (1, None, 12.5, '13'), (2, None, -12.345, '-12.35'),
     (3, None, 12345.5, '12,346'), (4, None, 12345.5, '12,345.50'),
     (9, None, .125, '13%'), (10, None, -.25, '-25.00%'),
@@ -80,7 +82,7 @@ def test_numeric_and_cached_formula_rendering(fmt, custom, value, expected, kind
 @pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('custom', [
     '"0.00%"',
-    '0.00;', '0,,', '#,##0,', '0.0,,"M"',
+    '0.00;',
     '[$-409]0.00%', '[$-409]yyyy-mm-dd', '[>0]0%',
     '0_%,', '0*%', '0.00yyyy', '0%yyyy',
     '0.00"unfinished', '0.00\\', '[h]:mm', 'yyyy-mm-dd;0%',
