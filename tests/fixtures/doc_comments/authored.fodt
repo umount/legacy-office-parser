@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.2" office:mimetype="application/vnd.oasis.opendocument.text">
+<office:body><office:text>
+<text:p>Before 😀 <office:annotation office:name="range-a"><dc:creator>Ada Fixture</dc:creator><dc:date>2026-01-01T12:00:00</dc:date><text:p>Shared comment.</text:p></office:annotation>RangeAlpha<office:annotation-end office:name="range-a"/> after.</text:p>
+<text:p>PointBeta<office:annotation office:name="point-b"><dc:creator>Ben Fixture</dc:creator><dc:date>2026-01-02T12:00:00</dc:date><text:p>Shared comment.</text:p></office:annotation> tail.</text:p>
+<table:table table:name="OriginalTable"><table:table-column/><table:table-row><table:table-cell office:value-type="string"><text:p>Cell <office:annotation office:name="cell-c"><dc:creator>Ada Fixture</dc:creator><dc:date>2026-01-03T12:00:00</dc:date><text:p>Cell comment: Ελληνικά.</text:p><text:p>Second paragraph.</text:p></office:annotation>RangeGamma<office:annotation-end office:name="cell-c"/> end.</text:p></table:table-cell></table:table-row></table:table>
+<text:p>AfterTable.</text:p>
+</office:text></office:body></office:document>

@@ -25,7 +25,17 @@ def main():
             assert len(doc.slides) == 3 and doc.slides[2].notes
         else:
             assert any(b.kind == 'table' for b in doc.blocks)
-    print('Installed wheel: all seven formats passed')
+    comments = parse(args.fixtures / 'doc_comments/authored.doc')
+    assert [c.author for c in comments.comments] == ['Ada Fixture', 'Ben Fixture', 'Ada Fixture']
+    assert [c.source_cp for c in comments.comments] == [20, 38, 61]
+    assert all(c.anchor_path is not None for c in comments.comments)
+    assert comments.comment_text.count('Shared comment.') == 2
+    hidden = parse(args.fixtures / 'xls_hidden_sections/preserved.xls')
+    assert any(c.value_type == 'number' and c.value is not None and c.text == ''
+               for c in hidden.sheets[0].cells)
+    assert any(c.value_type == 'string' and c.value and c.text == ''
+               for c in hidden.sheets[0].cells)
+    print('Installed wheel: all seven formats, DOC comments and hidden XLS values passed')
 
 
 if __name__ == '__main__':

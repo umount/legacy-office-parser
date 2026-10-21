@@ -10,18 +10,21 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass, field, replace
+from itertools import chain
 import struct
 
 from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
 from ._doc_notes import decode_note_ranges
+from ._doc_comments import decode_comments
 from ._doc_table import FrameIdentity, TableIdentity, apply_table, frame_change
 from ._doc_conditions import apply_conditions, row_boundary
 from ._doc_styles import Styles, character_ops, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
-from .models import Cell, Document, Paragraph, Table, Note, NoteBodyRange
+from .models import (Cell, Document, Paragraph, Table, Note, NoteBodyRange,
+                     Comment, CommentBodyRange)
 
 
 __all__ = ['parse_doc_bytes']
@@ -125,6 +128,11 @@ class _Doc:
         self.symbol_prms = {}
         self.symbol_fonts = None
         self.fields = []
+        self.comment_references = {}
+        self.comment_markers = {}
+        self.comment_marker_known = {}
+        self.comment_selections = {}
+        self.comment_structure_known = {}
         self.note_references = {}
         self.note_targets = {}
         self.note_object_cps = {}
@@ -165,6 +173,7 @@ class _Doc:
         if csw_new:
             _span(self.word, extension + 2, csw_new * 2)
             version = _u16(self.word, extension + 2)
+        self.fib_version = version
         if version not in versions:
             raise UnsupportedFormatError('unsupported DOC FIB version')
         if count < versions[version]:
@@ -682,6 +691,26 @@ class _Doc:
                 else:
                     self.paragraph_anchors.append(cp)
                 self.note_visibility[cp] = flags
+            if cp in self.comment_markers:
+                props = self._character_props(cp, paragraph_style, table_hidden)
+                special = props.get('special')
+                if special is False or ('special' not in props and self.character_coverage_known):
+                    raise InvalidDocumentError('DOC comment marker has CFSpec=false')
+                known = special is True
+                self.comment_marker_known[cp] = known
+                if not known:
+                    self.warn('DOC comment marker CFSpec is unknown; its unproven body is omitted.')
+                if cp in self.comment_references:
+                    flags = [name for name in ('hidden', 'deleted', 'field_hidden') if props.get(name)]
+                    if self.fields and not all(self.fields):
+                        flags.append('field_instruction')
+                    if not self.character_coverage_known or not self.styles.present or not table_known:
+                        flags.append('unknown')
+                    self.note_visibility[cp] = flags
+                    # CPs are unique in the scan. A custom note may already
+                    # have appended this CP; dictionary membership is constant time.
+                    if known and cp not in self.note_references:
+                        self.paragraph_anchors.append(cp)
             if ch == '\x13':
                 if len(self.fields) >= self.limits.max_depth:
                     raise LimitExceededError('DOC field nesting limit exceeded')
@@ -713,7 +742,8 @@ class _Doc:
             if ch in ('\x01', '\x08'):
                 self.warn('Embedded objects and drawings are omitted; textbox stories are extracted separately.')
             elif ch in ('\x02', '\x05'):
-                self.warn('Note/comment reference marks are omitted; note stories are extracted separately.')
+                if ch == '\x02':
+                    self.warn('Note/comment reference marks are omitted; note stories are extracted separately.')
             elif ch in ('\x0b', '\x0c', '\x0e', '\r'):
                 out.append('\n')
             elif ch == '\x07':
@@ -777,6 +807,8 @@ class _Doc:
         while pending:
             close_incomplete()
         apply_conditions(self, paragraphs)
+        if start == 0 and count == self.counts[0] and self.comment_references:
+            self._comment_selection_ranges(paragraphs)
         for begin, end, mark, mark_cp, props, hidden, known in paragraphs:
             self.paragraph_cache = mark_cp, props
             yield self.clean(begin, end, mark_cp if mark == 0 else None,
@@ -802,6 +834,91 @@ class _Doc:
                         raise InvalidDocumentError('DOC automatic note reference has no U+0002 marker')
                     self.note_references[note.source_cp] = note.reference_kind
 
+    def _comment_paragraph_known(self, cp):
+        piece = self.pieces[bisect_right(self.cps, cp) - 1]
+        fc = piece.fc + (cp - piece.cp) * piece.width
+        return 0 <= bisect_right(self.bin_fcs, fc) - 1 < len(self.bin_pages)
+
+    def _prepare_comments(self):
+        start, count = sum(self.counts[:3]), self.counts[3]
+        parts = {i: self.table_part(i) for i in (4, 5, 36, 37, 42, 43)}
+        if self.fib_version >= 0x101:
+            parts[112] = self.table_part(112)
+        self.comment_ranges = decode_comments(
+            parts, memoryview(self.text)[:self.counts[0] * 2],
+            memoryview(self.text)[start * 2:(start + count) * 2], self.limits,
+            record=self.budget.record, warn=self.warn, source_text_count=self.total)
+        for comment in self.comment_ranges:
+            self.budget.record(3)
+            self.comment_references[comment.source_cp] = comment
+            self.comment_markers[comment.source_cp] = comment.ordinal
+            self.comment_markers[start + comment.body_start] = comment.ordinal
+            end_cp = start + comment.body_end - 1
+            known = self._comment_paragraph_known(end_cp)
+            self.comment_structure_known[comment.ordinal] = known
+            if not known:
+                self.warn('DOC comment final paragraph has unknown table membership; its body is omitted.')
+            end_props = self.properties(end_cp)
+            if end_props.in_table or end_props.depth or end_props.inner:
+                raise InvalidDocumentError('DOC comment body final paragraph is inside a table')
+
+    def _comment_selection_ranges(self, paragraphs):
+        # One scan of paragraph contents, then logarithmic source-coordinate
+        # lookup per range; no per-comment rescanning or normalized text offsets.
+        self.budget.record(2 * len(paragraphs))
+        starts = [p[0] for p in paragraphs]
+        safe = []
+        fields = False
+        for begin, end, _, mark_cp, _, _, known in paragraphs:
+            ordinary = known and self._comment_paragraph_known(mark_cp)
+            for cp in range(begin, end):
+                unit = self.text[cp * 2] | self.text[cp * 2 + 1] << 8
+                fields |= unit in (19, 20, 21)
+                ordinary &= unit >= 32 or unit in (5, 9)
+            safe.append(ordinary)
+        for source in self.comment_ranges:
+            begin, end = source.selection_start, source.selection_end
+            if begin is None:
+                continue
+            if begin == end:
+                self.comment_selections[source.source_cp] = (begin, end)
+                continue
+            i = bisect_right(starts, begin) - 1
+            if (not fields and i >= 0 and safe[i] and end <= paragraphs[i][1]
+                    and not 0xdc00 <= _u16(self.text, begin * 2) <= 0xdfff
+                    and not 0xd800 <= _u16(self.text, (end - 1) * 2) <= 0xdbff):
+                self.comment_selections[source.source_cp] = (begin, end)
+            else:
+                self.warn('DOC comment selection validity is unproven; source selection bounds are omitted.')
+
+    def _parse_comments(self, start):
+        blocks = []
+        for source in self.comment_ranges:
+            block_start = len(blocks)
+            assembler = _Tables(self, blocks)
+            for text, cp, mark in self.paragraphs(start + source.body_start,
+                                                  source.body_end - source.body_start):
+                assembler.add(text, mark, self.properties(cp))
+            assembler.finish()
+            self._end_fields()
+            if not (self.comment_structure_known[source.ordinal]
+                    and self.comment_marker_known.get(source.source_cp)
+                    and self.comment_marker_known.get(start + source.body_start)):
+                del blocks[block_start:]
+                continue
+            self.budget.record()
+            self.budget.text(len(source.author or '') + len(source.initials))
+            begin, end = self.comment_selections.get(source.source_cp, (None, None))
+            self.document.comments.append(Comment(
+                ordinal=source.ordinal, body=CommentBodyRange('comment_text', block_start, len(blocks)),
+                author=source.author, initials=source.initials, source_cp=source.source_cp,
+                selection_start=begin, selection_end=end,
+                visibility=list(self.note_visibility.get(source.source_cp, ['unknown']))))
+        if self.document.comments:
+            self.budget.text(_projection_size(blocks))
+            self.document.story_blocks['comment_text'] = blocks
+            self.document.comment_text = _projection(blocks)
+
     def _bind_note_anchors(self, cps, target):
         if cps:
             self.note_object_cps.setdefault(id(target), []).extend(cps)
@@ -814,13 +931,13 @@ class _Doc:
 
     def _resolve_note_paths(self):
         wanted = {}
-        for note in self.document.notes:
+        for note in chain(self.document.notes, self.document.comments):
             target = self.note_targets.get(note.source_cp)
             if target is not None:
                 wanted.setdefault(id(target), []).append(note)
         if not wanted:
-            if self.document.notes:
-                self.warn('Note output anchors are unresolved; source CPs are not output offsets.')
+            if self.document.notes or self.document.comments:
+                self.warn('Note/comment output anchors are unresolved; source CPs are not output offsets.')
             return
         def children(node):
             if isinstance(node, Table):
@@ -853,14 +970,15 @@ class _Doc:
                     note.anchor_path = list(path)
             if isinstance(block, (Table, Cell)):
                 stack.append((children(block), len(path)))
-        for note in self.document.notes:
+        for note in chain(self.document.notes, self.document.comments):
             if note.anchor_path is None and note.source_cp is not None:
                 if 'unknown' not in note.visibility:
                     note.visibility.append('unknown')
-                self.warn('Some note references could not be linked to an output paragraph or cell.')
+                self.warn('Some note/comment references could not be linked to an output paragraph or cell.')
 
     def parse(self):
         self._prepare_notes()
+        self._prepare_comments()
         assembler = _Tables(self)
         for text, cp, mark in self.paragraphs(0, self.counts[0]):
             assembler.add(text, mark, self.properties(cp), self.paragraph_anchors)
@@ -872,7 +990,7 @@ class _Doc:
         for index, count in enumerate(self.counts[1:], 1):
             if count:
                 if index == 3:
-                    self.warn('Comment story text is omitted; the output model has no comments field.')
+                    self._parse_comments(start)
                 else:
                     attr = {1: 'footnotes', 2: 'headers_footers', 4: 'endnotes',
                             5: 'textboxes', 6: 'textboxes'}[index]

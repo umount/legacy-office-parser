@@ -1,0 +1,164 @@
+{
+  "story_counts": [
+    81,
+    0,
+    0,
+    78,
+    0,
+    0,
+    0
+  ],
+  "main": "Before 😀 RangeAlpha\u0005 after.\rPointBeta\u0005 tail.\rCell RangeGamma\u0005 end.\u0007\u0007AfterTable.\r",
+  "comment_story": "\u0005Shared comment.\r\u0005Shared comment.\r\u0005Cell comment: Ελληνικά.\rSecond paragraph.\r\r",
+  "owners": [
+    "Ada Fixture",
+    "Ben Fixture"
+  ],
+  "reference_sentinel": 82,
+  "text_cps": [
+    0,
+    17,
+    34,
+    77,
+    78
+  ],
+  "comments": [
+    {
+      "source_cp": 20,
+      "source_unit": 5,
+      "initials": "",
+      "owner_index": 0,
+      "tag": 0,
+      "body_cps": [
+        0,
+        17
+      ],
+      "body": "\u0005Shared comment.\r"
+    },
+    {
+      "source_cp": 38,
+      "source_unit": 5,
+      "initials": "",
+      "owner_index": 1,
+      "tag": 4294967295,
+      "body_cps": [
+        17,
+        34
+      ],
+      "body": "\u0005Shared comment.\r"
+    },
+    {
+      "source_cp": 61,
+      "source_unit": 5,
+      "initials": "",
+      "owner_index": 0,
+      "tag": 1,
+      "body_cps": [
+        34,
+        77
+      ],
+      "body": "\u0005Cell comment: Ελληνικά.\rSecond paragraph.\r"
+    }
+  ],
+  "marker_chpx": [
+    {
+      "cp": 20,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 38,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 61,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 81,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 98,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 115,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    }
+  ],
+  "raw_parts_hex": {
+    "4": "14000000260000003d000000520000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000ffffffff000000000000000000000000000000000000000000000000000001000000",
+    "5": "0000000011000000220000004d0000004e000000",
+    "36": "0b00410064006100200046006900780074007500720065000b00420065006e0020004600690078007400750072006500",
+    "37": "ffff02000a000000000100000000ffffffff0000000101000000ffffffff",
+    "42": "0a00000033000000520000000000000001000000",
+    "43": "140000003d00000052000000",
+    "112": "000be18700000000000000000000000000000013e1a70000000000000000000000000000001be1c70000000000000000000000000000"
+  },
+  "source_xml": [
+    {
+      "author": "Ada Fixture",
+      "paragraphs": [
+        "Shared comment."
+      ],
+      "host_prefix_chars": 9,
+      "range_chars": 10
+    },
+    {
+      "author": "Ben Fixture",
+      "paragraphs": [
+        "Shared comment."
+      ],
+      "host_prefix_chars": 9,
+      "range_chars": null
+    },
+    {
+      "author": "Ada Fixture",
+      "paragraphs": [
+        "Cell comment: Ελληνικά.",
+        "Second paragraph."
+      ],
+      "host_prefix_chars": 5,
+      "range_chars": 10
+    }
+  ],
+  "lo_readback_xml": [
+    {
+      "author": "Ada Fixture",
+      "paragraphs": [
+        "Shared comment."
+      ],
+      "host_prefix_chars": 9,
+      "range_chars": 10
+    },
+    {
+      "author": "Ben Fixture",
+      "paragraphs": [
+        "Shared comment."
+      ],
+      "host_prefix_chars": 9,
+      "range_chars": null
+    },
+    {
+      "author": "Ada Fixture",
+      "paragraphs": [
+        "Cell comment: Ελληνικά.",
+        "Second paragraph."
+      ],
+      "host_prefix_chars": 5,
+      "range_chars": 10
+    }
+  ]
+}
