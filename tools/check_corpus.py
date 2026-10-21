@@ -23,6 +23,9 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
+_TARGETS = {'.doc': 'docx', '.rtf': 'docx', '.odt': 'docx', '.xls': 'xlsx',
+            '.ods': 'xlsx', '.ppt': 'pptx', '.odp': 'pptx'}
+
 _W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 _MC = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
 
@@ -87,7 +90,7 @@ def _worker(source: Path, reference: Path | None) -> dict:
         return {'status': 'parse_error', 'error': type(exc).__name__}
     body = '\n'.join(b.text if isinstance(b, Paragraph) else '\n'.join(
         '\t'.join(c.text for c in row) for row in b.rows) for b in doc.blocks)
-    if doc.format == 'ppt':
+    if doc.format in ('ppt', 'odp'):
         body = '\n'.join('\n'.join((s.title, s.text)) for s in doc.slides)
     else:
         body += '\n' + doc.textboxes
@@ -97,19 +100,34 @@ def _worker(source: Path, reference: Path | None) -> dict:
         'text_chars': len(doc.text),
         'tables': sum(b.kind == 'table' for b in doc.blocks),
         'slides': len(doc.slides),
+        'sheets': len(doc.sheets),
+        'cells': sum(len(sheet.cells) for sheet in doc.sheets),
         'warnings': doc.warnings,
         'parse_seconds': round(time.perf_counter() - start, 4),
         'max_rss_kib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
     }
     if reference:
         with zipfile.ZipFile(reference) as z:
-            if doc.format == 'doc':
+            if doc.format in ('doc', 'rtf', 'odt'):
                 ref_text, result['reference_tables'] = _docx_reference(z)
+            elif doc.format in ('xls', 'ods'):
+                # Formatted numeric/date text cannot be compared against raw XLSX
+                # values. Exact cell semantics are covered by authored fixtures.
+                ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                names = [n for n in z.namelist()
+                         if re.fullmatch(r'xl/worksheets/sheet\d+\.xml', n)]
+                result['reference_sheets'] = len(names)
+                result['reference_cells'] = sum(
+                    1 for n in names for cell in ET.fromstring(z.read(n)).iter(ns + 'c')
+                    if any(cell.find(ns + tag) is not None for tag in ('v', 'is', 'f')))
+                result['reference_scope'] = 'sheet and populated cell counts only'
+                return result
             else:
                 names = sorted((n for n in z.namelist() if re.fullmatch(r'ppt/slides/slide\d+\.xml', n)),
                                key=lambda n: int(re.search(r'(\d+)\.xml$', n)[1]))
                 ns = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
-                ref_text = ' '.join(t.text or '' for n in names for t in ET.fromstring(z.read(n)).iter(ns + 't'))
+                ref_text = '\n'.join(''.join(t.text or '' for t in para.iter(ns + 't'))
+                                     for n in names for para in ET.fromstring(z.read(n)).iter(ns + 'p'))
                 result['reference_slides'] = len(names)
         def words(s):
             return Counter(re.findall(r'\w+', s.casefold()))
@@ -134,8 +152,9 @@ def main() -> int:
         print(json.dumps(_worker(args.directory, args.reference), ensure_ascii=False))
         return 0
     results = []
-    for source in sorted(args.directory.iterdir()):
-        if not source.is_file() or source.suffix.lower() not in ('.doc', '.ppt'):
+    sources = [args.directory] if args.directory.is_file() else sorted(args.directory.iterdir())
+    for source in sources:
+        if not source.is_file() or source.suffix.lower() not in _TARGETS:
             continue
         # Hash the stream without materialising a second copy of large personal input.
         with source.open('rb') as stream:
@@ -147,7 +166,7 @@ def main() -> int:
             if args.libreoffice:
                 copied = temp / ('input' + source.suffix.lower())
                 shutil.copyfile(source, copied)
-                target = 'docx' if source.suffix.lower() == '.doc' else 'pptx'
+                target = _TARGETS[source.suffix.lower()]
                 command = ['libreoffice', '-env:UserInstallation=' + (temp / 'profile').as_uri(),
                            '--headless', '--convert-to', target, '--outdir', str(temp), str(copied)]
                 started = time.perf_counter()
@@ -181,7 +200,8 @@ def main() -> int:
                 entry['status'] = 'timeout'
             results.append(entry)
     print(json.dumps({'files': results}, ensure_ascii=False, indent=2))
-    return int(not results or any(x['status'] not in ('ok', 'warning') for x in results))
+    return int(not results or any(x['status'] not in ('ok', 'warning') or
+                                 'reference_status' in x for x in results))
 
 if __name__ == '__main__':
     raise SystemExit(main())
