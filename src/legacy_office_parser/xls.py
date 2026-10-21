@@ -114,7 +114,22 @@ class _Parser:
             cleaned = re.sub(r'"[^"]*"|\\.|_.|\*.', '', custom.lower())
             date = bool(re.search('[ymdhs]', cleaned))
             uncertain = date and (';' in cleaned or '[' in cleaned)
-            time_only = date and not re.search('[yd]', cleaned) and bool(re.search('[hs]', cleaned))
+            # Excel m/mm means minutes only after h/hh or before ss;
+            # longer m tokens always mean calendar months. Ignore separators,
+            # and keep AM/PM whole so its m letters cannot become month tokens.
+            # https://support.microsoft.com/en-us/excel/format-numbers-as-dates-or-times
+            tokens = re.findall(r'am/pm|a/p|y+|m+|d+|h+|s+', cleaned)
+            calendar_month = any(
+                token.startswith('m') and (
+                    len(token) > 2 or not (
+                        (i > 0 and tokens[i - 1] in ('h', 'hh')) or
+                        (i + 1 < len(tokens) and tokens[i + 1] == 'ss')
+                    )
+                )
+                for i, token in enumerate(tokens)
+            )
+            time_only = (date and not calendar_month and not re.search('[yd]', cleaned)
+                         and bool(re.search('[hs]', cleaned)))
         elif fmt >= 164:
             uncertain = True
         if uncertain:

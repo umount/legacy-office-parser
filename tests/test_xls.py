@@ -310,3 +310,27 @@ def test_sheet_offset_inside_previous_sheet_and_missing_eof():
         _parse_workbook(bytes(data), Limits())
     with pytest.raises(InvalidDocumentError):
         _parse_workbook(book()[:-4], Limits())
+
+
+@pytest.mark.parametrize('fmt', ['mmm hh:mm', 'mmmm hh:mm', 'mm hh:mm', 'm hh:mm', 'hh:mm mmm'])
+def test_custom_calendar_month_with_time_preserves_date(fmt):
+    globals = xf(164) + rec(0x41e, struct.pack('<H', 164) + string(fmt))
+    body = b''.join(cell(0x203, row, payload=struct.pack('<d', serial))
+                    for row, serial in enumerate((45000.5, 45031.5)))
+    doc = parse(body, globals)
+    assert [c.value for c in doc.sheets[0].cells] == [
+        '2023-03-15T12:00:00', '2023-04-15T12:00:00',
+    ]
+    assert all(c.value_type == 'date' and c.text == c.value for c in doc.sheets[0].cells)
+    assert not doc.warnings
+
+
+@pytest.mark.parametrize('fmt', ['hh:mm', 'h:mm:ss', 'mm:ss', 'hh:mm AM/PM'])
+def test_custom_time_only_minute_tokens(fmt):
+    globals = xf(164) + rec(0x41e, struct.pack('<H', 164) + string(fmt))
+    body = b''.join(cell(0x203, row, payload=struct.pack('<d', serial))
+                    for row, serial in enumerate((45000.5, 45031.5)))
+    doc = parse(body, globals)
+    assert [c.value for c in doc.sheets[0].cells] == ['12:00:00', '12:00:00']
+    assert all(c.value_type == 'date' for c in doc.sheets[0].cells)
+    assert not doc.warnings
