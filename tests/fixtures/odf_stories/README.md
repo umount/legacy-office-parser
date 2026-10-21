@@ -7,10 +7,11 @@ were used. LibreOffice output below is derived exclusively from this fixture.
 
 ## Files and independent expectation
 
-- `stories.odt`: minimal ODT with Cyrillic main text, three text boxes (in a main
+- `stories.odt`: minimal ODT with Cyrillic main text, three selected text boxes (in a main
   paragraph, a table-cell paragraph and a header), a two-paragraph header and
   one-paragraph footer. The first stored master is deliberately unused and has
-  unique `unusedmaster_header`/`unusedmaster_box` markers. The first body paragraph
+  unique `unusedmaster_header`/`unusedmaster_box` markers in its header and an
+  additional, unselected text box. The first body paragraph
   references an automatic style inheriting through two common styles to the used
   master. A paragraph style requests a page break before the final main paragraph.
 - `content.xml`, `styles.xml`, `manifest.xml`: exact readable archive sources.
@@ -81,7 +82,8 @@ style break properties are inherited; paragraph-style `next-style-name` is an
 editing hint and does not activate another master. References inside cell
 paragraphs, frames, notes, annotations, revisions and hidden sections do not
 activate main-document masters. Automatic styles in styles.xml are not used as
-main-body styles. Unreferenced definitions never contribute extracted stories.
+main-body styles. Definitions outside the selected set never contribute extracted
+stories; the initial fallback below can select a master without an explicit reference.
 
 An explicit initial master wins over the first stored master. Without one, the
 first page-sequence master is used if present; otherwise the first stored master
