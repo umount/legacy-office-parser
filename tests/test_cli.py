@@ -37,3 +37,8 @@ def test_cli_enforces_requested_file_limit(capsys):
     out = capsys.readouterr()
     assert not out.out
     assert 'LimitExceededError' in out.err
+
+
+def test_unrepresentable_file_limit_returns_usage_error(capsys):
+    assert main([str(FIXTURES / 'ordinary_table.doc'), '--max-file-bytes', str(2**100)]) == 2
+    assert not capsys.readouterr().out

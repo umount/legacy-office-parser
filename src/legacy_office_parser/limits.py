@@ -1,4 +1,5 @@
 from dataclasses import dataclass, fields
+import sys
 
 @dataclass(frozen=True, slots=True)
 class Limits:
@@ -15,3 +16,7 @@ class Limits:
             v = getattr(self, f.name)
             if not isinstance(v, int) or isinstance(v, bool) or v <= 0:
                 raise ValueError(f'{f.name} must be a positive integer')
+
+        for name in ('max_file_bytes', 'max_stream_bytes'):
+            if getattr(self, name) >= sys.maxsize:
+                raise ValueError(f'{name} must be less than sys.maxsize')

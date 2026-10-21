@@ -35,3 +35,10 @@ def test_cell_budget():
 def test_blank_slides_keep_number_in_json():
     doc = Document(format='ppt', slides=[Slide(1, text='first'), Slide(2), Slide(3, notes='note')])
     assert [s['number'] for s in doc.to_dict()['slides']] == [1, 2, 3]
+
+
+@pytest.mark.parametrize('name', ['max_file_bytes', 'max_stream_bytes'])
+def test_read_limit_must_leave_room_for_overflow_probe(name):
+    import sys
+    with pytest.raises(ValueError):
+        Limits(**{name: sys.maxsize})
