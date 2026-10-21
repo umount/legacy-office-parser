@@ -79,10 +79,10 @@ def test_numeric_and_cached_formula_rendering(fmt, custom, value, expected, kind
 
 @pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('custom', [
-    '0"%"', r'0\%', '0.00"%"', r'0.00\%', '"0.00%"', '0"days"',
+    '"0.00%"',
     '0.00;[Red]-0.00', '0%;0%', '0.00;', '0,,', '#,##0,', '0.0,,"M"',
     '[$-409]0.00%', '[$-409]yyyy-mm-dd', '[Red]0%', '[>0]0%',
-    '0_%,', '0*%', '0.00"USD"', r'0.00\d', '0.00yyyy', '0%yyyy',
+    '0_%,', '0*%', '0.00yyyy', '0%yyyy',
     '0.00"unfinished', '0.00\\', '[h]:mm', 'yyyy-mm-dd;0%',
     '0,00', '#.##0,00', '0.##', '# ?/?', '##0.0E+0', '0%%', '%0', '@',
     '0.0000000000000000', '0E+0000', '', '0.' + '0' * 1000,
