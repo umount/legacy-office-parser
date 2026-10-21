@@ -6,6 +6,7 @@ See docs/research-xls-formats.md for grammar, rounding, bounds and provenance.
 from __future__ import annotations
 
 import re
+import operator
 from decimal import Context, Decimal, ROUND_HALF_UP, localcontext
 
 
@@ -15,6 +16,14 @@ BUILTIN_NUMERIC = {
 }
 MAX_FORMAT_LENGTH = 64
 _COLOR = re.compile(r'\[(?:Black|Blue|Cyan|Green|Magenta|Red|White|Yellow)\]', re.I)
+# MS-XLS 2.4.126 NFPartCondNum, restricted to an ASCII, finite binary64
+# threshold and at most three exponent digits. Never use eval or ambient Decimal
+# arithmetic to interpret conditions.
+_CONDITION = re.compile(r'\[(<=|>=|<>|<|>|=)(-?[0-9]+(?:\.[0-9]+)?(?:E[+-][0-9]{1,3})?)\]')
+_COMPARE = {'<': operator.lt, '<=': operator.le, '>': operator.gt,
+            '>=': operator.ge, '=': operator.eq, '<>': operator.ne}
+_MAX_THRESHOLD = Decimal('1.7976931348623157E+308')
+_MIN_THRESHOLD = Decimal('5E-324')
 _FIXED = re.compile(r'(0|#,##0)(?:\.(0{1,15}))?(%)?')
 _SCIENTIFIC = re.compile(r'0(?:\.(0{1,15}))?([Ee])([+-])(0{1,3})')
 _DATE_TOKEN = re.compile(
@@ -137,10 +146,37 @@ def render_number(value: int | float, code: str) -> str | None:
         if sections.pop() != '@':
             return None
     parsed = []
+    conditions = []
     for index, section in enumerate(sections):
         color = _COLOR.match(section)
         if color:
             section = section[color.end():]
+        condition = _CONDITION.match(section)
+        if condition:
+            if index > 1:
+                return None
+            op, threshold_text = condition.groups()
+            threshold = Decimal(threshold_text)
+            magnitude = threshold.copy_abs()
+            if magnitude > _MAX_THRESHOLD or (magnitude and magnitude < _MIN_THRESHOLD):
+                return None
+            # Do not choose between decimal-exact and binary64-rounded branch
+            # selection for an overprecise threshold. Accept only values equal
+            # to their binary64 shortest-round-trip decimal representation.
+            # Decimal(string), float conversion and finite Decimal comparison
+            # do not round through or mutate the caller's Decimal context.
+            if threshold != Decimal(str(float(threshold))):
+                return None
+            conditions.append((op, threshold))
+            section = section[condition.end():]
+            # Excel's custom-format guidance and Calc XLS export also place the
+            # one color token after the condition. Do not accept duplicates.
+            if color is None:
+                color = _COLOR.match(section)
+                if color:
+                    section = section[color.end():]
+        else:
+            conditions.append(None)
         if section.lower() == 'general':
             parts = ('', 'General', '')
         else:
@@ -149,12 +185,49 @@ def render_number(value: int | float, code: str) -> str | None:
             return None
         parsed.append(parts)
 
-    # Route on the stored value, before rounding. Both signed zeros use zero.
-    selected = 1 if value < 0 and len(parsed) > 1 else (
-        2 if value == 0 and len(parsed) == 3 else 0
-    )
-    if selected == 1:
-        value = abs(value)
+    # Validate the complete format before routing, including unused sections.
+    # Deliberately exclude mixed implicit/explicit three-section routing and a
+    # condition in section two alone: importers disagree on these combinations.
+    conditional = any(condition is not None for condition in conditions)
+    if conditional:
+        if conditions[0] is None or (len(parsed) == 3 and conditions[1] is None):
+            return None
+        # The MS-XLS single-section conditional production is General only.
+        if len(parsed) == 1 and parsed[0][1] != 'General':
+            return None
+        number = Decimal(str(value))
+        if not number.is_finite():
+            return None
+        # INCOMPLETE: MS-XLS 2.4.126 specifies condition syntax and delegates
+        # display semantics to ECMA-376 18.8.31. The consulted primary text does
+        # not establish conditional negative-sign handling. Calc observations
+        # are not a normative rule for arbitrary Excel formats. Reject EVERY
+        # negative conditional value, including General and literal fallbacks,
+        # rather than extrapolating a sign whitelist from finite probes.
+        # Signed zero still follows numeric zero routing; its raw bits survive.
+        if number < 0:
+            return None
+        selected = None
+        for index, condition in enumerate(conditions):
+            if condition is None or _COMPARE[condition[0]](number, condition[1]):
+                selected = index
+                break
+        if selected is None:
+            # Excel's unmatched display is width-dependent hashes. Keep the raw
+            # value and warn instead of inventing text or an implicit General.
+            return None
+        if (not number and len(parsed) == 2 and conditions[1] is None
+                and conditions[0] == ('>', Decimal(0))):
+            # Calc normalizes this to ordinary sign sections (zero goes first),
+            # contrary to literal predicate selection. Do not guess at zero.
+            return None
+    else:
+        # Route on the stored value, before rounding. Both signed zeros use zero.
+        selected = 1 if value < 0 and len(parsed) > 1 else (
+            2 if value == 0 and len(parsed) == 3 else 0
+        )
+        if selected == 1:
+            value = abs(value)
     prefix, core, suffix = parsed[selected]
     if core == 'General':
         return str(value)
@@ -164,7 +237,7 @@ def render_number(value: int | float, code: str) -> str | None:
         number = Decimal(str(value))
         if not number.is_finite():
             return None
-        if not core:  # Explicit, nonempty literal-only zero section.
+        if not core:  # Explicit, nonempty literal-only third section.
             return prefix
         if fixed is not None:
             integer, fraction, percent = fixed.groups()
