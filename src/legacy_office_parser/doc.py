@@ -361,7 +361,14 @@ class _Doc:
         if piece.prm & 1:
             self._apply(props, self.prcs[piece.prm >> 1])
         elif piece.prm:
-            self.warn('Compact piece formatting (Prm0) is not evaluated.')
+            # MS-DOC Prm0: table flags use the same one-byte operands as
+            # their full Sprms and override PAPX, including explicit zero.
+            isprm = (piece.prm >> 1) & 0x7F
+            op = {0x18: 0x2416, 0x19: 0x2417}.get(isprm)
+            if op is not None:
+                self._apply(props, struct.pack('<HB', op, piece.prm >> 8))
+            else:
+                self.warn('This compact piece formatting (Prm0) property is not evaluated.')
         return props
 
     def clean(self, start, end):
