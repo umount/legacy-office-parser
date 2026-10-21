@@ -117,8 +117,10 @@ def test_original_fixture_libreoffice_tables(tmp_path):
         return [[[''.join(c.itertext()) for c in row.findall('w:tc', ns)]
                  for row in table.findall('w:tr', ns)]
                 for element in elements for table in element.findall('.//w:tbl', ns)]
-    # Only text nodes carry authored characters; DOCX formatting has no text.
-    assert tables(headers) == [[['A', 'B']]]
+    # This source header applies to every page. LibreOffice versions may emit
+    # separate identical first/default/even parts; check each whole variant.
+    assert headers
+    assert all(tables([header]) == [[['A', 'B']]] for header in headers)
     assert tables([notes]) == [[['C', 'D']]]
     doc = parse_rtf(source)
     for key, expected in [('headers_footers', [['A', 'B']]), ('footnotes', [['C', 'D']])]:

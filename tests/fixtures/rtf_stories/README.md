@@ -6,3 +6,6 @@ No personal or third-party documents are included.
 
 Tests independently assert structure and legacy text projections. The opt-in
 LibreOffice test reads tables from DOCX header/footnote parts and compares cells.
+
+LibreOffice versions may export separate identical first/default header parts;
+the oracle validates every variant instead of requiring one physical XML part.
