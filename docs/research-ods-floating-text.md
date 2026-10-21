@@ -207,3 +207,7 @@ Independent review: **300 passed, 11 skipped**, including positional model
 compatibility, empty JSON omission, ownership and order, alternatives and
 shared limits. Its schema check passed; the live Calc reader is an optional
 separate check, not a runtime dependency.
+
+The authored package is retained as `tests/fixtures/ods_drawings/floating.ods`
+for mutation sampling. Its package contents are checked against the generator;
+ZIP timestamps are not semantic expectations.

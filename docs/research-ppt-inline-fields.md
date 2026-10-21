@@ -106,8 +106,9 @@ produces `Owner: Finance Team`. It contains only authored structural records and
 text; no private or third-party file content is embedded.
 
 This is a complete CFB reader-path check, **not** an Office-rendering oracle.
-No LibreOffice or PowerPoint rendering confirmation is claimed. No persisted
-fixture was modified or created; the generator lives in the new test file.
+No LibreOffice or PowerPoint rendering confirmation is claimed. The authored bytes are also retained in
+`tests/fixtures/ppt_inline_fields/static_footer.ppt` and checked against the
+generator, so the all-fixture mutation run exercises this path.
 
 Tests cover UTF-16 supplementary characters, raw whitespace/newline offsets,
 unordered/adjacent markers, multiple headers, marker-before-text association,

@@ -1,5 +1,6 @@
 """Original inline-field wire fixtures; no computed date or Office rendering oracle."""
 from dataclasses import replace
+from pathlib import Path
 from struct import pack, pack_into
 
 import pytest
@@ -182,7 +183,9 @@ def complete_cfb(file):
 
 def test_original_complete_cfb_through_real_ole_reader():
     f = case(text('Owner: *') + marker(7))
-    result = ppt.parse_ppt_bytes(complete_cfb(f), Limits())
+    data = (Path(__file__).parent / 'fixtures/ppt_inline_fields/static_footer.ppt').read_bytes()
+    assert data == complete_cfb(f)
+    result = ppt.parse_ppt_bytes(data, Limits())
     assert result.text == 'Owner: Finance Team'
     assert result.warnings == []
 

@@ -1,4 +1,8 @@
 """Public sheet drawings contract and passive ODS extraction budgets."""
+from io import BytesIO
+from pathlib import Path
+from zipfile import ZipFile
+
 import pytest
 
 from legacy_office_parser import Limits, LimitExceededError, parse_ods
@@ -37,7 +41,11 @@ def parse(body, limits=None):
 
 
 def test_proven_fixture_public_contract():
-    doc = parse_ods(fixture())
+    source = Path(__file__).parent / 'fixtures/ods_drawings/floating.ods'
+    with ZipFile(source) as persisted, ZipFile(BytesIO(fixture())) as generated:
+        assert {n: persisted.read(n) for n in persisted.namelist()} == {
+            n: generated.read(n) for n in generated.namelist()}
+    doc = parse_ods(source)
     oracle = expected()
     projected = []
     for item in doc.sheets:
