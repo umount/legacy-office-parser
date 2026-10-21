@@ -112,19 +112,25 @@ class _Doc:
         if magic != 0xA5EC:
             raise InvalidDocumentError('invalid WordDocument signature')
         flags = _u16(self.word, 10)
-        if flags & (0x0100 | 0x8000):
+        if flags & 0x0100:
             raise EncryptedDocumentError('encrypted or obfuscated DOC is not supported')
         version = _u16(self.word, 2)
         versions = {0xC1: 93, 0xD9: 108, 0x101: 136, 0x10C: 164, 0x112: 183}
-        if version not in versions:
-            raise UnsupportedFormatError('unsupported DOC FIB version')
         if _u16(self.word, 32) != 14 or _u16(self.word, 62) != 22:
             raise InvalidDocumentError('invalid DOC FIB layout')
         count = _u16(self.word, 152)
-        if count < versions[version]:
-            raise InvalidDocumentError('truncated DOC FIB offset array')
         self.budget.record(count)
         self.pairs = _span(self.word, 154, count * 8)
+        extension = 154 + count * 8
+        csw_new = _u16(self.word, extension)
+        fib_end = extension + 2 + csw_new * 2
+        if csw_new:
+            _span(self.word, extension + 2, csw_new * 2)
+            version = _u16(self.word, extension + 2)
+        if version not in versions:
+            raise UnsupportedFormatError('unsupported DOC FIB version')
+        if count < versions[version]:
+            raise InvalidDocumentError('truncated DOC FIB offset array')
         self.counts = [_u32(self.word, 64 + i * 4) for i in (3, 4, 5, 7, 8, 9, 10)]
         if any(n & 0x80000000 for n in self.counts):
             raise InvalidDocumentError('negative DOC story length')
@@ -132,7 +138,7 @@ class _Doc:
         if self.total > self.limits.max_text_chars:
             raise LimitExceededError('DOC text limit exceeded')
         cbmac = _u32(self.word, 64)
-        if cbmac < 154 + count * 8 or cbmac > len(self.word):
+        if cbmac < fib_end or cbmac > len(self.word):
             raise InvalidDocumentError('invalid DOC cbMac')
         self.word = memoryview(self.word)[:cbmac]
         self.table_name = '1Table' if flags & 0x0200 else '0Table'

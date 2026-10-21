@@ -234,7 +234,7 @@ def test_unpaired_surrogate_warns(monkeypatch):
     (0, u16(0), InvalidDocumentError),
     (2, u16(0x1234), UnsupportedFormatError),
     (10, u16(0x100), EncryptedDocumentError),
-    (10, u16(0x8000), EncryptedDocumentError),
+    (10, u16(0x8100), EncryptedDocumentError),
     (32, u16(13), InvalidDocumentError),
     (62, u16(21), InvalidDocumentError),
     (64, u32(0), InvalidDocumentError),
