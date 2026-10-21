@@ -119,6 +119,13 @@ def test_presentation_reference_joins_formatting_runs(tmp_path, monkeypatch):
         format='odp', slides=[Slide(1, text='alphabet')]))
     reference = tmp_path / 'reference.pptx'
     with zipfile.ZipFile(reference, 'w') as z:
+        z.writestr('ppt/presentation.xml',
+                   '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+                   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                   '<p:sldIdLst><p:sldId id="256" r:id="r1"/></p:sldIdLst></p:presentation>')
+        z.writestr('ppt/_rels/presentation.xml.rels',
+                   '<Relationships><Relationship Id="r1" Type="x/slide" '
+                   'Target="slides/slide1.xml"/></Relationships>')
         z.writestr('ppt/slides/slide1.xml',
                    '<a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
                    '<a:r><a:t>alpha</a:t></a:r><a:r><a:t>bet</a:t></a:r></a:p>')
@@ -138,3 +145,50 @@ def test_reference_collapsed_cell_boundaries_are_distinguished_from_lost_charact
     assert result['reference_word_recall'] == 0
     assert result['reference_nonspace_equal'] is True
     assert result['tables'] == 1 and result['reference_tables'] == 0
+
+
+def test_presentation_order_notes_and_visibility_are_compared(tmp_path, monkeypatch):
+    import legacy_office_parser
+    from legacy_office_parser import Slide
+    doc = Document(format='ppt', slides=[Slide(1, text='second', notes='speaker', hidden=True),
+                                         Slide(2, text='first')])
+    monkeypatch.setattr(legacy_office_parser, 'parse', lambda source: doc)
+    reference = tmp_path / 'reference.pptx'
+    pns = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+    ans = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+    rns = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    with zipfile.ZipFile(reference, 'w') as z:
+        z.writestr('ppt/presentation.xml',
+                   f'<p:presentation xmlns:p="{pns}" xmlns:r="{rns}"><p:sldIdLst>'
+                   '<p:sldId r:id="r2"/><p:sldId r:id="r1"/></p:sldIdLst></p:presentation>')
+        z.writestr('ppt/_rels/presentation.xml.rels',
+                   '<Relationships><Relationship Id="r1" Type="x/slide" Target="slides/slide1.xml"/>'
+                   '<Relationship Id="r2" Type="x/slide" Target="slides/slide2.xml"/></Relationships>')
+        for number, text in ((1, 'first'), (2, 'second')):
+            z.writestr(f'ppt/slides/slide{number}.xml',
+                       f'<p:sld xmlns:p="{pns}" xmlns:a="{ans}" show="{number == 1 and 1 or 0}">'
+                       f'<a:p><a:r><a:t>{text}</a:t></a:r></a:p></p:sld>')
+        z.writestr('ppt/slides/_rels/slide2.xml.rels',
+                   '<Relationships><Relationship Id="n" Type="x/notesSlide" '
+                   'Target="../notesSlides/notesSlide9.xml"/></Relationships>')
+        z.writestr('ppt/notesSlides/notesSlide9.xml',
+                   f'<p:notes xmlns:p="{pns}" xmlns:a="{ans}">'
+                   '<p:sp><p:nvSpPr><p:nvPr><p:ph type="body"/></p:nvPr></p:nvSpPr>'
+                   '<a:p><a:r><a:t>speaker</a:t></a:r></a:p></p:sp>'
+                   '<p:sp><p:nvSpPr><p:nvPr><p:ph type="sldNum"/></p:nvPr></p:nvSpPr>'
+                   '<a:p><a:r><a:t>2</a:t></a:r></a:p></p:sp></p:notes>')
+    result = corpus._worker(tmp_path / 'unused.ppt', reference)
+    assert result['reference_presentation_equal'] is True
+    doc.slides[0].notes = 'speaker!'
+    result = corpus._worker(tmp_path / 'unused.ppt', reference)
+    assert result['reference_slide_checks'][0]['notes_words_equal'] is True
+    assert result['reference_presentation_equal'] is False
+    doc.slides[0].notes = ''
+    result = corpus._worker(tmp_path / 'unused.ppt', reference)
+    assert result['reference_word_recall'] == 1
+    assert result['reference_presentation_equal'] is False
+    assert result['reference_slide_checks'][0]['notes_words_equal'] is False
+    doc.slides.reverse()
+    result = corpus._worker(tmp_path / 'unused.ppt', reference)
+    assert result['reference_word_recall'] == 1
+    assert result['reference_ordered_words_equal'] is False

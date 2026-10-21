@@ -14,6 +14,7 @@ import re
 import resource
 import shutil
 import os
+import posixpath
 import signal
 import subprocess
 import sys
@@ -81,6 +82,56 @@ def _docx_reference(archive):
     return '\n'.join(parts), tables
 
 
+def _relationships(archive, part):
+    relpath = posixpath.join(posixpath.dirname(part), '_rels',
+                            posixpath.basename(part) + '.rels')
+    if relpath not in archive.namelist():
+        return {}
+    return {rel.get('Id'): (rel.get('Type', '').rsplit('/', 1)[-1],
+                           posixpath.normpath(posixpath.join(
+                               posixpath.dirname(part), rel.get('Target', ''))).lstrip('/'))
+            for rel in ET.fromstring(archive.read(relpath))
+            if rel.get('TargetMode') != 'External'}
+
+
+def _presentation_reference(archive):
+    """Read presentation order and associated notes, never filename order alone."""
+    pns = '{http://schemas.openxmlformats.org/presentationml/2006/main}'
+    ans = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+    rns = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+    part = 'ppt/presentation.xml'
+    if part not in archive.namelist():
+        raise ValueError('PPTX reference lacks presentation.xml')
+    rels = _relationships(archive, part)
+    slides = []
+    for entry in ET.fromstring(archive.read(part)).iter(pns + 'sldId'):
+        kind, path = rels[entry.get(rns + 'id')]
+        if kind != 'slide':
+            raise ValueError('PPTX slide relationship has wrong type')
+        root = ET.fromstring(archive.read(path))
+        text = '\n'.join(''.join(t.text or '' for t in para.iter(ans + 't'))
+                         for para in root.iter(ans + 'p'))
+        notes = []
+        for relkind, note_path in _relationships(archive, path).values():
+            if relkind != 'notesSlide':
+                continue
+            note_root = ET.fromstring(archive.read(note_path))
+            for shape in note_root.iter(pns + 'sp'):
+                placeholder = shape.find('.//' + pns + 'ph')
+                # Slide number/date/header/footer placeholders are presentation
+                # furniture, not speaker notes. Retain body and free text shapes.
+                if placeholder is not None and placeholder.get('type') != 'body':
+                    continue
+                notes.extend(''.join(t.text or '' for t in para.iter(ans + 't'))
+                             for para in shape.iter(ans + 'p'))
+        slides.append((text, '\n'.join(notes), root.get('show', '1') not in ('0', 'false')))
+    return slides
+
+
+def _ordered_words(text):
+    return re.findall(r'\w+', text.casefold())
+
+
 def _worker(source: Path, reference: Path | None) -> dict:
     from legacy_office_parser import parse, ParseError, Paragraph
     start = time.perf_counter()
@@ -123,14 +174,26 @@ def _worker(source: Path, reference: Path | None) -> dict:
                 result['reference_scope'] = 'sheet and populated cell counts only'
                 return result
             else:
-                names = sorted((n for n in z.namelist() if re.fullmatch(r'ppt/slides/slide\d+\.xml', n)),
-                               key=lambda n: int(re.search(r'(\d+)\.xml$', n)[1]))
-                ns = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
-                ref_text = '\n'.join(''.join(t.text or '' for t in para.iter(ns + 't'))
-                                     for n in names for para in ET.fromstring(z.read(n)).iter(ns + 'p'))
-                result['reference_slides'] = len(names)
+                slides = _presentation_reference(z)
+                ref_text = '\n'.join(text for text, _, _ in slides)
+                result['reference_slides'] = len(slides)
+                result['reference_slide_checks'] = [
+                    {'number': i + 1,
+                     'text_equal': ' '.join((slide.title + '\n' + slide.text).split())
+                                   == ' '.join(ref[0].split()),
+                     'notes_equal': ' '.join(slide.notes.split()) == ' '.join(ref[1].split()),
+                     'text_words_equal': _ordered_words(slide.title + '\n' + slide.text)
+                                         == _ordered_words(ref[0]),
+                     'notes_words_equal': _ordered_words(slide.notes) == _ordered_words(ref[1]),
+                     'visibility_equal': slide.hidden == (not ref[2])}
+                    for i, (slide, ref) in enumerate(zip(doc.slides, slides))]
+                result['reference_presentation_equal'] = (
+                    len(doc.slides) == len(slides) and
+                    all(all(check[key] for key in ('text_equal', 'notes_equal', 'visibility_equal'))
+                        for check in result['reference_slide_checks']))
         def words(s):
             return Counter(re.findall(r'\w+', s.casefold()))
+        result['reference_ordered_words_equal'] = _ordered_words(body) == _ordered_words(ref_text)
         got, expected = words(body), words(ref_text)
         common = sum((got & expected).values())
         result['reference_word_recall'] = round(common / sum(expected.values()), 6) if expected else None
