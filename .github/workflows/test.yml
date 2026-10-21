@@ -20,3 +20,28 @@ jobs:
           python -m venv /tmp/legacy-wheel-check
           /tmp/legacy-wheel-check/bin/python -m pip install dist/*.whl
           /tmp/legacy-wheel-check/bin/python -I tools/check_wheel.py tests/fixtures
+  libreoffice-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install development reference
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress
+          libreoffice --version
+      - run: python -m pip install -e '.[dev]'
+      - name: Check original documents against LibreOffice
+        env:
+          RTF_FIDELITY_LO: '1'
+          ODF_NOTES_LIBREOFFICE: '1'
+        run: |
+          python -m pytest -q tests/test_rtf_fidelity.py tests/test_odf_notes.py
+          python tools/check_corpus.py tests/fixtures --libreoffice --fail-on-difference > reference-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-fixture-reference-report
+          path: reference-report.json

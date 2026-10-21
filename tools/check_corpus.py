@@ -160,18 +160,21 @@ def _worker(source: Path, reference: Path | None) -> dict:
     if reference:
         with zipfile.ZipFile(reference) as z:
             if doc.format in ('doc', 'rtf', 'odt'):
+                from _document_reference import compare_document
                 ref_text, result['reference_tables'] = _docx_reference(z)
+                result['reference_document'] = compare_document(doc, z)
+                result['reference_document_equal'] = result['reference_document']['equal']
             elif doc.format in ('xls', 'ods'):
-                # Formatted numeric/date text cannot be compared against raw XLSX
-                # values. Exact cell semantics are covered by authored fixtures.
-                ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
-                names = [n for n in z.namelist()
-                         if re.fullmatch(r'xl/worksheets/sheet\d+\.xml', n)]
-                result['reference_sheets'] = len(names)
-                result['reference_cells'] = sum(
-                    1 for n in names for cell in ET.fromstring(z.read(n)).iter(ns + 'c')
-                    if any(cell.find(ns + tag) is not None for tag in ('v', 'is', 'f')))
-                result['reference_scope'] = 'sheet and populated cell counts only'
+                from _spreadsheet_reference import compare_spreadsheets
+                comparison = compare_spreadsheets(doc, z)
+                result['reference_spreadsheet'] = comparison
+                result['reference_spreadsheet_equal'] = comparison['equal']
+                result['reference_sheets'] = comparison['reference_sheets']
+                result['reference_populated_cells'] = comparison['reference_cells']
+                result['populated_cells'] = comparison['cells']
+                result['reference_scope'] = (
+                    'ordered sheets, typed stored cell values, formula caches and merges; '
+                    'display formatting and cache freshness excluded')
                 return result
             else:
                 slides = _presentation_reference(z)
@@ -205,14 +208,32 @@ def _worker(source: Path, reference: Path | None) -> dict:
     return result
 
 
+def _reference_differences(result):
+    """List failed checked properties; absence of failures is not full coverage."""
+    differences = [key for key, value in result.items()
+                   if key.startswith('reference_') and key.endswith('_equal') and value is False]
+    for key in ('tables', 'slides', 'sheets', 'cells', 'populated_cells'):
+        reference = 'reference_' + key
+        if reference in result and key in result and result[reference] != result[key]:
+            differences.append(reference)
+    for key in ('reference_spreadsheet', 'reference_document'):
+        if key in result and result[key].get('equal') is None:
+            differences.append(key + '_inconclusive')
+    return sorted(differences)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('directory', type=Path)
     p.add_argument('--libreoffice', action='store_true')
     p.add_argument('--timeout', type=int, default=60)
+    p.add_argument('--fail-on-difference', action='store_true',
+                   help='Fail when a checked reference property differs; requires --libreoffice')
     p.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     p.add_argument('--reference', type=Path, help=argparse.SUPPRESS)
     args = p.parse_args()
+    if args.fail_on_difference and not args.libreoffice:
+        p.error('--fail-on-difference requires --libreoffice')
     if args.worker:
         print(json.dumps(_worker(args.directory, args.reference), ensure_ascii=False))
         return 0
@@ -263,10 +284,13 @@ def main() -> int:
                     entry.update(json.loads(run.stdout))
             except subprocess.TimeoutExpired:
                 entry['status'] = 'timeout'
+            entry['reference_differences'] = _reference_differences(entry) if reference else []
             results.append(entry)
     print(json.dumps({'files': results}, ensure_ascii=False, indent=2))
     return int(not results or any(x['status'] not in ('ok', 'warning') or
-                                 'reference_status' in x for x in results))
+                                 'reference_status' in x or
+                                 (args.fail_on_difference and x['reference_differences'])
+                                 for x in results))
 
 if __name__ == '__main__':
     raise SystemExit(main())

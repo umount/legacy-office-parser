@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import re
+import sys
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -13,6 +14,7 @@ _spec = importlib.util.spec_from_file_location(
     'check_corpus', Path(__file__).resolve().parents[1] / 'tools' / 'check_corpus.py')
 corpus = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(corpus)
+sys.path.insert(0, str(Path(corpus.__file__).parent))
 
 
 def xml(content):
@@ -102,12 +104,22 @@ def test_spreadsheet_reference_does_not_claim_formatted_word_fidelity(tmp_path, 
         format='xls', sheets=[Sheet('S', cells=[SpreadsheetCell(1, 1, 0, 'number', '0')])]))
     reference = tmp_path / 'reference.xlsx'
     with zipfile.ZipFile(reference, 'w') as z:
+        z.writestr('_rels/.rels', '<Relationships><Relationship Id="w" Type="x/officeDocument" '
+                   'Target="xl/workbook.xml"/></Relationships>')
+        z.writestr('xl/workbook.xml',
+                   '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                   '<sheets><sheet name="S" r:id="s1"/></sheets></workbook>')
+        z.writestr('xl/_rels/workbook.xml.rels',
+                   '<Relationships><Relationship Id="s1" Type="x/worksheet" '
+                   'Target="worksheets/sheet1.xml"/></Relationships>')
         z.writestr('xl/worksheets/sheet1.xml',
                    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
                    '<sheetData><row><c r="A1"><v>0</v></c><c r="B1" s="1"/>'
                    '</row></sheetData></worksheet>')
     result = corpus._worker(tmp_path / 'unused.xls', reference)
-    assert result['reference_cells'] == result['cells'] == 1
+    assert result['reference_populated_cells'] == result['populated_cells'] == 1
+    assert result['reference_spreadsheet_equal'] is True
     assert result['reference_sheets'] == result['sheets'] == 1
     assert 'reference_word_recall' not in result
 
@@ -192,3 +204,13 @@ def test_presentation_order_notes_and_visibility_are_compared(tmp_path, monkeypa
     result = corpus._worker(tmp_path / 'unused.ppt', reference)
     assert result['reference_word_recall'] == 1
     assert result['reference_ordered_words_equal'] is False
+
+
+def test_reference_difference_gate_is_not_fooled_by_equal_counts():
+    result = {'tables': 2, 'reference_tables': 2, 'reference_nonspace_equal': True,
+              'reference_ordered_words_equal': True, 'reference_presentation_equal': False}
+    assert corpus._reference_differences(result) == ['reference_presentation_equal']
+    result['reference_tables'] = 1
+    assert corpus._reference_differences(result) == ['reference_presentation_equal', 'reference_tables']
+    # Missing measurements must not be invented as passes or failures.
+    assert corpus._reference_differences({'status': 'ok'}) == []
