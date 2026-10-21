@@ -19,11 +19,11 @@ jobs:
           python - <<'PYTEST'
           import subprocess
           import sys
-          result = subprocess.run([sys.executable, '-m', 'pytest', '-q'],
+          result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '--tb=short'],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
           print(result.stdout, end='')
           if result.returncode:
-              detail = result.stdout[-24000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              detail = result.stdout[-3500:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print('::error title=Pytest failure::' + detail)
           raise SystemExit(result.returncode)
           PYTEST
@@ -70,7 +70,7 @@ jobs:
           import subprocess
           import sys
           commands = [
-              ([sys.executable, '-m', 'pytest', '-q', 'tests/test_rtf_fidelity.py',
+              ([sys.executable, '-m', 'pytest', '-q', '--tb=short', 'tests/test_rtf_fidelity.py',
                 'tests/test_odf_notes.py', 'tests/test_odf_stories.py', 'tests/test_live_corpus.py',
                 'tests/test_doc_styles.py', 'tests/test_nested_reference.py', 'tests/test_rtf_nested.py',
                 'tests/test_doc_nested.py', 'tests/test_doc_sections.py', 'tests/test_auxiliary_reference.py',
@@ -92,7 +92,7 @@ jobs:
               if report:
                   pathlib.Path(report).write_text(result.stdout)
               if result.returncode:
-                  detail = result.stdout[-24000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  detail = result.stdout[-3500:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
                   print('::error title=Reference check failure::' + detail)
                   raise SystemExit(result.returncode)
           REFERENCE
