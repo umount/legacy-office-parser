@@ -145,10 +145,10 @@ def test_incomplete_row_does_not_invent_direction_boundary(monkeypatch):
     assert any('without a row terminator' in warning for warning in out.warnings)
 
 
-def test_incremental_column_width_warns_without_desynchronizing(monkeypatch):
+def test_incremental_column_width_applies_without_desynchronizing(monkeypatch):
     width = sprm(0x7623, b'\0\1' + struct.pack('<h', 200))
     out = parse(monkeypatch, table_fixture('A\7\7', [
         IN, IN + definition([0]) + width + sprm(0x2417, 1),
     ]))
     assert out.blocks[0].rows[0][0].text == 'A'
-    assert any('incremental table geometry' in warning for warning in out.warnings)
+    assert not out.warnings

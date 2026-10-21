@@ -9,11 +9,12 @@ This is an extraction implementation, not a Word layout/revision engine.
 from __future__ import annotations
 
 from bisect import bisect_right
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import struct
 
 from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
+from ._doc_table import apply_table
 from ._doc_styles import Styles, character_ops, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
@@ -94,8 +95,8 @@ class _Props:
     bidi90: bool = False
     edges: list[int] = field(default_factory=list)
     flags: list[int] = field(default_factory=list)
-    merges: list[tuple[int, int]] = field(default_factory=list)
-    vmerges: dict[int, int] = field(default_factory=dict)
+    table_left: int = 0
+    table_gap: int = 0
 
     @property
     def inner(self):
@@ -312,11 +313,11 @@ class _Doc:
             raise InvalidDocumentError('DOC PAPX bin does not cover its paragraph')
         return groups[j]
 
-    def _sprms(self, group):
+    def _sprms(self, group, *, allow_padding=True):
         pos = 0
         while pos < len(group):
             # PAPX can have one alignment byte after its last Prl.
-            if len(group) - pos == 1 and group[pos] == 0:
+            if allow_padding and len(group) - pos == 1 and group[pos] == 0:
                 return
             self.budget.record()
             op = _u16(group, pos)
@@ -337,11 +338,13 @@ class _Doc:
             yield op, operand
 
     def _apply(self, props, group):
-        depth, seen = 0, set()
+        trail, seen, fallbacks = [], set(), []
+        external_group, first_index = False, 0
         while True:
-            if depth > self.limits.max_depth:
-                raise LimitExceededError('DOC property indirection depth limit exceeded')
-            for op, arg in self._sprms(group):
+            consumed = 0
+            for index, (op, arg) in enumerate(
+                    self._sprms(group, allow_padding=not external_group), first_index):
+                consumed += 2 + len(arg)
                 if op == 0x4600:
                     props.style = _u16(arg)
                 elif op in (0xC601, 0x2602):
@@ -367,19 +370,33 @@ class _Doc:
                     props.bidi = bool(_u16(arg))
                 elif op == 0x5664:
                     props.bidi90 = bool(_u16(arg))
-                elif op == 0x6646:  # sprmPHugePapx: grpprl in Data, prefixed by cb u16.
+                elif op in (0x6646, 0x646B):
+                    # MS-DOC 2.6.2: HugePapx is effective only in first position.
+                    if op == 0x6646 and index:
+                        continue
                     offset = _u32(arg)
                     if offset in seen:
-                        raise InvalidDocumentError('cyclic DOC huge PAPX reference')
+                        raise InvalidDocumentError('cyclic DOC external PAPX reference')
+                    if len(trail) >= self.limits.max_depth:
+                        raise LimitExceededError('DOC property indirection depth limit exceeded')
                     if self.data is None:
                         self.data = read_stream(self.ole, 'Data', self.limits)
                     length = _u16(self.data, offset)
-                    group = _span(self.data, offset + 2, length)
+                    if not 10 <= length <= 0x3FA2:
+                        raise InvalidDocumentError('invalid DOC external PrcData length')
+                    target = _span(self.data, offset + 2, length)
+                    if op == 0x646B:
+                        # A reader may decline PTableProps. Keep its unprocessed
+                        # tail only if the trial chain provides no cell geometry.
+                        saved = replace(props, edges=props.edges[:], flags=props.flags[:])
+                        fallbacks.append((saved, group[consumed:], external_group, index + 1, len(trail)))
+                    group = target
+                    external_group, first_index = True, 0
                     seen.add(offset)
-                    depth += 1
-                    break  # Ignore remaining Prls after a processed HugePapx.
-                elif op in (0x6645, 0x646B):
-                    self.warn('External table properties are unsupported; available inline table properties are used.')
+                    trail.append(offset)
+                    break
+                elif op == 0x6645:
+                    self.warn('Legacy external PAPX properties are unsupported; available inline properties are used.')
                 elif op == 0xD608:
                     n = _span(arg, 2, 1)[0]
                     if n > 63:
@@ -393,15 +410,22 @@ class _Doc:
                     props.flags.extend([0] * (n - len(props.flags)))
                     if any(a > b for a, b in zip(props.edges, props.edges[1:])):
                         raise InvalidDocumentError('DOC cell boundaries are decreasing')
-                elif op == 0x5624:
-                    props.merges.append((arg[0], arg[1]))
-                elif op == 0xD62B:
-                    if len(arg) != 3:
-                        raise InvalidDocumentError('invalid DOC vertical merge operand')
-                    props.vmerges[arg[1]] = arg[2]
-                elif op in (0x7621, 0x5622, 0x7623, 0x5625, 0xD606):
-                    self.warn('Legacy or incremental table geometry is unsupported; explicit cell marks are retained.')
+                elif apply_table(props, op, arg, self.warn):
+                    pass
+                elif op == 0xD606:
+                    self.warn('Legacy table geometry is unsupported; explicit cell marks are retained.')
+                elif op in (0xF614, 0xF617, 0xF618, 0xD635, 0xF661) or (op == 0x3615 and arg[0]):
+                    self.warn('Preferred table widths and automatic table layout are not evaluated; explicit cell geometry is used.')
             else:
+                if not props.flags and fallbacks:
+                    saved, group, external_group, first_index, restore_depth = fallbacks.pop()
+                    for offset in trail[restore_depth:]:
+                        seen.remove(offset)
+                    del trail[restore_depth:]
+                    for name in props.__dataclass_fields__:
+                        setattr(props, name, getattr(saved, name))
+                    self.warn('External table properties supplied no supported cell geometry; inline fallback properties are used.')
+                    continue
                 return
 
     def properties(self, cp):
@@ -815,13 +839,6 @@ class _TableLevel:
     def _merge(self, props):
         cells = self.cells
         flags = props.flags[:len(cells)] + [0] * max(0, len(cells) - len(props.flags))
-        for first, stop in props.merges:
-            if not 0 <= first < stop <= len(cells):
-                self.doc.warn('Invalid horizontal merge range was ignored.')
-                continue
-            flags[first] = flags[first] & ~3 | 2
-            for i in range(first + 1, stop):
-                flags[i] = flags[i] & ~3 | 1
         anchor = None
         for i, cell in enumerate(cells):
             hm = flags[i] & 3
@@ -840,7 +857,7 @@ class _TableLevel:
         for i, cell in enumerate(cells):
             if cell.covered:
                 continue
-            vm = props.vmerges.get(i, (flags[i] >> 5) & 3)
+            vm = (flags[i] >> 5) & 3
             # Matching boundaries prevent invented vertical spans across different grids.
             key = None
             if len(props.edges) == len(cells) + 1 and i + cell.col_span < len(props.edges):
@@ -903,7 +920,7 @@ class _TableLevel:
 
     def _normalize_grid(self):
         # A wide physical cell can span boundaries introduced by other rows.
-        # Build a grid from explicit TDefTable edges, never from text or spacing.
+        # Build a grid from explicit cell definitions, never from text or spacing.
         valid = [(row, edges) for row, edges in zip(self.table.rows, self.row_edges)
                  if len(edges) == len(row) + 1 and len(edges) > 1
                  and all(a < b for a, b in zip(edges, edges[1:]))]

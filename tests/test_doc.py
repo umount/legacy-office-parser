@@ -204,7 +204,7 @@ def test_huge_papx(monkeypatch):
 
 
 def test_huge_papx_cycle(monkeypatch):
-    group = sprm(0x6646, u32(0))
+    group = sprm(0x6646, u32(0)) + sprm(0x4600, u16(0))
     streams = fixture([('a\r', True)], props=[group])
     streams['Data'] = u16(len(group)) + group
     with pytest.raises(InvalidDocumentError, match='cyclic'):
@@ -327,7 +327,10 @@ def test_huge_papx_ignores_remainder_of_original_group(monkeypatch):
 
 def test_huge_papx_depth_limit(monkeypatch):
     streams = fixture([('a\r', True)], props=[sprm(0x6646, u32(0))])
-    streams['Data'] = u16(6) + sprm(0x6646, u32(8)) + u16(6) + sprm(0x6646, u32(16)) + u16(3) + IN
+    padding = sprm(0x4600, u16(0))
+    streams['Data'] = (u16(10) + sprm(0x6646, u32(12)) + padding
+                       + u16(10) + sprm(0x6646, u32(24)) + padding
+                       + u16(10) + IN + padding + sprm(0x2417, 0))
     with pytest.raises(LimitExceededError, match='depth'):
         parse(monkeypatch, streams, Limits(max_depth=2))
 
