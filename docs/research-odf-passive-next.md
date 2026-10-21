@@ -149,7 +149,7 @@ introduced. Before this implementation, the research baseline odf.py SHA-256 was
 `8a6f0b8e419b1dcbad5603247048cca80003fc318ebd7be2adc9c390fdd5f962`.
 
 
-## Implemented follow-up: ready for independent review
+## Implemented shape-text extraction
 
 `odf.py` now includes the three proven names in `TEXT_SHAPES` and ODT
 `DRAW_STORIES`. All existing ODT dispatch points therefore route them to
