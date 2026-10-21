@@ -121,6 +121,7 @@ class _Doc:
         self._fib()
         self.table = read_stream(ole, self.table_name, limits)
         self._pieces()
+        self._sections()
         self._bins()
         self.styles = Styles(self, _span, _u16)
 
@@ -230,6 +231,36 @@ class _Doc:
                 raw_text = raw_text.decode('latin1').translate(_COMPRESSED).encode('utf-16le')
             self.text[cps[i] * 2:stop * 2] = raw_text
         self.cps = cps
+
+    def _sections(self):
+        # MS-DOC 2.8.26: aCP[i] starts a section, so aCP[i] - 1 is
+        # its predecessor's section mark. Other U+000C characters are page
+        # breaks. SEDs are 12 bytes; section layout (SEPX) is not needed here.
+        plc = self.table_part(6)  # FibRgFcLcb97.fcPlcfSed
+        self.section_ends = set()
+        if not plc:
+            return
+        if len(plc) < 4 or (len(plc) - 4) % 16:
+            raise InvalidDocumentError('invalid DOC section PLC size')
+        count = (len(plc) - 4) // 16
+        self.budget.record(count)  # Bound traversal and the set before allocation.
+        previous = -1
+        for i in range(count + 1):
+            cp = _u32(plc, i * 4)
+            if cp >= 0x7FFFFFFF or cp <= previous or (i == 0 and cp != 0):
+                raise InvalidDocumentError('invalid DOC section CP order or range')
+            if i == count:
+                # The final sentinel may extend into/beyond auxiliary stories;
+                # it does not begin a section and must never split those stories.
+                if cp < self.counts[0]:
+                    raise InvalidDocumentError('DOC sections do not cover the main story')
+            elif i:
+                if cp >= self.counts[0]:
+                    raise InvalidDocumentError('DOC section starts outside the main story')
+                if self.text[(cp - 1) * 2:cp * 2] != b'\x0c\0':
+                    raise InvalidDocumentError('DOC section boundary has no section mark')
+                self.section_ends.add(cp - 1)
+            previous = cp
 
     def _bins(self):
         plc = self.table_part(13)
@@ -623,7 +654,7 @@ class _Doc:
         begin = start
         for cp in range(start, start + count):
             unit = self.text[cp * 2] | self.text[cp * 2 + 1] << 8
-            if unit in (7, 13):
+            if unit in (7, 13) or cp in self.section_ends:
                 self.budget.record()
                 yield self.clean(begin, cp), cp, unit
                 begin = cp + 1
