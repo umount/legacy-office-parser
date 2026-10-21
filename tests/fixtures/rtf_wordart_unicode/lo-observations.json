@@ -1,0 +1,60 @@
+{
+  "version": "LibreOffice 7.4.7.2 40(Build:2)",
+  "files": {
+    "cp1251.rtf": {
+      "sha256": "1bc5af6efad66516d7d9042a112587fdd88e64af7db303d294324f6277db2549",
+      "lo_shape_paragraphs": [
+        "Привет"
+      ]
+    },
+    "cp1252.rtf": {
+      "sha256": "8af4fd3867d62bc0e03d22c50cd7ea10c4285223f4cd47aab71dda0db0d99956",
+      "lo_shape_paragraphs": [
+        "Café €"
+      ]
+    },
+    "cp932.rtf": {
+      "sha256": "15f0761af9604c92cfc5d8e642063c6c771d77cc31d9d66564784a72f6323855",
+      "lo_shape_paragraphs": [
+        "日本"
+      ]
+    },
+    "scoped.rtf": {
+      "sha256": "8be2c571e589499f71bd5d27c5accc9b1e743ac4a4d75aaca8f75e979f8ed164",
+      "lo_shape_paragraphs": [
+        "Пр",
+        "Café"
+      ]
+    },
+    "uc-two.rtf": {
+      "sha256": "6266784180bc64ed50d965834ebcaaa44d7fc2435d58dfe3e773631e50d33c27",
+      "lo_shape_paragraphs": [
+        "ЖX"
+      ]
+    },
+    "uc-zero.rtf": {
+      "sha256": "cf68cdf29d4dbad6e6f029dc5cb0f77166a5d826446ab74fa82e11d6022b6895",
+      "lo_shape_paragraphs": [
+        "Ж😀"
+      ]
+    },
+    "unicode.rtf": {
+      "sha256": "0ff173b160e53391997afcb2ab9b7dcc26173e92192b4fe6c9c9b33754eabb26",
+      "lo_shape_paragraphs": [
+        "Grüße Ж 😀"
+      ]
+    },
+    "font1251.rtf": {
+      "sha256": "92ceee8d25ffd9be3d4b49d76c26dfa4d29787b084d96add3d0484e698267533",
+      "lo_shape_paragraphs": [
+        "Привет"
+      ]
+    },
+    "inherited-uc.rtf": {
+      "sha256": "652a15a36f6ce65829d907e90129e0f72f8132b9fc558e6750e5352cae21d9e9",
+      "lo_shape_paragraphs": [
+        "ЖX"
+      ]
+    }
+  }
+}

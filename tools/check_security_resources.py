@@ -18,7 +18,7 @@ import tracemalloc
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tests')]
 CASES = ('zip_expansion', 'xml_depth', 'xml_declarations', 'ole_cycle',
-         'rtf_depth', 'odf_repetition', 'cell_odt', 'cell_ods', 'cell_odp',
+         'rtf_depth', 'rtf_wordart_unicode', 'odf_repetition', 'cell_odt', 'cell_ods', 'cell_odp',
          'style_depth', 'repeated_parse')
 
 
@@ -59,6 +59,14 @@ def child(case):
     elif case == 'rtf_depth':
         data = b'{\\rtf1 ' + b'{' * 1000 + b'x' + b'}' * 1001
         limits = Limits(max_depth=32)
+    elif case == 'rtf_wordart_unicode':
+        # A tiny retained-text budget must bound a large Unicode property,
+        # including deferred eligibility at shape close.
+        data = (br'{\rtf1\ansi{\shp{\*\shpinst'
+                br'{\sp{\sn gtextUNICODE}{\sv ' + br'\u1046?' * 100000
+                + br'}}{\sp{\sn shapeType}{\sv 136}}'
+                br'{\sp{\sn fGtext}{\sv 1}}{\sp{\sn fGtextOK}{\sv 1}}}}}')
+        limits = Limits(max_text_chars=128, max_records=300000)
     elif case == 'odf_repetition':
         data = package('<table:table><table:table-row table:number-rows-repeated="1000000000">'
                        '<table:table-cell><text:p>x</text:p></table:table-cell>'
@@ -87,6 +95,8 @@ def child(case):
     try:
         parse(data, limits=limits)
     except ParseError as exc:
+        if case == 'rtf_wordart_unicode':
+            assert str(exc) == 'RTF WordArt property text limit exceeded'
         return {'case': case, 'bytes': len(data), 'result': type(exc).__name__,
                 'rss_peak_kib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
     raise AssertionError('expected bounded rejection: ' + case)

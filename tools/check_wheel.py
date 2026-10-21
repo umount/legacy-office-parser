@@ -35,7 +35,11 @@ def main():
                for c in hidden.sheets[0].cells)
     assert any(c.value_type == 'string' and c.value and c.text == ''
                for c in hidden.sheets[0].cells)
-    print('Installed wheel: all seven formats, DOC comments and hidden XLS values passed')
+    for name, expected in [('unicode', 'Grüße Ж 😀'), ('cp1251', 'Привет'), ('cp932', '日本')]:
+        art = parse(args.fixtures / 'rtf_wordart_unicode' / (name + '.rtf'))
+        assert art.textboxes == expected
+        assert art.text.count(expected) == 1
+    print('Installed wheel: seven formats, DOC comments, hidden XLS and Unicode WordArt passed')
 
 
 if __name__ == '__main__':

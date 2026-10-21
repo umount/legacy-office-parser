@@ -68,10 +68,10 @@ def test_required_property_cannot_be_inferred(name):
     assert parse(source).textboxes == ''
 
 
-@pytest.mark.parametrize('value', [br'\u1040?', br'\uc0\u65', b'\x80', b'\t',
+@pytest.mark.parametrize('value', [br'\u-32769?', br'\uc-1\u65', b'\x81', b'\t',
                                   br'A{B}', br'A\line B', br'\bin3 xyz',
                                   br'{\shptxt Escape}', br'\v0 Secret', br'\field X'])
-def test_nonflat_nonascii_or_control_bearing_value_is_not_scraped(value):
+def test_nonflat_invalid_or_control_bearing_value_is_not_scraped(value):
     result = parse(shape(value))
     assert result.textboxes == ''
     assert result.blocks == []
@@ -166,7 +166,7 @@ def test_ineligible_oversize_property_does_not_reject_valid_body(first, size, li
     assert doc.textboxes == ''
 
 
-@pytest.mark.parametrize('suffix', [b'\x80', br'\u65?', br'{\v0 X}', br'\bin1 x'])
+@pytest.mark.parametrize('suffix', [b'\x81', br'\u-32769?', br'{\v0 X}', br'\bin1 x'])
 def test_invalid_value_tail_after_overflow_cannot_promote_candidate(suffix):
     doc = parse(b'A' + shape(b'x'*64 + suffix) + b'B', max_text_chars=2)
     assert doc.blocks == [Paragraph('AB')]

@@ -128,7 +128,7 @@ class _WordArt:
     """Strict, passive observer for one standalone, explicitly enabled shape.
 
     This does not reopen property destinations in the story parser. Only flat
-    ASCII string values are supported; unknown syntax invalidates the candidate.
+    strings use the existing decoder; unknown syntax invalidates the candidate.
     The grammar stack has at most four entries, independent of hostile nesting.
     """
     _NUMERIC = {'shapeType', 'fGtext', 'fGtextOK', 'fHidden', 'fBackground',
@@ -136,7 +136,11 @@ class _WordArt:
     _NAMES = _NUMERIC | {'gtextUNICODE', 'gtextFont'}
     _GEOMETRY = {'shpleft', 'shptop', 'shpright', 'shpbottom'}
 
-    def __init__(self, depth: int):
+    def __init__(self, depth: int, limits: Limits, encoding: str, uc: int):
+        self.limits = limits
+        self.encoding = encoding
+        self.uc = uc
+        self.value_reader: _PropertyText | None = None
         self.depth = depth
         self.frames = ['shp']
         self.valid = True
@@ -151,7 +155,7 @@ class _WordArt:
         self.size = 0
         self.phase = 0
 
-    def token(self, kind, value, number, depth, limit):
+    def token(self, kind, value, number, depth):
         if not self.valid:
             return
         if self.ignored:
@@ -160,6 +164,10 @@ class _WordArt:
                 self.frames.pop()
             return
         frame = self.frames[-1]
+        if frame == 'sv' and self.value_reader is not None and kind != 'close':
+            self.value_reader.token(kind, value, number)
+            self.valid = self.value_reader.valid
+            return
         if kind == 'open':
             if frame not in {'shp', 'shpinst', 'sp'}:
                 self.valid = False
@@ -168,7 +176,15 @@ class _WordArt:
                 self.starred = False
         elif kind == 'close':
             if frame in {'sn', 'sv'}:
-                text = ''.join(self.parts)
+                if self.value_reader is not None:
+                    reader, self.value_reader = self.value_reader, None
+                    reader.flush()
+                    reader.high_end()
+                    self.valid = reader.valid
+                    self.text_overflow = reader.overflow
+                    text = ''.join(reader.parts)
+                else:
+                    text = ''.join(self.parts)
                 self.parts.clear()
                 self.size = 0
                 if frame == 'sn':
@@ -209,6 +225,8 @@ class _WordArt:
                     self.valid = False
                 self.frames[-1] = value
                 self.valid = self.valid and number is None
+                if self.valid and value == 'sv' and self.name == 'gtextUNICODE':
+                    self.value_reader = _PropertyText(self.limits, self.encoding, self.uc)
             elif frame == 'shp':
                 self.valid = (value in self._GEOMETRY and number is not None
                               and -2147483648 <= number <= 2147483647)
@@ -220,20 +238,9 @@ class _WordArt:
             elif any(b < 32 or b > 126 for b in value):
                 self.valid = False
             else:
-                bound = (min(65536, limit) if frame == 'sv' and self.name == 'gtextUNICODE'
-                         else 128 if frame == 'sv' and self.name == 'gtextFont' else 32)
-                if frame == 'sv' and self.name == 'gtextUNICODE' and self.text_overflow:
-                    # Still validate every token, but never retain an overflowed value.
-                    return
+                bound = 128 if frame == 'sv' and self.name == 'gtextFont' else 32
                 if len(value) > bound - self.size:
-                    if frame == 'sv' and self.name == 'gtextUNICODE':
-                        # Later flags or properties may make this text ineligible.
-                        # Defer the limit error until the complete shape is validated.
-                        self.text_overflow = True
-                        self.parts.clear()
-                        self.size = 0
-                    else:
-                        self.valid = False
+                    self.valid = False
                 else:
                     self.parts.append(value.decode('ascii'))
                     self.size += len(value)
@@ -666,8 +673,9 @@ class _Parser:
             if (word == 'shp' and s.first and not s.starred
                     and not s.shape_ancestor and not s.font_table
                     and not s.hidden and not s.deleted and self.wordart is None
-                    and not self.uncertain_encoding and self.encoding() == 'cp1252'):
-                self.wordart = _WordArt(len(self.stack))
+                    and not self.uncertain_encoding
+                    and self.encoding() in {'cp1252', 'cp1251', 'cp932'}):
+                self.wordart = _WordArt(len(self.stack), self.limits, self.encoding(), s.uc)
             # Traverse only recognized shape containers, never reopen a skipped
             # ancestor. Property values and the legacy rendering are hard skips.
             self.high_end()
@@ -838,7 +846,7 @@ class _Parser:
                 raise InvalidDocumentError('Data after RTF root group')
             if self.wordart is not None:
                 candidate = self.wordart
-                candidate.token(kind, value, number, len(self.stack), self.limits.max_text_chars)
+                candidate.token(kind, value, number, len(self.stack))
                 if kind == 'close' and len(self.stack) == candidate.depth:
                     text = candidate.text()
                     self.wordart = None
@@ -950,6 +958,73 @@ class _Parser:
             if sum(lengths) + 2 * max(0, len(lengths) - 1) > self.limits.max_text_chars:
                 raise LimitExceededError('RTF output projection text limit exceeded')
         return self.document
+
+
+class _PropertyText(_Parser):
+    """Flat gtextUNICODE sink sharing the main reader's text decoding methods.
+
+    No second lexer, document parsing, story dispatch or local encoding changes.
+    Invalid text rejects this property instead of publishing replacement text.
+    Overflow stops retention, not validation, and is resolved by its shape owner.
+    """
+    def __init__(self, limits: Limits, encoding: str, uc: int):
+        self.limits = limits
+        self.state = _State(encoding=encoding, uc=uc)
+        self.valid = True
+        self.overflow = False
+        self.parts: list[str] = []
+        self.size = 0
+        self.buffer = bytearray()
+        self.decoder = None
+        self.pending_high = None
+        self.fallback = 0
+
+    @property
+    def sink(self):
+        return self
+
+    def visible(self):
+        return self.valid
+
+    def encoding(self):
+        return self.state.encoding
+
+    def warn(self, message: str):
+        self.valid = False
+        self.parts.clear()
+        self.size = 0
+
+    def text(self, text: str):
+        if not self.valid:
+            return
+        if any(ord(c) < 32 or 0x7f <= ord(c) < 0xa0 for c in text):
+            self.warn('Control character in WordArt property.')
+        elif not self.overflow:
+            if len(text) > min(65536, self.limits.max_text_chars) - self.size:
+                self.overflow = True
+                self.parts.clear()
+                self.size = 0
+            else:
+                self.parts.append(text)
+                self.size += len(text)
+
+    def token(self, kind, value, number):
+        if kind == 'bytes':
+            self.byte_text(value)
+            return
+        self.flush()
+        if kind in {'open', 'close'}:
+            self.valid = False
+        elif self.fallback:
+            # Like _Parser.parse: a control/symbol or opaque bin is one fallback.
+            self.fallback -= 1
+        elif kind == 'word' and value == 'u' and number is not None and -32768 <= number <= 65535:
+            self.unicode(number)
+        elif (kind == 'word' and value == 'uc' and number is not None
+              and 0 <= number <= self.limits.max_stream_bytes):
+            self.state.uc = number
+        else:
+            self.valid = False
 
 
 def parse_rtf_bytes(data: bytes, limits: Limits) -> Document:

@@ -97,14 +97,16 @@ now extracts the same text. Both observations and source hashes are retained.
 
 The reader accepts only a standalone `shp` with one immediate `shpinst`, explicit
 `shapeType=136`, both enable flags exactly `1`, and a single `gtextUNICODE`.
-The inherited effective encoding must be Windows-1252. Other encodings are
-conservatively omitted in this initial subset. A prior unsupported code page or
-font charset also disables this property path for the rest of the parse. Properties must be immediate `sp` groups containing one `sn` followed by one
-`sv`, with no nested content. Property order may vary. Strings accept printable
-ASCII literal bytes, ASCII hex escapes, and escaped braces/backslashes. This is
-an intentionally incomplete subset: Unicode control sequences, non-ASCII bytes,
-line/paragraph controls, fields, binary data, and formatting inside properties
-are rejected rather than partially emitted.
+The original 0.17 subset accepted printable ASCII under Windows-1252. The 0.18
+extension described below accepts flat Unicode and selected code-page text only
+in `gtextUNICODE`. Property names, numeric values and the ignored font-name
+property retain their strict ASCII grammar. A prior unsupported code page or
+font charset disables the property path for the rest of the parse. Properties
+must be immediate `sp` groups containing one `sn` followed by one `sv`, with no
+nested content. Property order may vary. Line/paragraph controls, fields and
+formatting are unsupported as property text; Unicode fallback tokens are counted
+and skipped without executing their semantics.
+
 
 Only `shapeType`, `fGtext`, `fGtextOK`, `gtextUNICODE`, `gtextFont`, `gtextSize`,
 `fHidden`, `fBackground`, and `fIsButton` are accepted property names. Every name
@@ -136,8 +138,8 @@ Disabled, hidden, unsupported or malformed candidates remain omitted, regardless
 of whether their disqualifying property precedes or follows the oversized value.
 No overflowed prefix is published. Unsupported syntax stops collection; depth
 and lexical limits still apply while the normal parser skips it. Accepted text and subsequent story separators are
-charged to the shared text budget before publication. Unicode-rich WordArt,
-other shape types, and wider property grammars require further evidence and tests;
+charged to the shared text budget before publication. Other shape types, nested
+property formatting and wider property grammars require further evidence and tests;
 no complete WordArt or layout parity is claimed.
 
 `break-controls.rtf` is a negative alternative probe: LibreOffice exports `AB`
@@ -160,17 +162,119 @@ cleanup, and the helper's memory/CPU limits. LibreOffice is a test-only dependen
 the parser stays passive. The live suite requires `/usr/bin/libreoffice` and may
 need permission to run outside a restrictive sandbox.
 
-Completed local validation of this implementation:
+Historical 0.17 validation before the Unicode extension:
 
 - RTF modules plus `test_security_side_effects.py`: **339 passed, 16 skipped**.
 - Both new test modules with `RTF_FALLBACK_LO=1`: **121 passed**, including all
   twelve original live conversion cases.
-- Zeno's exact disabled `xxx` / `max_text_chars=2` reproducer, added after
+- The independently reported disabled `xxx` / `max_text_chars=2` reproducer, added after
   those suite runs: **1 passed** separately, preserving body `AB` and no textbox.
 - Ruff on the changed parser and both new test modules: **passed**.
 
 Independent review identified premature overflow errors for ineligible WordArt.
-The fix and regression tests are awaiting re-review. These results do not claim validation on newer
+The fix and regression tests passed independent re-review and were integrated in 0.17. These results do not claim validation on newer
 LibreOffice versions or Microsoft Word. Suggested review focus: final-property
 validation before publication, suppressed ancestry, rejected nested/group
 ownership, effective-encoding uncertainty, and shared text/separator budgets.
+
+
+## Unicode and code-page extension (0.18)
+
+### Primary basis and accepted grammar
+
+Microsoft's [RTF Unicode header rules](https://latex2rtf.sourceforge.net/rtfspec_6.html)
+apply the Unicode mechanism to destination text. `ansicpg` identifies the ANSI
+encoding; `u` carries a 16-bit unit with fallback governed by scoped `uc` (default
+one). A control or binary token counts as one fallback character, and group
+boundaries end fallback skipping. The Unicode Consortium's
+[UTF-16 FAQ](https://www.unicode.org/faq/utf_bom.html) defines high/low surrogate
+pairs for supplementary characters. These are primary format rules; no external
+reader implementation was copied.
+
+Only `gtextUNICODE` gains decoding. Its inherited effective encoding must be
+Windows-1252, Windows-1251 or Windows-932 (Shift-JIS), selected by the existing
+parser's document/font state. This allowlist is the tested subset, not a claim
+that other encodings are invalid RTF. An inherited `uc` count is copied into the
+property. Flat local `uc` and `u` controls are accepted, along with literal and
+hex-escaped encoded bytes and escaped syntax characters. Signed units and the
+existing decoder's unsigned 16-bit compatibility range are retained. A valid
+surrogate pair produces one Unicode scalar value. The local fallback count and
+pending decoder/surrogate state never escape the value.
+
+Nested groups, `upr` alternatives, local code-page/font switches, rich text,
+fields, C0/C1 controls, invalid encoded sequences and unpaired surrogates reject
+the entire candidate with the existing omission warning. Replacement characters
+are not invented to rescue a malformed property. The main document's existing
+malformed-text recovery behavior is unchanged. A binary token is accepted only
+as skipped Unicode fallback; its payload is still opaque and length-checked by
+the shared lexer. No active destination is opened or executed.
+
+### Decoder reuse, ownership and limits
+
+`_PropertyText` supplies a bounded sink to the existing `_Parser.byte_text`,
+`flush`, `emit`, `unicode` and `high_end` methods. It consumes `_tokens` records
+from the same parse loop, with no second lexer, input scan, recursive document
+parse or story dispatch. The sink rejects decoding warnings rather than retaining
+replacement text. Incremental byte decoding crosses literal/hex token boundaries,
+including DBCS lead/trail bytes. Its byte scratch is at most
+`min(4096, max_text_chars)`; retained decoded text is at most
+`min(65536, max_text_chars)` Unicode scalar values. On overflow it clears retained
+text, continues validating and defers the error to complete shape eligibility.
+An invalid tail or later disqualifying property cannot turn an overflowed prefix
+into published text. Eligible overflow still raises `LimitExceededError`.
+
+Strict standalone type-136 ownership, explicit enable flags, hidden/deleted
+ancestry, duplicate/unknown property rejection, and the opaque `shprslt` boundary
+remain unchanged. Accepted text and aggregate separators use the existing shared
+text budget. No model, API, runtime I/O or converter dependency was added.
+
+### Independently authored evidence
+
+Nine original ASCII RTF files in `tests/fixtures/rtf_wordart_unicode/` were converted
+with **LibreOffice 7.4.7.2 40(Build:2)** to temporary FODT. Their literal expected
+shape paragraphs are:
+
+- `unicode.rtf`: `Grüße Ж 😀` (BMP Unicode plus surrogate-pair emoji).
+- `uc-zero.rtf`: `Ж😀`; `uc-two.rtf` and `inherited-uc.rtf`: `ЖX`.
+- `cp1252.rtf`: `Café €`; `cp1251.rtf` and `font1251.rtf`: `Привет`.
+- `cp932.rtf`: `日本`, with separately escaped DBCS bytes.
+- `scoped.rtf`: two separate shapes, `Пр` then `Café`, after restoring the outer
+  code page.
+
+All nine live observations matched those literal expectations. Source hashes,
+converter version and observed paragraphs are persisted in `lo-observations.json`.
+Parser output was not used to generate fixtures or expected text. These files
+contain no external references or active objects. They establish tested examples,
+not complete rendering parity or validation of other LibreOffice versions.
+
+Tests additionally cover fallback bytes/control/binary tokens, surrogate errors,
+invalid code pages and encoded sequences, sibling state isolation, skipped
+ancestors, continued validation after overflow, decoded-character limits,
+separator costs and bounded scratch. Three formerly rejected values (`\u1040?`,
+`\uc0\u65`, and byte `0x80`) now have positive literal assertions; rejection
+coverage uses invalid units/counts and undefined byte `0x81` instead. The
+independent public API/CLI regression is run unchanged.
+
+```sh
+.venv/bin/python -m pytest tests/test_rtf_wordart_unicode.py tests/test_rtf_wordart.py tests/test_rtf_wordart_api.py -q --tb=short
+RTF_UNICODE_LO=1 .venv/bin/python -m pytest tests/test_rtf_wordart_unicode.py -q --tb=short
+```
+
+Completed 0.18 validation:
+
+- All RTF test modules plus `test_security_side_effects.py`: **457 passed,
+  25 skipped**, including the public API/CLI regression and 47
+  independently authored review cases, both run unchanged.
+- WordArt, fallback, Unicode and API modules with `RTF_UNICODE_LO=1` and
+  `RTF_FALLBACK_LO=1`: **201 passed**, including all 21 original live conversions.
+- Ruff on the changed runtime and authored test modules: **passed**.
+- The corrected `rtf_wordart_unicode` resource child: **passed**. The
+  700,138-byte input with 100,000 Unicode escapes uses `max_records=300000` and
+  `max_text_chars=128`; it asserts the exact `RTF WordArt property text limit
+  exceeded` error. Peak RSS in this run was **29,608 KiB**. An earlier checker
+  used the default lexical budget and rejected before reaching property
+  eligibility; that earlier run is not evidence for the property-overflow path.
+
+Final independent review reported no actionable findings after rerunning the
+457-test suite and the exact property-overflow resource check. No newer-LibreOffice or Microsoft
+Word parity is claimed.
