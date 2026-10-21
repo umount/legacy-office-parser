@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register after 0.18. Each item requires a verified example, independent
+Working register after 0.19. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -81,15 +81,26 @@ does not establish completeness.
   omitted as a whole. Nested formatting, other code pages and fallback-only
   ownership remain outside this subset.
 
+## Completed in 0.19
+
+- XLS: one text placeholder with quoted/escaped prefix and suffix in an ordinary
+  fourth section. Raw strings and cached-formula markers remain available;
+  distinct display strings are budgeted before allocation. Twelve preserved-XLS
+  cells match independent LibreOffice CSV extraction.
+- DOC: ordinary cross-paragraph comment selections, including empty paragraphs,
+  and multi-paragraph spans within a source cell with a proven terminator.
+  UTF-16 source coordinates and reference anchors remain distinct. Original
+  DOC/readback evidence and independent boundary tests cover the new subset.
+
 ## Next areas to verify
 
 - DOC: header/footer and frame identities; comment reply trees, ink and complex
-  source selections beyond the verified ordinary text/within-cell subset.
+  source selections crossing cells, rows, sections or other unproven boundaries.
 - DOC: remaining conditional table styles and explicit geometry that does not
   require page layout.
 - PPT: text in extensions and embedded passive documents; agreement with a
   converted presentation does not substitute for understanding unknown constructs.
-- XLS: general localization, fraction formats, conditional hiding and arbitrary
+- XLS: general localization, fraction formats, conditional hiding, literal-only text replacements and wider
   text-section formats. Hidden values must remain available in typed data.
 - RTF: legacy shape text without primary shptxt; safe selection between primary
   and fallback representations without duplication.

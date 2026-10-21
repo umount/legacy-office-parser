@@ -1,6 +1,6 @@
 # Testing
 
-For current 0.18 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
+For current 0.19 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
 For achievements and comparisons with other libraries and LibreOffice, see
 [Comparison](COMPARISON.md). Version-specific results below are historical snapshots.
 
@@ -535,3 +535,21 @@ suite is also included in the CI reference job. Public API/CLI tests preserve
 Unicode and suppress duplicate fallback content; the installed-wheel check
 covers Unicode, Cyrillic and Japanese fixtures outside the source import path.
 See [the exact supported grammar](research-rtf-fallback-text.md).
+
+## XLS text sections and DOC selections (0.19)
+
+The full local suite passed **4,172 tests**, with **62 optional skips**; Ruff
+passed. **7,100** deterministic mutations of 71 public fixtures produced no
+unexpected exceptions, and all **12** bounded resource checks passed.
+
+The XLS suite passed 1,496 tests (8 optional skips), including 132 independent
+review cases. Its two live oracle checks verify 12 cell displays against the
+same preserved XLS. The DOC selection suite and XLS oracle together passed
+36 tests with LibreOffice enabled. Independent DOC review added 43 boundary
+cases and checked source-coordinate isolation and preprocessing budgets.
+The installed-wheel smoke check includes both new fixture families.
+
+See [XLS text affixes](research-xls-text-sections.md) and
+[DOC selection ranges](research-doc-comment-selections.md) for exact supported
+subsets and reproducible evidence. Older formats, arbitrary text masks and
+unproven structural crossings are not covered by these results.

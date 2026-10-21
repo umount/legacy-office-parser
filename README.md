@@ -30,9 +30,8 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.18 extends explicitly enabled RTF WordArt with Unicode and verified
-Windows-1252, Windows-1251 and Shift-JIS text. Source-linked DOC comments and
-hidden XLS display sections with raw values preserved remain available. Full compatibility with arbitrary documents has not
+Version 0.19 adds quoted/escaped text affixes in ordinary XLS display sections
+and source-linked DOC comment selections across verified paragraph boundaries. Full compatibility with arbitrary documents has not
 yet been established; [coverage and limitations](docs/TESTING.md) are documented
 separately.
 
@@ -40,7 +39,7 @@ separately.
   inherited style visibility; comments with authors and source references.
 - XLS BIFF8: sheets, sparse typed cells, merges and stored formula results;
   percentages, decimals, digit grouping and scientific notation; explicit text
-  labels before/after numbers and sign-based sections. Older BIFF versions are
+  labels before/after numbers and strings, and sign-based sections. Older BIFF versions are
   unsupported.
 - PPT 97–2003: current slides, titles, text, WordArt, ordinary text from active
   masters, stored static dates/footers, notes and comments.
@@ -61,8 +60,8 @@ construct in the document was extracted. See [support and limitations](docs/TEST
 
 On verified extraction cases, the parser matches the content and structure
 checked against LibreOffice. In specific documented cases, it preserves tables
-or repeated content lost during LibreOffice conversion. Version 0.18 passed
-3,921 tests, 6,900 deterministic mutations and local LibreOffice reference checks.
+or repeated content lost during LibreOffice conversion. Version 0.19 passed
+4,172 tests, 7,100 deterministic mutations and local LibreOffice reference checks.
 This is measured coverage, not a claim of complete office-suite compatibility.
 Apache OpenOffice has not been tested separately.
 

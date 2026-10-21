@@ -139,3 +139,13 @@ surrogate-pair emoji, fallback counts, Windows-1252/1251/932 and restored encodi
 scope. This extends the narrow explicit WordArt subset; it does not establish
 support for arbitrary drawing properties or fallback-only shapes. The full local
 suite passed 3,921 tests, 6,900 mutation samples and 12 resource checks.
+
+## Version 0.19 text and selection evidence
+
+Twelve preserved-XLS cells match LibreOffice CSV output for ordinary text
+prefixes/suffixes and numeric controls. Two original DOC selections match source
+XML, raw UTF-16 bookmark intervals and LibreOffice readback, including an empty
+middle paragraph and astral characters. Raw XLS values and DOC reference anchors
+remain available separately from display text and selected ranges.
+The full local suite passed 4,172 tests, 7,100 mutations and 12 resource checks;
+these findings extend measured coverage without implying arbitrary-file parity.

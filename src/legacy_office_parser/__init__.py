@@ -5,7 +5,7 @@ from .errors import (ParseError, InvalidDocumentError, UnsupportedFormatError,
 from .limits import Limits
 from .models import Document, Paragraph, Table, Cell, Slide, SlideComment, SpreadsheetCell, CellRange, Sheet, Note, NoteBodyRange, Comment, CommentBodyRange
 
-__version__ = '0.18.0'
+__version__ = '0.19.0'
 __all__ = ['parse_xls', 'parse_rtf', 'parse_odt', 'parse_ods', 'parse_odp',
            'SpreadsheetCell', 'CellRange', 'Sheet', 'parse', 'parse_doc', 'parse_ppt', 'Limits', 'Document', 'Paragraph',
            'Table', 'Cell', 'Slide', 'SlideComment', 'Note', 'NoteBodyRange', 'Comment', 'CommentBodyRange', 'ParseError', 'InvalidDocumentError',

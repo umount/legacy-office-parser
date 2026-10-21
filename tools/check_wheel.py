@@ -39,7 +39,13 @@ def main():
         art = parse(args.fixtures / 'rtf_wordart_unicode' / (name + '.rtf'))
         assert art.textboxes == expected
         assert art.text.count(expected) == 1
-    print('Installed wheel: seven formats, DOC comments, hidden XLS and Unicode WordArt passed')
+    ranges = parse(args.fixtures / 'doc_comment_selections/authored.doc')
+    assert [(c.selection_start, c.selection_end) for c in ranges.comments] == [(8, 22), (50, 61)]
+    assert ranges.text.count('Across empty paragraph.') == 1
+    labels = parse(args.fixtures / 'xls_text_sections/preserved.xls')
+    assert any(c.value == 'retained' and c.text == 'Name: retained'
+               for c in labels.sheets[0].cells)
+    print('Installed wheel: seven formats and DOC/XLS/RTF feature regressions passed')
 
 
 if __name__ == '__main__':

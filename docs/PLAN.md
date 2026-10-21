@@ -288,3 +288,11 @@ text decoder. Unicode fallback, surrogate pairs and three proven code pages
 retain shared text limits and strict shape ownership. Original LibreOffice
 fixtures, independent adversarial cases and API/CLI checks cover the extension.
 Fallback-only shapes and richer property grammar remain explicitly deferred.
+
+### Text display and comment ranges (0.19)
+
+Added bounded quoted/escaped XLS text affixes while retaining raw values, and
+DOC comment selections across proven ordinary paragraphs/source cells. Both
+changes have original reference fixtures, independent boundary/limit reviews,
+public API/CLI regressions and installed-wheel checks. Whole-table selections,
+conditional text formats and literal-only replacements remain deferred.
