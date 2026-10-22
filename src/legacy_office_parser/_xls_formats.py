@@ -13,6 +13,7 @@ from decimal import Context, Decimal, ROUND_FLOOR, ROUND_HALF_UP, localcontext
 BUILTIN_NUMERIC = {
     0: 'General', 1: '0', 2: '0.00', 3: '#,##0', 4: '#,##0.00',
     9: '0%', 10: '0.00%', 11: '0.00E+00',
+    12: '# ?/?', 13: '# ??/??',
 }
 MAX_FORMAT_LENGTH = 64
 _COLOR = re.compile(r'\[(?:Black|Blue|Cyan|Green|Magenta|Red|White|Yellow)\]', re.I)
@@ -30,6 +31,7 @@ _CURRENCY = {'[$$-409]': '$', '[$€-407]': '€', '[$USD-409]': 'USD'}
 # Fixed, unreduced fractions only; no best-fit denominator or layout placeholders.
 # MS-XLS 2.4.126; reference probes/bounds: docs/research-xls-fractions.md.
 _FRACTION = re.compile(r'(0 )?(0{1,3})/([1-9][0-9]{0,2})')
+_VARIABLE_FRACTIONS = {'# ?/?': 1, '# ??/??': 2}
 _FRACTION_MAX_VALUE = Decimal('1000000')
 _FRACTION_MIDPOINT_GUARD = Decimal('1e-12')
 _SCIENTIFIC = re.compile(r'0(?:\.(0{1,15}))?([Ee])([+-])(0{1,3})')
@@ -209,6 +211,46 @@ def _render_fraction(number: Decimal, match: re.Match) -> str | None:
     return sign + whole + str(numerator).zfill(len(zeros)) + '/' + denominator_text
 
 
+
+def _render_variable_fraction(value: int | float, width: int) -> str | None:
+    """Recognize small rationals encoded by the stored binary64 value.
+
+    General best-fit rounding remains unproven: Microsoft's worked examples
+    differ from nearest-rational Calc output. Here a candidate must round back
+    to the identical stored value, not merely be nearest to it. Denominators
+    are bounded by 9/99; at most 198 integer-division candidates are checked.
+    """
+    number = Decimal(str(value))
+    magnitude = number.copy_abs()
+    if not number.is_finite() or magnitude > _FRACTION_MAX_VALUE:
+        return None
+    stored = abs(value)
+    source_numerator, source_denominator = stored.as_integer_ratio()
+    candidate = None
+    for denominator in range(1, 10 ** width):
+        lower = source_numerator * denominator // source_denominator
+        for numerator in (lower, lower + 1):
+            if numerator / denominator == stored:
+                candidate = numerator, denominator
+                break
+        if candidate is not None:
+            break
+    if candidate is None:
+        return None
+    # Increasing denominator order selects reduced form. Distinct rationals
+    # with denominators <=99 differ by >=1/9801, far more than a binary64 ULP
+    # below the magnitude cap, so two distinct candidates cannot round here.
+    numerator, denominator = candidate
+    whole, numerator = divmod(numerator, denominator)
+    sign = '-' if number.is_signed() and magnitude else ''
+    if not numerator:
+        # The separator, numerator, slash and denominator all retain alignment
+        # spaces for an integer. Zero itself remains visible.
+        return sign + str(whole) + ' ' * (2 * width + 2)
+    return (sign + (str(whole) if whole else '') + ' '
+            + str(numerator).rjust(width) + '/' + str(denominator).ljust(width))
+
+
 def render_number(value: int | float, code: str) -> str | None:
     """Render a finite BIFF number without altering its stored Python value.
 
@@ -216,6 +258,8 @@ def render_number(value: int | float, code: str) -> str | None:
     A private context avoids ambient decimal precision/traps/rounding settings.
     Precision 340 covers finite binary64 fixed output plus percent and 15 places.
     """
+    if code in _VARIABLE_FRACTIONS:
+        return _render_variable_fraction(value, _VARIABLE_FRACTIONS[code])
     sections = _split_sections(code)
     if sections is None:
         return None

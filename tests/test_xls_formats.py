@@ -85,7 +85,7 @@ def test_numeric_and_cached_formula_rendering(fmt, custom, value, expected, kind
     '[$-409]0.00%', '[$-409]yyyy-mm-dd', '[>0]0%',
     '0_%,', '0*%', '0.00yyyy', '0%yyyy',
     '0.00"unfinished', '0.00\\', '[h]:mm', 'yyyy-mm-dd;0%',
-    '0,00', '#.##0,00', '0.##', '# ?/?', '##0.0E+0', '0%%', '%0', '@',
+    '0,00', '#.##0,00', '0.##', '# ???/???', '##0.0E+0', '0%%', '%0', '@',
     '0.0000000000000000', '0E+0000', '', '0.' + '0' * 1000,
     'm' * 63 + 'x', 'yyyyyyyy-mm-dd', '0\n', '0.00E+00%',
     r'yyyy\%mm', 'yyyy"%"mm', 'yyyy"days"mm', r'yyyy\dmm',
@@ -98,7 +98,7 @@ def test_unsupported_is_raw_with_explicit_warning(custom, kind):
     assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
 
 
-@pytest.mark.parametrize('fmt', [5, 12, 23, 27, 37, 46, 48, 49, 50, 163, 164, 999])
+@pytest.mark.parametrize('fmt', [5, 23, 27, 37, 46, 48, 49, 50, 163, 164, 999])
 def test_unhandled_or_missing_format(fmt):
     doc = parse_number(.125, fmt)
     assert doc.sheets[0].cells[0].text == '0.125'

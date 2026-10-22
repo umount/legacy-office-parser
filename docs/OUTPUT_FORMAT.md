@@ -15,6 +15,7 @@ Those are consumer policies, not additional output fields.
 - [Sheets and sparse spreadsheet cells](#sheets-and-sparse-spreadsheet-cells)
 - [Slides and slide comments](#slides-and-slide-comments)
 - [Auxiliary stories, notes, and DOC comments](#auxiliary-stories-notes-and-doc-comments)
+- [DOC auxiliary-story identities](#doc-auxiliary-story-identities-024)
 - [Plain-text projection and interpretation](#plain-text-projection-and-interpretation)
 - [Text normalization and decoding](#text-normalization-and-decoding)
 - [Visibility and revision state](#visibility-and-revision-state)
@@ -24,6 +25,7 @@ Those are consumer policies, not additional output fields.
 - [ODF visibility and tracked changes](#odf-visibility-and-tracked-changes)
 - [ODF whitespace, Unicode, and control characters](#odf-whitespace-unicode-and-control-characters)
 - [ODF lists, links, and embedded objects](#odf-lists-links-and-embedded-objects)
+- [XLS numeric display subsets](#xls-numeric-display-subsets)
 - [XLS dates and times](#xls-dates-and-times)
 - [Older binary formats and error boundaries](#older-binary-formats-and-error-boundaries)
 - [Failures and exception boundaries](#failures-and-exception-boundaries)
@@ -686,6 +688,21 @@ opened as child documents. ODS/ODP do not share the ODT inline text-object suppo
 Supported ODS floating labels are sheet-owned `drawings`, not embedded-object
 extraction. Unsupported content encountered by traversal generally produces a
 warning; warnings are not a complete inventory of unvisited package members.
+
+## XLS numeric display subsets
+
+`SpreadsheetCell.value` and its type retain the stored data. `text` is the
+supported display; a stored formula result is not recalculated. Unsupported or
+ambiguous formats keep the raw numeric display with a diagnostic.
+
+In addition to the existing fixed-denominator subset, exact masks `# ?/?` and
+`# ??/??` (built-in IDs 12/13) recognize reduced rationals with denominators up
+to 9/99 that round to the identical stored binary64 value. The magnitude cap is
+1,000,000; general nearest-fraction approximation is not inferred. Literal
+alignment spaces, negative signs and integer padding remain in display text.
+Source numeric bits and cached-formula markers remain unchanged. Other masks,
+affixes and locale combinations retain fallback. See
+[fraction evidence](research-xls-variable-fractions.md).
 
 ## XLS dates and times
 
