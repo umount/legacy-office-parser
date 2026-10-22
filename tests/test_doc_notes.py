@@ -945,3 +945,15 @@ def test_evidenced_note_table_textbox_equivalence_is_narrow(tmp_path, corruption
     else:
         with pytest.raises(AssertionError):
             assert_generated_note_model(*args)
+
+
+def test_decoded_note_text_is_not_charged_as_input_stream_bytes():
+    body = 'A' * 40 + '\r'
+    refs, texts = reference_plc([0]), text_plc([0, len(body)])
+    stream_limit = max(len(refs), len(texts))
+    result = decode_note_ranges(refs, texts, 1, (body + '\r').encode('utf-16le'),
+                                Limits(max_stream_bytes=stream_limit))
+    assert [(n.body_start, n.body_end) for n in result] == [(0, 41)]
+    with pytest.raises(LimitExceededError):
+        decode_note_ranges(refs, texts, 1, (body + '\r').encode('utf-16le'),
+                           Limits(max_stream_bytes=stream_limit, max_text_chars=42))

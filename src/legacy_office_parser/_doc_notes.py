@@ -63,7 +63,7 @@ def decode_note_ranges(
         raise InvalidDocumentError('invalid DOC note story length')
     if main_count + story_count > limits.max_text_chars:
         raise LimitExceededError('DOC note source text limit exceeded')
-    if max(len(references), len(texts), len(story_utf16)) > limits.max_stream_bytes:
+    if max(len(references), len(texts)) > limits.max_stream_bytes:
         raise LimitExceededError('DOC note stream limit exceeded')
     ref_count = 0
     if references:

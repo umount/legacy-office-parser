@@ -3,6 +3,7 @@
 Reference/body ordinals are paired before visibility filtering. Bookmark tags
 join metadata to starts, whose ibkl selects an exclusive limit. Marker CFSpec,
 body paragraph/table validity, and ordinary selection validity belong to _Doc.
+The supplemental row index proves exact source spans without changing bookmarks.
 """
 from dataclasses import dataclass
 import struct
@@ -76,8 +77,8 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
         invalid('aggregate source count is smaller than its stories')
     if source_units > limits.max_text_chars:
         raise LimitExceededError('DOC comment source text limit exceeded')
-    if any(len(p) > limits.max_stream_bytes for p in
-           (*parts.values(), main_utf16, story_utf16)):
+    # Decoded UTF-16 uses the aggregate CP budget above, not the input-byte cap.
+    if any(len(p) > limits.max_stream_bytes for p in parts.values()):
         raise LimitExceededError('DOC comment stream limit exceeded')
     refs, texts = parts.get(4, b''), parts.get(5, b'')
     if refs and (len(refs) < 4 or (len(refs) - 4) % 34):
@@ -244,3 +245,140 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
                           initials, begin, end,
                           *(reply_metadata[i] if extra else (None, None)))
             for i, (ordinal, cp, author, initials, begin, end) in enumerate(descriptors)]
+
+
+@dataclass(frozen=True, slots=True)
+class WholeRowSelections:
+    """Source-only proof for exact runs of complete outer table rows."""
+
+    starts: dict[int, tuple[int, int]]
+    ends: dict[int, tuple[int, int]]
+
+    def contains(self, begin, end):
+        first, last = self.starts.get(begin), self.ends.get(end)
+        return (first is not None and last is not None
+                and first[0] == last[0] and first[1] <= last[1])
+
+
+def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known,
+                                 limits: Limits, *, record=None):
+    """Index complete outer rows, including fully closed nested tables.
+
+    ``paragraphs`` is the main-story source prepass: (begin, end, mark,
+    mark_cp, properties, hidden, known). CPs count unnormalized UTF-16 units;
+    end excludes the delimiter. ``paragraph_known`` proves PAPX coverage.
+    This supplements, rather than replaces, ordinary/same-cell selection proof.
+    No source range is widened, and no projected table grid is consulted.
+    """
+    # Charge before iterating or allocating indexes. Each paragraph can retain
+    # at most one pending row, two endpoint entries, and one stack frame.
+    cost = 6 * len(paragraphs) + 1
+    if cost > limits.max_records:
+        raise LimitExceededError('DOC comment selection record limit exceeded')
+    if record is not None:
+        record(cost)
+    if len(text) // 2 > limits.max_text_chars:
+        raise LimitExceededError('DOC comment selection source limit exceeded')
+    starts, ends = {}, {}
+    if len(text) % 2:
+        return WholeRowSelections(starts, ends)
+    count = len(text) // 2
+    stack, rows = [], []
+    bad = fields = False
+    previous_end = 0
+    run = cells = 0
+
+    def publish():
+        if not bad and not stack:
+            for ordinal, (begin, end) in enumerate(rows):
+                if 0xdc00 <= struct.unpack_from('<H', text, begin * 2)[0] <= 0xdfff:
+                    continue
+                starts[begin] = (run, ordinal)
+                ends[end] = (run, ordinal)
+
+    for begin, end, mark, mark_cp, props, _, known in paragraphs:
+        # Reject an incomplete, overlapping, or out-of-bounds prepass outright.
+        if not (begin == previous_end and begin <= end == mark_cp < count):
+            return WholeRowSelections({}, {})
+        previous_end = end + 1
+        if struct.unpack_from('<H', text, end * 2)[0] != mark:
+            return WholeRowSelections({}, {})
+        ordinary = True
+        for cp in range(begin, end):
+            unit = struct.unpack_from('<H', text, cp * 2)[0]
+            fields |= unit in (19, 20, 21)
+            ordinary &= unit >= 32 or unit in (5, 9)
+        depth = props.depth or (1 if props.in_table else 0)
+        if depth < 0:
+            return WholeRowSelections({}, {})
+        if depth > limits.max_depth:
+            raise LimitExceededError('DOC comment selection depth limit exceeded')
+        if not depth:
+            # A table may finish only after an outer TTP, never an open cell.
+            if len(stack) == 1 and stack[0][1:] == [0, False]:
+                stack.pop()
+            publish()
+            stack, rows = [], []
+            bad = False
+            run += 1
+            continue
+        if not (known and paragraph_known(mark_cp) and ordinary):
+            bad = True
+        if mark_cp in section_ends:
+            bad = True
+        if bad:
+            continue
+        if depth > len(stack) + 1:
+            # Missing enclosing-depth paragraph: do not invent its start.
+            bad = True
+            continue
+        while len(stack) > depth:
+            if stack[-1][1:] != [0, False]:
+                bad = True
+                break
+            stack.pop()
+        if bad:
+            continue
+        if depth > len(stack):
+            if stack:
+                stack[-1][2] = True
+            stack.append([begin, 0, False])
+        frame = stack[-1]
+        is_row = props.row_end if depth == 1 else props.inner_ttp
+        is_cell = mark == 7 if depth == 1 else props.inner_cell
+        coherent = (mark in (7, 13) and props.in_table
+                    and not (depth == 1 and (props.inner_cell or props.inner_ttp))
+                    and not (depth > 1 and (mark != 13 or props.row_end)))
+        if not coherent:
+            bad = True
+        elif is_row:
+            if (begin != end or frame[2] or not 1 <= frame[1] <= 63
+                    or len(props.flags) != frame[1]
+                    or len(props.edges) != frame[1] + 1
+                    or any(a >= b for a, b in zip(props.edges, props.edges[1:]))
+                    or (depth == 1 and mark != 7) or (depth > 1 and is_cell)):
+                bad = True
+                continue
+            if depth == 1:
+                rows.append((frame[0], end + 1))
+            frame[:] = [end + 1, 0, False]
+        elif is_cell:
+            cells += 1
+            if cells > limits.max_cells:
+                raise LimitExceededError('DOC comment selection cell limit exceeded')
+            frame[1] += 1
+            frame[2] = False
+            if frame[1] > 63:
+                bad = True
+        elif mark == 13:
+            frame[2] = True
+        else:
+            bad = True
+    if len(stack) == 1 and stack[0][1:] == [0, False]:
+        stack.pop()
+    publish()
+    # Keep existing conservative field policy: no new proof in a story with
+    # field delimiters, even when a particular row does not contain one.
+    if fields:
+        return WholeRowSelections({}, {})
+    return WholeRowSelections(starts, ends)

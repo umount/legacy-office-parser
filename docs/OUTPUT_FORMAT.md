@@ -370,6 +370,11 @@ omits both reply fields from JSON. When depth is known, JSON retains the depth
 and parent, including a null parent for a root. Other optional note/comment
 fields remain explicit nulls when unavailable.
 
+DOC selections additionally support exact complete outer-table rows, including
+fully closed nested tables. Partial rows and mixed ordinary-text/table selections
+remain unproven; source intervals are never widened to nearby visible content.
+See [selection evidence](research-doc-comment-complex-selections.md).
+
 An `anchor_path` walks from the document through `blocks`, table `rows`, and
 cell `blocks`, using **zero-based list indices**. For example,
 `["blocks", 0, "rows", 1, 2]` identifies the third cell of the second row of the

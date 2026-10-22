@@ -902,6 +902,7 @@ class _Doc:
         completed_cells = set()
         region, previous_depth, boundary = 0, None, False
         fields = False
+        whole_rows = None
         for begin, end, mark, mark_cp, props, _, known in paragraphs:
             depth = props.depth or (1 if props.in_table else 0)
             if boundary or depth != previous_depth:
@@ -942,6 +943,18 @@ class _Doc:
                           and end <= last_end + include_cr
                           and not 0xdc00 <= _u16(self.text, begin * 2) <= 0xdfff
                           and not 0xd800 <= _u16(self.text, (end - 1) * 2) <= 0xdbff)
+            if not proven and not fields and 0 <= j < len(paragraphs):
+                _, _, last_mark, last_cp, last_props, _, _ = paragraphs[j]
+                if (last_mark == 7 and last_props.row_end
+                        and (last_props.depth or 1) == 1 and end == last_cp + 1):
+                    if whole_rows is None:
+                        from ._doc_comments import whole_row_comment_selections
+
+                        whole_rows = whole_row_comment_selections(
+                            memoryview(self.text)[:self.counts[0] * 2], paragraphs, self.section_ends,
+                            self._comment_paragraph_known, self.limits,
+                            record=self.budget.record)
+                    proven = whole_rows.contains(begin, end)
             if proven:
                 self.comment_selections[source.source_cp] = (begin, end)
             else:
