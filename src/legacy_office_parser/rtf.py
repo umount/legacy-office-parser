@@ -944,7 +944,7 @@ class _Parser:
                     and not s.shape_ancestor and not s.font_table
                     and not any(self.visibility()) and self.wordart is None
                     and not self.uncertain_encoding
-                    and self.encoding() in {'cp1252', 'cp1251', 'cp932'}):
+                    and self.encoding() in {'cp1250', 'cp1251', 'cp1252', 'cp1253', 'cp932'}):
                 self.wordart = _WordArt(len(self.stack), self.limits, self.encoding(), s.uc)
             # Traverse only recognized shape containers, never reopen a skipped
             # ancestor. Property values and the legacy rendering are hard skips.

@@ -95,7 +95,7 @@ def test_dbcs_decoder_spans_hex_and_literal_bytes_and_rejects_incomplete_sequenc
         assert not doc.textboxes
 
 
-@pytest.mark.parametrize('prefix', [br'\ansicpg65001 ', br'\ansicpg1253 ',
+@pytest.mark.parametrize('prefix', [br'\ansicpg65001 ', br'\ansicpg1254 ',
                                     br'\ansicpg37 ', br'\ansicpg99999 '])
 def test_unproven_or_uncertain_codepages_remain_omitted(prefix):
     assert parse(prefix + shape(br'\u1046?')).textboxes == ''
