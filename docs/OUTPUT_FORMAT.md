@@ -33,7 +33,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes development package **0.23.0.dev0**. The package version is available as
+This reference describes package **0.23.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -64,7 +64,7 @@ results remain equivalent. Changes to defaults must be recorded explicitly.
 
 Recent output history:
 
-- **0.23 development:** supported inherited/stored visibility filtering, optional
+- **0.23.0:** supported inherited/stored visibility filtering, optional
   display-text normalization, coded diagnostics, ODF templates and individual
   RTF/ODT note bodies. Supported fixed-denominator XLS fraction displays are added.
   See [development sequence](NEXT_STEPS.md) for validation and remaining limits.

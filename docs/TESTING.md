@@ -696,7 +696,7 @@ a guarantee across releases, runtimes, arbitrary inputs or caller mutations.
 
 ## Post-0.22 development validation
 
-The 0.23 development suite passes **5,642 tests**, with **69 optional skips**;
+The 0.23.0 suite passes **5,642 tests**, with **69 optional skips**;
 Ruff passes. New cases cover inherited/stored visibility, explicit normalization,
 coded diagnostics, ODF templates, individual RTF/ODT note bodies, fixed-denominator
 XLS fractions and invalid API limits. Empty visible notes retain identity;

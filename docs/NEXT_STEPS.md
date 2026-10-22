@@ -1,7 +1,7 @@
 # Post-0.22 implementation sequence
 
-The published 0.22.0 contract and tag remain immutable. Work below is developed
-in ordered, independently reviewable commits for the next minor release.
+The published 0.22.0 contract and tag remain immutable. The work below was completed
+in ordered, independently reviewable commits for release 0.23.0.
 
 1. Resolve supported inherited RTF visibility and ODF hidden paragraph/style/
    section semantics. Test direct overrides, suppressed stories, cycles and limits.

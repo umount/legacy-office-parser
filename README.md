@@ -31,7 +31,7 @@ documents authored for this project.
 
 ## Supported formats
 
-Development after 0.22 adds supported stored visibility, explicit text cleanup,
+Version 0.23.0 adds supported stored visibility, explicit text cleanup,
 coded diagnostics, ODF templates, individual RTF/ODT note bodies, and a bounded
 XLS fraction-format subset. The published `v0.22.0` remains unchanged. Full
 compatibility with arbitrary documents has not been established; see
