@@ -304,3 +304,23 @@ ancestry after filtering. Added literal-only XLS text sections with distinct
 raw/display budget accounting. Both changes passed independent review and public
 API/CLI checks. The fixed-denominator fraction investigation remains open because
 the consulted evidence did not settle tie-breaking and exact spacing semantics.
+
+### Maintainability pass (0.20.1)
+
+Separated shared output validation from input dispatch without changing the
+four validator bodies. Consolidated three duplicated preserved-XLS fixture
+oracles, keeping independent expected results and stable family entry points.
+No format support or output semantics changed.
+
+Next bounded refactoring candidates:
+
+- RTF: private group-entry/group-exit and auxiliary-story finalization helpers.
+  Preserve tokenizer order, Unicode fallback, decoder flushing, suppression and
+  sink lifetime under one parser state.
+- DOC: reference-observation helpers inside text cleaning, with explicit source
+  CP/property/context inputs. Keep note/comment failure policies separate and
+  preserve one source scan, shared budgets and final anchor resolution.
+
+Each change should remain independently reviewable with unchanged corpus output
+and existing negative tests. ODF story/repetition accounting should remain
+untouched until a concrete duplication or coupling problem justifies a change.

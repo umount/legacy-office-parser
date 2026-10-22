@@ -125,3 +125,17 @@ relationship without losing the body. Relationships never recursively render
 text. Public validation uses a bounded ancestry stack, and unknown metadata does
 not invent branch boundaries. Literal XLS displays preserve raw strings and
 charge distinct replacement text separately under the shared output budget.
+
+## Input dispatch and result validation
+
+`api.py` reads bounded input, selects the format and invokes a parser. Shared
+output validation lives in `_validation.py`: body structure, note/comment
+relationships, anchor paths and aggregate limits are checked independently of
+input transport. Parsers still enforce limits during decoding. The internal
+`api._validate_result` import remains available for existing regression helpers.
+
+The three preserved-XLS display test families share generation and verification
+mechanics in `tests/_xls_format_oracle.py`. Each family retains its own literal
+expected cases, fixture hash and live-test gate. The shared helper verifies
+exact FORMAT/XF mapping and unchanged source bytes; it never generates expected
+text from the production parser.

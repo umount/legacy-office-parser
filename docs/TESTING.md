@@ -574,3 +574,17 @@ now explicitly identify their stored root depth. The installed-wheel checks
 include both new fixture families and unchanged text projection.
 See [DOC replies](research-doc-comment-replies.md) and
 [XLS literal displays](research-xls-text-literals.md) for scope and evidence.
+
+## Behavior-preserving refactoring (0.20.1)
+
+The full local suite remains **4,483 passed, 64 skipped**, and Ruff passes.
+All **74** public fixture JSON digests are identical before and after the change.
+The four extracted output validators have identical Python ASTs; their existing
+internal result-validator import remains available from `api`.
+
+The preserved-XLS helper refactor removes 151 duplicated lines. All nine files
+in the three fixture families remain byte-identical, and all six tests in their
+live LibreOffice suites pass. Literal expectations, hashes, FORMAT/XF checks,
+source-byte preservation, test names, and opt-in gates are unchanged. Installed
+wheel and source-archive checks cover the new internal validation module and
+shared test helper.
