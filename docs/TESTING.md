@@ -1,6 +1,6 @@
 # Testing
 
-For current 0.22 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
+For current coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
 For achievements and comparisons with other libraries and LibreOffice, see
 [Comparison](COMPARISON.md). Version-specific results below are historical snapshots.
 
@@ -752,3 +752,27 @@ smoke check covers all seven format families, auxiliary identities, normalizatio
 and the new numeric display functions. These checks do not establish universal
 format fidelity; approximation, locale, geometry and selection exclusions remain
 listed in EXTRACTION_GAPS.md and the feature research documents.
+
+
+## 0.25 local validation
+
+- Full suite after soft-hyphen normalization: **6661 passed, 80 skipped**.
+  Skipped live checks are not counted as executed evidence.
+- New RTF encoding examples: **8 live LibreOffice comparisons passed**.
+- XLS General display: **9 preserved-source live cases passed**, including
+  signed zero, the eleven-digit boundary and explicit-decimal controls.
+- Independent reviews covered RTF decoding, ODP representation ownership, DOC
+  source proofs and aggregate budgets, General formatting, and normalization.
+- Deterministic public-fixture mutations: **7900 cases**, no unexpected exception.
+- Resource checks: **12 cases** completed within the configured limits,
+  including repeated parsing and hostile expansion/depth inputs.
+- Public source corpus: **79 documents parsed successfully**. Of 78 existing
+  inputs, only one changed text: its General formula cache now displays `25`
+  instead of `25.0`. The additional original DOC fixture records an external
+  exporter's missing range rather than inventing the lost endpoints.
+- Ruff and whitespace checks passed. Runtime scope and caveats remain in
+  OUTPUT_FORMAT.md and the focused research notes.
+
+Private integration inputs are not fixtures or published reference artifacts.
+No whole-corpus equivalence or complete spreadsheet locale/rendering support
+is inferred from these checks.

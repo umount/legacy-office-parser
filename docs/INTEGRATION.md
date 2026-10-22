@@ -167,3 +167,18 @@ with an external memory limit and timeout. Do not retry with successively
 unbounded limits or disable format validation after a failure. Process memory
 and elapsed time depend on the document and runtime; a successful corpus run
 is not a resource guarantee for arbitrary input.
+
+
+## Numeric search and cached formulas
+
+XLS numeric displays use the supported invariant formatting subset described in
+OUTPUT_FORMAT.md. They do not infer a locale from document language. Preserve
+both `text` and typed `value`; a consumer may add a canonical numeric search token
+for visible numeric cells, alongside units/display text, using a matching query
+normalization policy. Do not parse localized numbers by blindly deleting commas,
+and do not substitute a raw value for an intentionally empty/hidden display.
+
+Stored formula results can be stale or uncomputed. All-zero caches alone do not
+identify that condition: valid formulas can return zero. Do not label values
+unreliable solely from that pattern, and do not use an office application's
+recalculated output as proof that the parser misread the source cache.

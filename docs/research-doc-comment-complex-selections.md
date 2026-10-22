@@ -1,5 +1,9 @@
 # DOC comment selections across table boundaries
 
+This describes the original 0.24 row-only proof. Version 0.25 supplements it
+with safe ordinary paragraphs; see [mixed selections](research-doc-comment-mixed-selections.md)
+for the current integration path and additional record charge.
+
 ## Primary requirements
 
 [MS-DOC 2.2.3, Valid Selection](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/8d8fece5-bdbc-4258-8457-916540075e3f)

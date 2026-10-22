@@ -31,9 +31,11 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.24.0 adds proven DOC header/footer and textbox identities, complete-row
-comment selections, additional row-only table visibility, and bounded XLS display
-formats. It preserves typed values and explicit fallbacks for unverified cases.
+Version 0.25.0 adds Central European/Greek RTF WordArt text and verified DOC
+comment selections combining ordinary text with whole table rows. ODP frames
+select one supported text alternative; integral XLS General values display
+without a decimal suffix. Explicit text normalization removes soft hyphens by
+default, with an opt-out. Typed values and unverified-case fallbacks are preserved.
 Full compatibility with arbitrary documents has not been established; see
 [coverage and limitations](docs/TESTING.md).
 

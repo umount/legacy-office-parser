@@ -91,6 +91,10 @@ def main():
     assert render_number(1 / 3, '# ?/?') == ' 1/3'
     assert render_number(1.23, '0.##') == '1.23'
     assert render_number(1.0, '0.##') is None
+    assert render_number(1.0, 'General') == '1'
+    soft = parse(br'{\rtf1 co\-operate\u8203?word}')
+    assert normalize_text(soft).text == 'cooperate\u200bword'
+    assert normalize_text(soft, drop_soft_hyphens=False).text == soft.text
     print('Installed wheel: seven formats and DOC/XLS/RTF feature regressions passed')
 
 

@@ -368,3 +368,12 @@ See [DOC_XLS_NEXT.md](DOC_XLS_NEXT.md) for the next ordered iteration and
 [EXTRACTION_GAPS.md](EXTRACTION_GAPS.md) for the retained limits. Source identities
 and numeric displays are supported only with validated ownership and independent
 expected results.
+
+
+## LLM text completeness (0.25)
+
+Completed the bounded RTF WordArt encoding extension, ODP frame ownership fix,
+XLS General whole-number display fix, and DOC mixed ordinary/complete-row comment
+selection proof. See [work scope](LLM_COMPLETENESS_NEXT.md), the output contract,
+and format-specific research. No general fallback-only RTF recovery or embedded
+PPT/ODF extraction is claimed. Those still require positive ownership evidence.

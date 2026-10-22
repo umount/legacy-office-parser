@@ -155,10 +155,25 @@ does not establish completeness.
 - DOC: decoded UTF-16 uses source-character limits separately from OLE input-byte
   limits, including compressed notes and comments.
 
+## Completed in 0.25
+
+- Explicit normalization removes U+00AD soft hyphens by default, with an opt-out;
+  raw parsing, source positions and typed values are unchanged. U+200B remains.
+
+- RTF: explicit WordArt text in Windows-1250 and Windows-1253, using the existing
+  bounded decoder and ownership rules; eight original live-reader comparisons.
+- ODP: first supported text-box/table representation per frame, including empty
+  or hidden selections; identical content in independent frames stays distinct.
+- XLS: integral General display below twelve digits drops the `.0` suffix while
+  preserving raw values, formula caches and signed-zero bits.
+- DOC: exact same-section comment selections spanning safe ordinary text and
+  proven complete outer rows, without widening or output-grid inference.
+
 ## Next areas to verify
 
 - DOC: page/header-selection flags, drawing/frame associations and ink;
-  partial-row, inner-row-only, mixed text/table and cross-section selections.
+  partial-row, inner-row-only and cross-section selections; mixed text/table
+  spans outside the supported complete-row proof.
 - DOC: remaining conditional table styles and explicit geometry that does not
   require page layout.
 - PPT: text in extensions and embedded passive documents; agreement with a

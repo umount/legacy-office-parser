@@ -1,7 +1,7 @@
 # Explicit display-text normalization
 
 Raw parsing preserves format-specific extraction semantics. Call
-`normalize_text(document, unicode_form=None, limits=None)` to obtain an independent
+`normalize_text(document, unicode_form=None, drop_soft_hyphens=True, limits=None)` to obtain an independent
 validated copy for text consumers. CLI equivalents are `--normalize-text` and
 `--nfc` (the latter also enables cleanup).
 
@@ -13,9 +13,19 @@ clean = normalize_text(source, unicode_form='NFC')
 
 The operation maps CRLF, CR, VT, FF and NEL to LF, preserves TAB/LF and spaces,
 removes other C0/C1 controls and DEL, and replaces surrogate code points with
-U+FFFD. NFC is optional; compatibility normalization is not performed. It does
-not strip meaningful whitespace or remove bidi/format characters, markup,
-hidden content or active instructions from a downstream prompt.
+U+FFFD. By default it also removes U+00AD SOFT HYPHEN, an intraword optional
+line-break hint, so `co\u00adoperate` becomes `cooperate`. Pass
+`drop_soft_hyphens=False` to preserve it; this parameter accepts only a Boolean.
+Raw parsing still retains soft hyphens. CLI `--normalize-text` and `--nfc` use
+the default removal policy.
+
+NFC is optional; compatibility normalization is not performed. U+200B ZERO WIDTH
+SPACE is preserved: it can separate words, so deleting it could join distinct
+words. There is no broad deletion of Unicode format characters. Visible hyphens,
+nonbreaking hyphens, joiners, bidi characters and meaningful whitespace remain.
+The operation does not remove markup, hidden content or active instructions from
+a downstream prompt. See [Unicode line breaking](https://www.unicode.org/reports/tr14/)
+and [soft-hyphen tests](research-normalization-soft-hyphens.md).
 
 Paragraphs, cell display strings, slide title/body/notes/comment text, sheet
 names/drawings and pooled text stories are normalized. Verified structured

@@ -30,3 +30,12 @@ claim that it contains everything needed to reproduce page appearance.
 
 A successful test of a narrow subset does not close the whole format gap.
 Integration corpus validation is separate from this library work.
+
+## Completed checkpoint (0.25)
+
+RTF explicit WordArt now accepts CP1250/CP1253; general legacy fallback recovery
+remains unproven. ODP frame alternatives now have one selected text owner;
+embedded extraction remains deferred. DOC supports the verified same-section
+ordinary-text/complete-row comment subset. An integration-reported XLS General
+whole-number display issue is corrected without recalculating formula caches.
+See OUTPUT_FORMAT.md and TESTING.md for the precise contract and validation.

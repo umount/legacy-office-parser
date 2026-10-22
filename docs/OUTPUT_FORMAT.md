@@ -35,7 +35,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.24.0**. The package version is available as
+This reference describes package **0.25.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -65,6 +65,14 @@ behavior changes; neither “patch” nor “unchanged fields” establishes tha
 results remain equivalent. Changes to defaults must be recorded explicitly.
 
 Recent output history:
+
+- **0.25.0:** explicit RTF WordArt gains CP1250/CP1253 decoding; ODP frames
+  select one supported text representation rather than concatenate alternatives;
+  integral XLS General values below twelve digits omit the decimal suffix; DOC
+  comment selection ranges can combine safe ordinary text with complete outer
+  rows in one section. Explicit `normalize_text` removes U+00AD by default, with
+  `drop_soft_hyphens=False` available; U+200B remains. Public model fields and raw
+  numeric values are unchanged.
 
 - **0.24.0:** DOC auxiliary-story identities, validated header inheritance,
   complete-row comment selections, row-only conditional table visibility,
@@ -289,7 +297,34 @@ All these cell fields are included in JSON, including null values and false
 flags. Python's computed `address` gives an A1-style address; JSON contains the
 numeric coordinates instead. Date/time representations depend on the source
 and supported formatting; do not assume every `value` is a Python date object.
-No formulas are executed or refreshed; cached results can be stale.
+No formulas are executed or refreshed; cached results can be stale. A numeric
+cached zero is not replaced with a recalculated string or empty value.
+
+For XLS General, integral values with absolute value below 100,000,000,000
+display without a fractional suffix: raw `1.0` has text `"1"`. Both signed zeros
+display as `"0"`, retaining the sign in the raw value. Explicit `0.0` formatting
+continues to display `"1.0"`. Larger/fractional General values retain their
+existing raw text projection; width-dependent General rendering is not modeled.
+See [General evidence](research-xls-general-integers.md).
+
+Supported XLS numeric masks use invariant decimal `.` and grouping `,`
+separators, independently of machine locale or document language. This is a
+stable extraction convention, not a reconstruction of the user's Excel locale.
+Explicit supported currency literals remain part of their masks. Unsupported
+locale-qualified masks retain the documented raw-value fallback and warning;
+there is no `display_locale` argument or language-based locale inference.
+
+For numeric search, consumers can derive an additional locale-independent token
+from a numeric `value`, retaining `text` for its units and display meaning.
+Do not remove commas from arbitrary display strings: commas may be decimal
+separators or literal content. Respect the application's visibility policy;
+an empty/hidden display must not automatically expose its raw value.
+
+A formula's cached zero or empty value is not evidence that it was never
+calculated. The library does not emit an "uncomputed" diagnosis merely because
+all formula caches on a sheet are zero/empty. Recalculation by a reference office
+application is not a stored-cache oracle.
+
 See [XLS dates and times](#xls-dates-and-times) for the date conversion contract.
 
 A `CellRange` contains integer `start_row`, `start_column`, `end_row`, and
@@ -375,9 +410,12 @@ and parent, including a null parent for a root. Other optional note/comment
 fields remain explicit nulls when unavailable.
 
 DOC selections additionally support exact complete outer-table rows, including
-fully closed nested tables. Partial rows and mixed ordinary-text/table selections
-remain unproven; source intervals are never widened to nearby visible content.
-See [selection evidence](research-doc-comment-complex-selections.md).
+fully closed nested tables. In one section, safe ordinary paragraphs can be
+combined with complete outer rows; ordinary endpoints may lie inside a paragraph,
+while table endpoints must coincide with proven row boundaries. Partial rows,
+inner-row-only spans, fields and cross-section extensions remain unsupported.
+Source intervals are never widened. See [row evidence](research-doc-comment-complex-selections.md)
+and [mixed-selection evidence](research-doc-comment-mixed-selections.md).
 
 An `anchor_path` walks from the document through `blocks`, table `rows`, and
 cell `blocks`, using **zero-based list indices**. For example,
@@ -478,7 +516,10 @@ macros, and active embedded content are not part of extraction.
 ## Text normalization and decoding
 
 Use [normalize_text](NORMALIZATION.md) for an independent display-text-normalized
-copy, with optional NFC. The following describes raw parsing; source values,
+copy, with optional NFC and default removal of U+00AD SOFT HYPHEN. Set
+`drop_soft_hyphens=False` to preserve it. U+200B ZERO WIDTH SPACE is retained;
+consumer tokenization must respect its possible word-boundary meaning.
+The following describes raw parsing; source values,
 formulas and reference metadata remain outside the cleanup operation.
 
 Raw parsed strings are Unicode, but **no Unicode normalization (NFC/NFD/NFKC/NFKD) is
@@ -567,7 +608,10 @@ published.
 Embedded OLE documents are not recursively parsed. DOC object markers and RTF
 picture/object payloads are omitted; an RTF object's skipped fallback result is
 not an independently parsed document. Recognized textbox/WordArt text is a separate,
-bounded extraction feature. Reading an OLE container is distinct from executing or
+bounded extraction feature. Explicit supported RTF WordArt accepts Windows-1250,
+1251, 1252, 1253 and 932 through the existing strict property grammar; malformed
+properties are omitted whole. Legacy fallback-only shape ownership remains
+unproven. Reading an OLE container is distinct from executing or
 extracting every embedded object it contains. ODF package-local text-object behavior
 is described below; no external resource is opened.
 
@@ -680,7 +724,10 @@ shape, and has no `xlink:href`. Its supported text and structure are pooled into
 stories. A warning explains the loss of object identity, anchors, and embedded
 page layout. Embedded styles/masters are not imported as an independent rendering
 scope. In a frame, the first supported representation wins, even when empty;
-other alternatives must not be assumed to be concatenated.
+other alternatives must not be assumed to be concatenated. ODP frames likewise
+select only the first supported direct text box or table, even when empty or
+hidden. Separate frames retain identical text independently. Unsupported
+embedded objects remain omitted; no fallback follows a selected-content error.
 
 This does not mean recursive extraction of arbitrary embedded files. Linked or
 package-referenced objects, OLE payloads, images and their replacement/attached

@@ -278,3 +278,11 @@ Completed 0.18 validation:
 Final independent review reported no actionable findings after rerunning the
 457-test suite and the exact property-overflow resource check. No newer-LibreOffice or Microsoft
 Word parity is claimed.
+
+
+## Subsequent encoding extension (0.25)
+
+The explicit WordArt allowlist also accepts Windows-1250 and Windows-1253.
+See [code-page evidence](research-rtf-wordart-codepages.md). The historical 0.18
+three-code-page scope above is retained as a development record; legacy fallback
+ownership and rich-property restrictions are unchanged.
