@@ -627,3 +627,33 @@ recorded explicitly and does not replace the binary source's independent
 expectation. See [DOC heading evidence](research-doc-headings.md) and
 [adapter guidance](INTEGRATION.md). Heading-path construction and XLS header
 selection belong to consumers; they are not inferred by the library.
+
+## Terminal and reserved-range compatibility (0.21.1)
+
+The full suite passes **4,886 tests**, with **65 optional skips**; Ruff passes.
+All **75** existing public fixture JSON results remain unchanged. **7,500**
+deterministic mutations produced no unexpected exceptions; all **12** bounded
+resource checks pass. New regressions are original synthetic inputs.
+
+A local corpus of 47 files (36 distinct byte hashes) initially produced 42
+successful parses. With the compatibility fixes, 45 parse at the default record
+ceiling; an explicit 500,000-record profile parses 46. The remaining container
+has no supported office document stream. The corpus classification run allowed
+128 MiB input solely to classify that large container; this is not a changed
+library default. All 42 previously successful JSON results are identical.
+No private file, source text, name or identifier is included in the repository.
+
+The large synthetic DOC stress case requires 264,799 record-budget units and
+produces 967,485 text characters. The 200,000 default remains unchanged; the
+[consumer resource profile](INTEGRATION.md#resource-profiles-for-large-documents)
+raises only the record ceiling. These observations are not general time/memory
+guarantees for arbitrary inputs.
+
+Independent RTF review checked 7,381 short trailers plus chunk, malformed-root,
+concatenated-document and budget boundaries. Only a single physical terminal
+NUL gains acceptance, with a warning and unchanged text. CLI strict mode still
+reports that warning. Independent DOC review checked 12,000 synthetic range
+layouts and main/header integration cases; live endpoints stay story-bounded,
+and reserved or reusable text stays excluded. Bounded local LibreOffice readback
+confirmed the affected live textbox content after whitespace normalization.
+The final CP domain boundary is covered explicitly. Sampling is not exhaustive.

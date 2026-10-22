@@ -137,3 +137,27 @@ This contract does not infer headings for other formats. Do not guess levels
 from font size, boldness, numbering, capitalization, slide titles, or paragraph
 position. Missing DOC metadata is also not evidence of a heading. Preserve
 warnings and consult [DOC heading coverage](research-doc-headings.md).
+
+## Resource profiles for large documents
+
+`Limits.max_records` bounds cumulative parser work and retained structural
+records, not just the number of visible paragraphs. DOC counts formatting
+operations, formatting runs, paragraph metadata and pending table entries.
+Exceeding the default 200,000 records is a controlled refusal; it does not by
+itself indicate malformed input.
+
+A consumer handling large documents can choose a larger, explicit profile:
+
+```python
+from legacy_office_parser import Limits, parse
+
+large_document_limits = Limits(max_records=500_000)
+document = parse(source, limits=large_document_limits)
+```
+
+This changes only the record ceiling. File, stream, text, table and nesting
+limits remain in effect. Choose the profile before parsing, and run the worker
+with an external memory limit and timeout. Do not retry with successively
+unbounded limits or disable format validation after a failure. Process memory
+and elapsed time depend on the document and runtime; a successful corpus run
+is not a resource guarantee for arbitrary input.

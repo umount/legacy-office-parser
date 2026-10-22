@@ -154,3 +154,18 @@ applies fixed heading precedence to the selected paragraph style. Heading-bearin
 cells and auxiliary stories retain their paragraph blocks and charge retained
 projections. Consumers construct heading paths in the relevant story scope.
 See [integration guidance](INTEGRATION.md) and [heading evidence](research-doc-headings.md).
+
+## Narrow compatibility boundaries
+
+RTF accepts one literal terminal NUL after a completed root group and optional
+whitespace, with a warning. The full input remains tokenized and budgeted;
+additional data, multiple NULs, encoded terminators and malformed roots still
+fail. This is a compatibility rule, not arbitrary trailing-data recovery.
+
+DOC textbox PLCs separate readable ranges from the final reserved range. Only
+nonfinal ranges can contribute text, and their endpoints must remain within
+the selected story. The final sentinel may lie beyond that story, but remains
+subject to CP-domain and ordering validation; it never controls a text slice.
+The same rule applies to main and header textbox stories. See
+[MS-DOC FTXBXS](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/d0a81fe8-f9e8-4130-9233-84732e3d9420)
+and the [CP domain](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a3d44e16-7d29-46f7-bb7b-d0d8a5734f83).

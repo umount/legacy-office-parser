@@ -335,3 +335,11 @@ binary evidence, authored source/readback documents and public API/CLI checks.
 Document XLS adapters over sparse cells, explicit merges and retained raw/display
 values. Header selection, repeated column labels and DOC heading-path stacks are
 consumer policies, with isolated context for cells and auxiliary stories.
+
+### Local-corpus compatibility (0.21.1)
+
+Handle a single terminal RTF NUL and reserved DOC textbox sentinel coordinates
+without weakening live text boundaries. Reproduce both with original synthetic
+regressions; private corpus files, names and content are not repository fixtures.
+Retain the default record budget and document explicit consumer resource profiles
+for large, structurally dense documents.
