@@ -42,6 +42,25 @@ SKIP = {q('office:annotation'), q('office:annotation-end'), q('text:tracked-chan
         q('draw:image'), q('draw:page-thumbnail'), q('text:ruby-text')}
 
 
+def heading_level(element):
+    """ODF 1.3 §19.850.4: text:h defaults to 1 (positiveInteger).
+
+    Invalid or unrepresentable levels retain text without heading metadata;
+    never clamp to 9, infer from styles, or convert an unbounded integer.
+    """
+    if element.tag != q('text:h'):
+        return None
+    raw = element.get(q('text:outline-level'), '1').strip(' \t\r\n')
+    if not re.fullmatch(r'\+?[0-9]+', raw):
+        return None
+    digits = raw.lstrip('+0')
+    return int(digits) if len(digits) == 1 and digits in '123456789' else None
+
+
+def structured_blocks(blocks):
+    return any(isinstance(block, Table) or block.heading_level is not None for block in blocks)
+
+
 def hidden_section(element):
     return element.tag == q('text:section') and element.get(q('text:display')) == 'none'
 
@@ -79,6 +98,7 @@ class _Parser:
         # A containing story subtracts this delta to isolate its own block cost.
         self.story_budget_text = 0
         self.in_note = False
+        self.heading_cells = False
         self.drawing_records = self.sheet_visible = 0
         self.styles = {}
         for root in roots:
@@ -89,6 +109,17 @@ class _Parser:
     def warn(self, text):
         if text not in self.doc.warnings:
             self.doc.warnings.append(text)
+
+    def read_heading_level(self, element):
+        if self.doc.format != 'odt':
+            return None
+        level = heading_level(element)
+        if element.tag == q('text:h') and level is None:
+            # Diagnose only extracted headings, not the cell structure probe.
+            # Never echo source attributes or text in diagnostics.
+            self.warn('ODF heading level invalid or outside supported range 1-9; '
+                      'text retained without heading metadata.')
+        return level
 
     def unsupported(self, e):
         if e.tag == q('text:note'):
@@ -222,10 +253,10 @@ class _Parser:
                                    (self.story_budget_text - stories_start))
         kind = next(kind for kind, stories in self.stories.items() if stories is destination)
         self.retained_story_text[kind] += charged
-        if any(isinstance(block, Table) for block in blocks):
+        if structured_blocks(blocks):
             self.structured_stories.add(kind)
         # Keep empty blocks too: an empty table still carries structure, and an
-        # empty paragraph must survive if this pooled key contains a table.
+        # empty paragraph must survive if this pooled key retains structure.
 
     def inline_object_body(self, element):
         """Recognize only a direct inline ODF text document, never a link.
@@ -480,6 +511,7 @@ class _Parser:
                 self.warn('ODF hidden section omitted.')
                 continue
             if child.tag in PARAS:
+                self.read_heading_level(child)
                 yield self.inline(child)
             elif self.doc.format == 'odt' and child.tag in DRAW_STORIES:
                 self.drawing(child)
@@ -503,19 +535,23 @@ class _Parser:
         return '\n'.join(parts)
 
     def cell_content(self, element):
-        def nested(parent):
+        def structured(parent):
             for child in parent:
                 if hidden_section(child):
                     continue
                 if child.tag == q('table:table'):
                     return True
-                if child.tag in BLOCK_WRAPPERS and nested(child):
+                if heading_level(child) is not None:
+                    return True
+                if child.tag in BLOCK_WRAPPERS and structured(child):
                     return True
             return False
-        if self.doc.format != 'odt' or not nested(element):
+        if self.doc.format != 'odt' or not structured(element):
             return self.cell_text(element), []
         blocks = []
         self.blocks(element, blocks)
+        if any(isinstance(block, Paragraph) and block.heading_level is not None for block in blocks):
+            self.heading_cells = True
         # Check the projection before joining; table() charges it including repeats.
         size = max(0, len(blocks) - 1)
         for block in blocks:
@@ -649,7 +685,7 @@ class _Parser:
             if e.tag in PARAS:
                 value = self.inline(e)
                 self.budget.text(len(value))
-                destination.append(Paragraph(value))
+                destination.append(Paragraph(value, heading_level=self.read_heading_level(e)))
             elif e.tag == q('table:table'):
                 destination.append(self.table(e))
             elif self.doc.format == 'odt' and e.tag in DRAW_STORIES:
@@ -932,10 +968,10 @@ def parse_odf_bytes(data: bytes, limits: Limits, expected_format: str | None = N
         setattr(doc, field, '\n\n'.join(value for value, _ in stories if value))
         # Opt in per pooled key, retaining all occurrences in encounter order.
         # No note identities, frame anchors, or page placement are inferred.
-        if any(isinstance(block, Table) for _, blocks in stories for block in blocks):
+        if kind in parser.structured_stories:
             doc.story_blocks[field] = [block for _, blocks in stories for block in blocks]
     _check_visible_text(doc, limits)
-    if doc.story_blocks or any(sheet.drawings for sheet in doc.sheets):
+    if parser.heading_cells or doc.story_blocks or any(sheet.drawings for sheet in doc.sheets):
         # Retained structure and its legacy projection are separate allocations.
         # Use the shared traversal for recursive cells, text, and depth budgets,
         # including callers of this byte-level entry point.
