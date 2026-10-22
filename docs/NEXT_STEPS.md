@@ -34,3 +34,5 @@ complete rendering, revision acceptance or arbitrary-format equivalence.
 - Step 4: OTT/OTS/OTP MIME families accepted with existing ODF validation.
 - Step 5: individual RTF/ODT note ranges retained, including visible empty bodies;
   repeat budgets and suppressed destinations covered by regression tests.
+- Step 6: bounded fixed-denominator XLS fractions verified against an independent
+  reader; alternate PPT metroBlob content remains excluded as specified.

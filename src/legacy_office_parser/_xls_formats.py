@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 import operator
-from decimal import Context, Decimal, ROUND_HALF_UP, localcontext
+from decimal import Context, Decimal, ROUND_FLOOR, ROUND_HALF_UP, localcontext
 
 
 BUILTIN_NUMERIC = {
@@ -27,6 +27,11 @@ _MIN_THRESHOLD = Decimal('5E-324')
 _FIXED = re.compile(r'(0|#,##0)(?:\.(0{1,15}#{0,14}))?(,{0,63})(%)?')
 # Deliberate evidence-backed whitelist, not a general locale interpreter.
 _CURRENCY = {'[$$-409]': '$', '[$€-407]': '€', '[$USD-409]': 'USD'}
+# Fixed, unreduced fractions only; no best-fit denominator or layout placeholders.
+# MS-XLS 2.4.126; reference probes/bounds: docs/research-xls-fractions.md.
+_FRACTION = re.compile(r'(0 )?(0{1,3})/([1-9][0-9]{0,2})')
+_FRACTION_MAX_VALUE = Decimal('1000000')
+_FRACTION_MIDPOINT_GUARD = Decimal('1e-12')
 _SCIENTIFIC = re.compile(r'0(?:\.(0{1,15}))?([Ee])([+-])(0{1,3})')
 _DATE_TOKEN = re.compile(
     r'am/pm|a/p|y+|m+|d+|h+|s+|[ /:.,-]+|\\[ /:.,-]|"[ /:.,-]+"', re.I,
@@ -91,7 +96,8 @@ def _numeric_parts(code: str, *, allow_literal: bool = False) -> tuple[str, str,
         else:
             if core is not None:
                 return None
-            match = _SCIENTIFIC.match(code, pos) or _FIXED.match(code, pos)
+            match = (_FRACTION.match(code, pos) or _SCIENTIFIC.match(code, pos)
+                     or _FIXED.match(code, pos))
             if match is None:
                 return None
             core = match.group()
@@ -177,6 +183,32 @@ def _with_affixes(text: str, prefix: str, suffix: str) -> str:
     return prefix + text + suffix
 
 
+def _render_fraction(number: Decimal, match: re.Match) -> str | None:
+    """Nearest fixed-denominator display in the caller's private Decimal context.
+
+    Exact/near ties are intentionally unsupported: Calc probes disagree on tie
+    direction, and the primary text does not define a universal tie rule.
+    A conservative magnitude bound keeps numerator arithmetic below 10**9.
+    """
+    magnitude = number.copy_abs()
+    if magnitude > _FRACTION_MAX_VALUE:
+        return None
+    mixed, zeros, denominator_text = match.groups()
+    denominator = int(denominator_text)
+    scaled = magnitude * denominator
+    floor = scaled.to_integral_value(rounding=ROUND_FLOOR)
+    if abs(scaled - floor - Decimal('0.5')) <= (
+            _FRACTION_MIDPOINT_GUARD * max(Decimal(1), scaled)):
+        return None
+    numerator = int(scaled.to_integral_value(rounding=ROUND_HALF_UP))
+    sign = '-' if number.is_signed() and numerator else ''
+    whole = ''
+    if mixed:
+        integer, numerator = divmod(numerator, denominator)
+        whole = str(integer) + ' '
+    return sign + whole + str(numerator).zfill(len(zeros)) + '/' + denominator_text
+
+
 def render_number(value: int | float, code: str) -> str | None:
     """Render a finite BIFF number without altering its stored Python value.
 
@@ -243,6 +275,9 @@ def render_number(value: int | float, code: str) -> str | None:
     # condition in section two alone: importers disagree on these combinations.
     conditional = any(condition is not None for condition in conditions)
     if conditional:
+        # Fraction/condition interactions are not part of the verified subset.
+        if any(_FRACTION.fullmatch(core) for _, core, _ in parsed):
+            return None
         if text_section not in ('', '@'):
             return None
         if has_empty:
@@ -290,12 +325,16 @@ def render_number(value: int | float, code: str) -> str | None:
         return str(value)
     fixed = _FIXED.fullmatch(core)
     scientific = _SCIENTIFIC.fullmatch(core)
+    fraction_format = _FRACTION.fullmatch(core)
     with localcontext(Context(prec=340, rounding=ROUND_HALF_UP)):
         number = Decimal(str(value))
         if not number.is_finite():
             return None
         if not core:  # Empty section or explicit literal-only third section.
             return prefix
+        if fraction_format is not None:
+            text = _render_fraction(number, fraction_format)
+            return None if text is None else _with_affixes(text, prefix, suffix)
         if fixed is not None:
             integer, fraction, commas, percent = fixed.groups()
             places = len(fraction or '')
