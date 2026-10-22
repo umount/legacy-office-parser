@@ -70,7 +70,13 @@ def live_textbox_ranges(
     ranges = []
     for i in range(count):
         end = struct.unpack_from('<I', plc, (i + 1) * 4)[0]
-        if end > story_count:
+        # MS-DOC 2.8.23/2.8.32: the last range is ignored. Its
+        # terminal CP is not a readable story endpoint (writers may use a
+        # document-wide sentinel). Never return or slice that reserved span.
+        # Keep CP validity/order, and bound every nonfinal endpoint as before.
+        if end >= 0x7FFFFFFF:
+            raise InvalidDocumentError('invalid DOC textbox CP')
+        if i != count - 1 and end > story_count:
             raise InvalidDocumentError('DOC textbox CP outside its story')
         if end <= start:
             raise InvalidDocumentError('DOC textbox CPs are not strictly increasing')

@@ -83,7 +83,7 @@ def test_invalid_sizes(data):
         ranges(data, 10)
 
 
-@pytest.mark.parametrize('cps,count', [([0, 0], 1), ([2, 1], 2), ([0, 3], 2),
+@pytest.mark.parametrize('cps,count', [([0, 0], 1), ([2, 1], 2),
                                       ([0, 0xFFFFFFFF], 10), ([11, 12], 10),
                                       ([0, 3, 2], 3), ([0, 3, 3], 3)])
 def test_invalid_boundaries_including_reserved_range(cps, count):
