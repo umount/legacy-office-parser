@@ -14,6 +14,7 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
     from .models import Paragraph, SlideComment
     _validate_notes(doc, limits)
     _validate_comments(doc, limits)
+    _validate_auxiliary_stories(doc, limits)
     total = 0
     cells = 0
     stack = [(block, 1) for block in doc.blocks]
@@ -275,3 +276,81 @@ def _validate_anchor_path(doc, path, label):
         raise InvalidDocumentError(f'{label} anchor is not a source paragraph or cell')
 
 
+
+
+def _validate_auxiliary_stories(doc: Document, limits: Limits) -> None:
+    from .models import AuxiliaryStory
+    metadata = sum(1 + len(item.anchor_path or []) for item in (*doc.notes, *doc.comments))
+    if metadata + len(doc.auxiliary_stories) > limits.max_records:
+        raise LimitExceededError('auxiliary story record limit exceeded')
+    previous = {}
+    seen = {}
+    body_ends = {}
+    effective_headers = {}
+    for item in doc.auxiliary_stories:
+        if not isinstance(item, AuxiliaryStory) or doc.format != 'doc':
+            raise InvalidDocumentError('invalid auxiliary story metadata')
+        if item.source not in ('header', 'main_textbox', 'header_textbox'):
+            raise InvalidDocumentError('invalid auxiliary source')
+        integers = (item.ordinal, item.block_start, item.block_end,
+                    item.source_start, item.source_end)
+        if any(type(n) is not int or n < 0 for n in integers) or item.ordinal == 0:
+            raise InvalidDocumentError('invalid auxiliary story range')
+        if item.source_end < item.source_start or item.source_end >= 0x7fffffff:
+            raise InvalidDocumentError('invalid auxiliary source range')
+        if item.source_end > limits.max_text_chars:
+            raise LimitExceededError('auxiliary source CP limit exceeded')
+        story = 'headers_footers' if item.source == 'header' else 'textboxes'
+        blocks = doc.story_blocks.get(story)
+        if (item.story != story or blocks is None or
+                not 0 <= item.block_start <= item.block_end <= len(blocks)):
+            raise InvalidDocumentError('invalid auxiliary body range')
+        if item.block_start < body_ends.get(story, 0):
+            raise InvalidDocumentError('overlapping auxiliary bodies')
+        empty = item.source_start == item.source_end
+        if (not empty and item.block_start == item.block_end) or (
+                empty and item.block_start != item.block_end):
+            raise InvalidDocumentError('inconsistent auxiliary body emptiness')
+        earlier = previous.get(item.source)
+        if earlier and (item.ordinal <= earlier.ordinal or
+                        item.source_start < earlier.source_end or
+                        item.block_start < earlier.block_end):
+            raise InvalidDocumentError('unordered auxiliary stories')
+        if item.source == 'header':
+            if item.kind in ('header', 'footer'):
+                if (type(item.section) is not int or item.section < 1 or
+                        item.variant not in ('even', 'odd', 'first')):
+                    raise InvalidDocumentError('invalid header identity')
+                offset = {('header', 'even'): 0, ('header', 'odd'): 1,
+                          ('footer', 'even'): 2, ('footer', 'odd'): 3,
+                          ('header', 'first'): 4, ('footer', 'first'): 5}[item.kind, item.variant]
+                if item.ordinal != 7 + (item.section - 1) * 6 + offset:
+                    raise InvalidDocumentError('inconsistent header slot identity')
+                key = item.kind, item.variant
+                expected = effective_headers.get(key) if empty else None
+                if item.inherited_from != expected:
+                    raise InvalidDocumentError('inconsistent header inheritance')
+                if not empty:
+                    effective_headers[key] = item.ordinal
+            elif item.kind in ('footnote_separator', 'endnote_separator'):
+                if item.section is not None or item.variant not in (
+                        'separator', 'continuation_separator', 'continuation_notice'):
+                    raise InvalidDocumentError('invalid separator identity')
+                offset = ('separator', 'continuation_separator', 'continuation_notice').index(item.variant)
+                if item.ordinal != 1 + offset + 3 * (item.kind == 'endnote_separator'):
+                    raise InvalidDocumentError('inconsistent separator slot identity')
+            else:
+                raise InvalidDocumentError('invalid header story kind')
+        elif (empty or item.kind != 'textbox' or item.variant is not None or
+              item.section is not None or item.inherited_from is not None):
+            raise InvalidDocumentError('invalid textbox identity')
+        if item.inherited_from is not None:
+            target = seen.get((item.source, item.inherited_from)) if type(item.inherited_from) is int else None
+            if (target is None or item.kind not in ('header', 'footer') or
+                    target.kind != item.kind or target.variant != item.variant or
+                    target.section >= item.section or target.source_start == target.source_end or
+                    item.source_start != item.source_end or item.block_start != item.block_end):
+                raise InvalidDocumentError('invalid inherited header reference')
+        body_ends[story] = item.block_end
+        previous[item.source] = item
+        seen[item.source, item.ordinal] = item

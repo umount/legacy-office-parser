@@ -16,6 +16,7 @@ import struct
 from .diagnostics import diagnostic_warning
 from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
+from ._doc_headers import decode_header_ranges
 from ._doc_notes import decode_note_ranges
 from ._doc_comments import decode_comments
 from ._doc_table import FrameIdentity, TableIdentity, apply_table, frame_change
@@ -24,7 +25,7 @@ from ._doc_styles import Styles, character_ops, outline_level, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
-from .models import (Cell, Document, Paragraph, Table, Note, NoteBodyRange,
+from .models import (AuxiliaryStory, Cell, Document, Paragraph, Table, Note, NoteBodyRange,
                      Comment, CommentBodyRange)
 
 
@@ -262,12 +263,14 @@ class _Doc:
         # its predecessor's section mark. Other U+000C characters are page
         # breaks. SEDs are 12 bytes; section layout (SEPX) is not needed here.
         plc = self.table_part(6)  # FibRgFcLcb97.fcPlcfSed
+        self.section_count = None
         self.section_ends = set()
         if not plc:
             return
         if len(plc) < 4 or (len(plc) - 4) % 16:
             raise InvalidDocumentError('invalid DOC section PLC size')
         count = (len(plc) - 4) // 16
+        self.section_count = count
         self.budget.record(count)  # Bound traversal and the set before allocation.
         previous = -1
         for i in range(count + 1):
@@ -1036,7 +1039,63 @@ class _Doc:
                     note.visibility.append('unknown')
                 self.warn(diagnostic_warning('doc_some_note_comment_references_could_not_be_linked_to', 'Some note/comment references could not be linked to an output paragraph or cell.'))
 
+    def _parse_headers(self, start, count, stories, structured_stories):
+        plc = self.table_part(11)
+        source = memoryview(self.text)[start * 2:(start + count) * 2]
+        ranges = decode_header_ranges(plc, source, self.limits, self.section_count,
+                                      record=self.budget.record, warn=self.warn)
+        if ranges is None:
+            return False
+        blocks = stories.setdefault('headers_footers', [])
+        effective = {}
+
+        def append_span(begin, end):
+            if begin == end:
+                return
+            assembler = _Tables(self, blocks)
+            for text, cp, mark in self.paragraphs(start + begin, end - begin):
+                assembler.add(text, mark, self.properties(cp))
+            assembler.finish()
+            self._end_fields()
+
+        cursor = 0
+        for item in ranges:
+            # Keep guards in the legacy projection, but never assign them to
+            # a source body or clone text for an inherited section variant.
+            append_span(cursor, item.start)
+            block_start = len(blocks)
+            content_end = item.end
+            slot_end = _u32(plc, item.ordinal * 4)
+            if (item.end > item.start and item.section is None and
+                    source[(item.end - 1) * 2:item.end * 2] != b'\r\0'):
+                # Separator contents need not be whole paragraphs. Their guard
+                # closes that paragraph without adding content or a warning.
+                content_end = slot_end
+            append_span(item.start, content_end)
+            inherited = None
+            if item.kind in ('header', 'footer'):
+                key = item.kind, item.variant
+                if item.start == item.end:
+                    inherited = effective.get(key)
+                else:
+                    effective[key] = item.ordinal
+            self.budget.record()
+            self.document.auxiliary_stories.append(AuxiliaryStory(
+                source='header', ordinal=item.ordinal, story='headers_footers',
+                block_start=block_start, block_end=len(blocks),
+                source_start=item.start, source_end=item.end, kind=item.kind,
+                variant=item.variant, section=item.section, inherited_from=inherited,
+            ))
+            append_span(content_end, slot_end)
+            cursor = slot_end
+        append_span(cursor, count)
+        structured_stories.add('headers_footers')
+        return True
+
     def parse(self):
+        if not self.counts[2] and self.table_part(11):
+            decode_header_ranges(self.table_part(11), b'', self.limits,
+                                 self.section_count, record=self.budget.record, warn=self.warn)
         self._prepare_notes()
         self._prepare_comments()
         assembler = _Tables(self)
@@ -1051,6 +1110,8 @@ class _Doc:
             if count:
                 if index == 3:
                     self._parse_comments(start)
+                elif index == 2 and self._parse_headers(start, count, stories, note_stories):
+                    pass
                 else:
                     attr = {1: 'footnotes', 2: 'headers_footers', 4: 'endnotes',
                             5: 'textboxes', 6: 'textboxes'}[index]
@@ -1063,12 +1124,15 @@ class _Doc:
                         # projection, but never to the last discrete note.
                         ranges.append((count - 1, count))
                     textbox_plc = b''
+                    textbox_ordinals = []
                     if index in (5, 6):
                         textbox_plc = self.table_part(56 if index == 5 else 58)
-                        ranges = live_textbox_ranges(
-                            textbox_plc, count, self.limits,
+                        entries = live_textbox_ranges(
+                            textbox_plc, count, self.limits, include_ordinals=True,
                             record=self.budget.record, warn=self.warn,
                         )
+                        textbox_ordinals = [entry[0] for entry in entries]
+                        ranges = [(entry[1], entry[2]) for entry in entries]
                     for range_index, (begin, end) in enumerate(ranges):
                         if textbox_plc and self.text[(start + end - 1) * 2:(start + end) * 2] != b'\r\0':
                             raise InvalidDocumentError('DOC live textbox has no final paragraph mark')
@@ -1078,6 +1142,15 @@ class _Doc:
                             assembler.add(text, mark, self.properties(cp))
                         assembler.finish()
                         self._end_fields()
+                        if textbox_ordinals and textbox_ordinals[range_index]:
+                            self.budget.record()
+                            self.document.auxiliary_stories.append(AuxiliaryStory(
+                                source='main_textbox' if index == 5 else 'header_textbox',
+                                ordinal=textbox_ordinals[range_index], story=attr,
+                                block_start=block_start, block_end=len(blocks),
+                                source_start=begin, source_end=end, kind='textbox',
+                            ))
+                            note_stories.add(attr)
                         if source_notes is not None and range_index < len(source_notes):
                             source = source_notes[range_index]
                             self.budget.record()
@@ -1089,8 +1162,10 @@ class _Doc:
                                 body=NoteBodyRange(attr, block_start, len(blocks)),
                             ))
                             note_stories.add(attr)
-                    if index in (2, 5, 6):
+                    if index == 2:
                         self.warn(diagnostic_warning('doc_header_variants_and_textbox_placement_are_not_modeled', 'Header variants and textbox placement are not modeled.'))
+                    elif index in (5, 6):
+                        self.warn(diagnostic_warning('doc_textbox_placement_unmodeled', 'Textbox source ranges are retained when proven; drawing relationships and page placement are not modeled.'))
                 self._end_fields()
             start += count
         for attr, blocks in stories.items():

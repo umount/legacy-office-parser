@@ -30,10 +30,15 @@ def live_textbox_ranges(
     story_count: int,
     limits: Limits,
     *,
+    include_ordinals: bool = False,
     record: Callable[[int], None] | None = None,
     warn: Callable[[str], None] = warnings.warn,
-) -> list[tuple[int, int]]:
+) -> list[tuple[int, int]] | list[tuple[int, int, int]]:
     """Return live half-open CP ranges relative to the selected subdocument.
+
+    With ``include_ordinals=True``, return (one-based PLC ordinal, start, end).
+    Ordinal zero marks the unverified absent-PLC fallback. Reusable records leave
+    gaps; ordinals are not shape IDs or output positions.
 
     Pass ``record=budget.record`` to charge all FTXBXS records (including
     reserved records) against the document-wide budget before iteration.
@@ -52,7 +57,7 @@ def live_textbox_ranges(
         if story_count:
             warn(diagnostic_warning('doc_textbox_plc_is_absent_active_ranges_cannot_be_verified', 'Textbox PLC is absent; active ranges cannot be verified. '
                  'The full textbox story is retained and may include reserved text.'))
-            return [(0, story_count)]
+            return [(0, 0, story_count)] if include_ordinals else [(0, story_count)]
         return []
     if len(plc) < 4 or (len(plc) - 4) % 26:
         raise InvalidDocumentError('invalid DOC textbox PLC size')
@@ -92,6 +97,6 @@ def live_textbox_ranges(
             else:
                 if end - start <= 1:
                     raise InvalidDocumentError('invalid DOC live textbox range')
-                ranges.append((start, end))
+                ranges.append((i + 1, start, end) if include_ordinals else (start, end))
         start = end
     return ranges

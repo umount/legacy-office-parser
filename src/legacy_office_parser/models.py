@@ -132,6 +132,22 @@ class Comment:
 
 
 @dataclass(slots=True)
+class AuxiliaryStory:
+    """One source-owned DOC header/footer or live textbox body, without layout."""
+    source: Literal['header', 'main_textbox', 'header_textbox']
+    ordinal: int
+    story: Literal['headers_footers', 'textboxes']
+    block_start: int
+    block_end: int
+    source_start: int
+    source_end: int
+    kind: Literal['header', 'footer', 'footnote_separator', 'endnote_separator', 'textbox']
+    variant: str | None = None
+    section: int | None = None
+    inherited_from: int | None = None
+
+
+@dataclass(slots=True)
 class Document:
     format: Literal['doc', 'xls', 'ppt', 'rtf', 'odt', 'ods', 'odp']
     blocks: list[Block] = field(default_factory=list)
@@ -149,6 +165,7 @@ class Document:
     notes: list[Note] = field(default_factory=list)
     comments: list[Comment] = field(default_factory=list)
     comment_text: str = ''
+    auxiliary_stories: list[AuxiliaryStory] = field(default_factory=list)
 
     @property
     def text(self) -> str:

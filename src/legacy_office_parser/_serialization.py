@@ -31,6 +31,8 @@ def _omit_defaults(result):
     if 'drawings' in result and not result['drawings']:
         result.pop('drawings')
     if 'format' in result:
+        if not result.get('auxiliary_stories'):
+            result.pop('auxiliary_stories', None)
         if not result.get('story_blocks'):
             result.pop('story_blocks', None)
         if not result.get('notes'):

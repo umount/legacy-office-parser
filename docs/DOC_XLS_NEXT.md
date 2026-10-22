@@ -21,3 +21,7 @@ separately; no private files are published here.
 The remaining coverage register is authoritative about exclusions. A completed
 subset is not arbitrary-document rendering parity. Macro execution, external
 resource access and conversion to OOXML are outside this work.
+
+## Progress
+
+- DOC auxiliary identities implemented; public corpus plain text unchanged.

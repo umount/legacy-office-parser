@@ -56,6 +56,9 @@ def _legacy_dict(obj):
         if 'drawings' in result and not result['drawings']:
             result.pop('drawings')
         if 'format' in result:
+            # Empty additive metadata retains the pre-extension JSON shape.
+            if not result.get('auxiliary_stories'):
+                result.pop('auxiliary_stories', None)
             if not result.get('story_blocks'):
                 result.pop('story_blocks', None)
             if not result.get('notes'):

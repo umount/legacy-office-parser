@@ -33,7 +33,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.23.0**. The package version is available as
+This reference describes package **0.24.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -63,6 +63,8 @@ behavior changes; neither “patch” nor “unchanged fields” establishes tha
 results remain equivalent. Changes to defaults must be recorded explicitly.
 
 Recent output history:
+
+- **0.24.0:** DOC auxiliary-story identities and validated header inheritance.
 
 - **0.23.0:** supported inherited/stored visibility filtering, optional
   display-text normalization, coded diagnostics, ODF templates and individual
@@ -143,6 +145,8 @@ The document fields are:
   Source CPs and structural reference anchors are currently available only for DOC.
 - `comments: list[Comment]`: document comment metadata, currently from DOC.
 - `comment_text: str`: combined DOC comment-body projection; default `""`.
+- `auxiliary_stories: list[AuxiliaryStory]`: proven DOC header/footer and textbox
+  body identities; empty lists are omitted. See the auxiliary-story contract below.
 
 JSON always retains `blocks`, `slides`, `sheets`, `warnings`, and the four core
 auxiliary strings, including when empty. It omits empty `story_blocks`, `notes`,
@@ -390,6 +394,44 @@ cell at `blocks[0]`:
   "visibility": []
 }
 ```
+
+## DOC auxiliary-story identities (0.24)
+
+`Document.auxiliary_stories` contains `AuxiliaryStory` records for proven DOC
+header/footer slots and live textbox ranges. The empty list is omitted from JSON.
+Text stays in the existing pooled strings and `story_blocks`; metadata must not
+be appended again to a text projection.
+
+- `source`: `header`, `main_textbox` or `header_textbox`. Textbox source does not
+  identify a drawing, page, or particular header slot.
+- `ordinal`: one-based slot/record position in that source PLC. Reusable textbox
+  records leave gaps. Ordinals are not printed numbers or shape IDs.
+- `story`: `headers_footers` or `textboxes`.
+- `block_start`, `block_end`: zero-based half-open range into that story's blocks.
+- `source_start`, `source_end`: half-open UTF-16 CPs relative to the named source
+  subdocument, not offsets into normalized text. Header guard marks are excluded.
+- `kind`: `header`, `footer`, `footnote_separator`, `endnote_separator` or `textbox`.
+- `variant`: `even`, `odd`, `first` for headers/footers; `separator`,
+  `continuation_separator`, `continuation_notice` for separators; null for textboxes.
+- `section`: one-based source section for headers/footers, otherwise null.
+- `inherited_from`: source ordinal of the prior retained body used by an empty
+  header/footer slot, otherwise null. The reference resolves to a nonempty source
+  range of the same kind/variant; body text is not copied. A first-section absent
+  variant has an empty range and no reference. An explicitly empty paragraph is a
+  present body and overrides inheritance.
+
+Header identities require validated section and header PLCs. Missing metadata
+retains the pooled text with a diagnostic, without guessed identities. A present
+malformed PLC raises `InvalidDocumentError`; limits are never bypassed by fallback.
+Header/page-selection flags and layout are not interpreted: a stored variant is
+not proof that it appears on a rendered page. The legacy pooled projection retains
+its guard/separator whitespace; body ranges exclude guard-only blocks.
+
+Retained body blocks, their pooled projections, and identity records consume the
+existing budgets. Normalization preserves identities/source coordinates while
+normalizing display text. Textbox CPs include the stored final paragraph mark;
+reserved and reusable ranges have no bodies. Absent textbox PLCs retain their
+existing unverified whole-story fallback without source identity records.
 
 ## Plain-text projection and interpretation
 

@@ -145,3 +145,9 @@ Warning messages are not source locations or severity classifications. No code i
 - `xls_non_worksheet_sheets_omitted_charts_macros_vb_modules`: Non-worksheet sheets omitted (charts/macros/VB modules).
 - `xls_unrepresentable_excel_date_including_serial_60_raw_numeric_value`: Unrepresentable Excel date (including serial 60): raw numeric value retained.
 - `xls_unsupported_or_ambiguous_date_number_format_raw_numeric_value`: Unsupported or ambiguous date/number format: raw numeric value retained.
+
+## DOC auxiliary-story diagnostics
+
+- `doc_header_plc_missing`: Header PLC is absent; retain the whole story without source identities.
+- `doc_header_section_count_missing`: Validated section count is absent; retain the whole header story without source identities.
+- `doc_textbox_placement_unmodeled`: Textbox source ranges are retained when proven; drawing relationships and page placement are not modeled.
