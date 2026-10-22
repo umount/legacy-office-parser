@@ -837,80 +837,31 @@ class _Parser:
                 else:
                     self.sink.end_row()
 
-    def parse(self, data: bytes, start: int) -> Document:
-        closed = False
-        for kind, value, number in _tokens(data, start, self.limits):
-            if closed:
-                if kind == 'bytes' and all(b in b' \t\r\n' for b in value):
-                    continue
-                raise InvalidDocumentError('Data after RTF root group')
-            if self.wordart is not None:
-                candidate = self.wordart
-                candidate.token(kind, value, number, len(self.stack))
-                if kind == 'close' and len(self.stack) == candidate.depth:
-                    text = candidate.text()
-                    self.wordart = None
-                    if text:
-                        sink = _Sink(self, 'textboxes')
-                        sink.text(text)
-                        sink.finish()
-                        self.sinks.append(sink)
-                    elif text is None and candidate.attempted:
-                        self.warn('Unsupported or disabled WordArt property text omitted.')
-            if kind == 'bytes':
-                self.state.first = False
-                self.byte_text(value)
-                continue
-            self.flush()
-            if kind == 'open':
-                self.fallback = 0
-                if len(self.stack) >= self.limits.max_depth:
-                    raise LimitExceededError('RTF group depth limit exceeded')
-                parent = self.state
-                parent.children += 1
-                self.stack.append(parent)
-                self.state = replace(parent, first=True, starred=False, upr=False, children=0)
-                if parent.upr and parent.children == 1:
-                    self.state.skip = True
-                elif parent.upr and parent.children > 2:
-                    self.state.skip = True
-            elif kind == 'close':
-                self.fallback = 0
-                if not self.stack:
-                    raise InvalidDocumentError('Unbalanced RTF closing group')
-                parent = self.stack.pop()
-                if parent.target != self.state.target:
-                    self.high_end()
-                    self.sinks[self.state.target].finish()
-                self.state = parent
-                if not self.stack:
-                    closed = True
-            elif self.fallback:
-                # One control word/symbol or an entire bin token is one fallback
-                # character. Its semantic side effects must not be applied.
-                self.fallback -= 1
-            elif kind == 'binary':
-                if self.visible():
-                    self.warn('Binary payload omitted.')
-            elif kind == 'symbol':
-                if value == '*':
-                    self.state.starred = True
-                else:
-                    self.state.first = False
-                    if value in {'\r', '\n'}:
-                        if self.visible():
-                            self.high_end()
-                            self.sink.paragraph(force=True)
-                    else:
-                        self.emit({'~': '\xa0', '-': '\xad', '_': '\u2011'}.get(value, ''))
-            else:
-                self.word(value, number)
-        if not closed or self.stack:
-            raise InvalidDocumentError('Unclosed RTF group')
-        self.flush()
-        self.high_end()
-        self.sinks[0].finish()
-        self.document.blocks = self.sinks[0].blocks
+    def _enter_group(self):
+        self.fallback = 0
+        if len(self.stack) >= self.limits.max_depth:
+            raise LimitExceededError('RTF group depth limit exceeded')
+        parent = self.state
+        parent.children += 1
+        self.stack.append(parent)
+        self.state = replace(parent, first=True, starred=False, upr=False, children=0)
+        if parent.upr and parent.children == 1:
+            self.state.skip = True
+        elif parent.upr and parent.children > 2:
+            self.state.skip = True
+
+    def _exit_group(self) -> bool:
+        self.fallback = 0
+        if not self.stack:
+            raise InvalidDocumentError('Unbalanced RTF closing group')
+        parent = self.stack.pop()
+        if parent.target != self.state.target:
+            self.high_end()
+            self.sinks[self.state.target].finish()
+        self.state = parent
+        return not self.stack
+
+    def _finalize_auxiliary_stories(self):
         extras: dict[str, list[str]] = {}
         structured = {sink.story for sink in self.sinks[1:]
                       if any(isinstance(block, Table) for block in sink.blocks)}
@@ -939,6 +890,63 @@ class _Parser:
                 # Both the retained blocks and their aggregate string count.
                 self.charge(len(text))
             setattr(self.document, story, text)
+
+    def parse(self, data: bytes, start: int) -> Document:
+        closed = False
+        for kind, value, number in _tokens(data, start, self.limits):
+            if closed:
+                if kind == 'bytes' and all(b in b' \t\r\n' for b in value):
+                    continue
+                raise InvalidDocumentError('Data after RTF root group')
+            if self.wordart is not None:
+                candidate = self.wordart
+                candidate.token(kind, value, number, len(self.stack))
+                if kind == 'close' and len(self.stack) == candidate.depth:
+                    text = candidate.text()
+                    self.wordart = None
+                    if text:
+                        sink = _Sink(self, 'textboxes')
+                        sink.text(text)
+                        sink.finish()
+                        self.sinks.append(sink)
+                    elif text is None and candidate.attempted:
+                        self.warn('Unsupported or disabled WordArt property text omitted.')
+            if kind == 'bytes':
+                self.state.first = False
+                self.byte_text(value)
+                continue
+            self.flush()
+            if kind == 'open':
+                self._enter_group()
+            elif kind == 'close':
+                closed = self._exit_group()
+            elif self.fallback:
+                # One control word/symbol or an entire bin token is one fallback
+                # character. Its semantic side effects must not be applied.
+                self.fallback -= 1
+            elif kind == 'binary':
+                if self.visible():
+                    self.warn('Binary payload omitted.')
+            elif kind == 'symbol':
+                if value == '*':
+                    self.state.starred = True
+                else:
+                    self.state.first = False
+                    if value in {'\r', '\n'}:
+                        if self.visible():
+                            self.high_end()
+                            self.sink.paragraph(force=True)
+                    else:
+                        self.emit({'~': '\xa0', '-': '\xad', '_': '\u2011'}.get(value, ''))
+            else:
+                self.word(value, number)
+        if not closed or self.stack:
+            raise InvalidDocumentError('Unclosed RTF group')
+        self.flush()
+        self.high_end()
+        self.sinks[0].finish()
+        self.document.blocks = self.sinks[0].blocks
+        self._finalize_auxiliary_stories()
         if self.has_nested:
             # Bound the public text projection too, without allocating it. The
             # retained parent/child strings were already charged while built.
