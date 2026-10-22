@@ -61,6 +61,16 @@ def main():
     assert table.rows[0][0].blocks[0].heading_level == 2
     assert any(b.kind == 'paragraph' and b.heading_level == 2
                for b in headings.story_blocks['headers_footers'])
+    for filename in ('authored.odt', 'explicit.rtf'):
+        document = parse(args.fixtures / 'paragraph_headings' / filename)
+        levels = {b.text: b.heading_level for b in document.blocks if b.kind == 'paragraph'}
+        assert levels['Heading one specimen'] == 1
+        assert levels['Heading two specimen'] == 2
+        assert levels['Direct body override specimen'] is None
+        table = next(b for b in document.blocks if b.kind == 'table')
+        assert table.rows[0][0].blocks[0].heading_level == 2
+        assert any(b.kind == 'paragraph' and b.heading_level == 2
+                   for b in document.story_blocks['headers_footers'])
     terminated = parse(br'{\rtf1 Original}' + b'\0')
     assert terminated.text == 'Original'
     assert terminated.warnings == ['A single terminal NUL after the RTF root was ignored.']

@@ -1,0 +1,34 @@
+{
+  "provenance": "Original synthetic sources only; no private files.",
+  "converter": "LibreOffice 7.4.7.2 40(Build:2)",
+  "files": {
+    "tests/fixtures/doc_headings/authored.docx": {
+      "sha256": "a7b4ccde08e4f86d938689f7e1144ef884433f821aa7a0728929424a46195b1a",
+      "bytes": 1947
+    },
+    "tests/fixtures/paragraph_headings/authored.rtf": {
+      "sha256": "c677712d279bd28818bbd184af9ec722c2db974b57b5f70088e54048b84b41d6",
+      "bytes": 3511
+    },
+    "tests/fixtures/paragraph_headings/explicit.rtf": {
+      "sha256": "bb5fe2e910fc9aa2909c7c245cebddee9b89ecedc236270ba7530c9a176af4cc",
+      "bytes": 762
+    },
+    "tests/fixtures/paragraph_headings/authored.odt": {
+      "sha256": "152f0c91d77fd5c886eb7db566cd6657f9b204a1643e175eaa83d48c1edc39a6",
+      "bytes": 12430
+    },
+    "tests/fixtures/paragraph_headings/readback/explicit/explicit.docx": {
+      "sha256": "0d6c93683d2016e58aa82ea1abba6053c0e8f04b7a8c25ed133f0fc73f2d0d37",
+      "bytes": 5261
+    },
+    "tests/fixtures/paragraph_headings/readback/odt/authored.docx": {
+      "sha256": "e0d98baa996be7dde44dbb5425ffb525cda491e87587117d7be9761ebd423db6",
+      "bytes": 5919
+    },
+    "tests/fixtures/paragraph_headings/readback/rtf/authored.docx": {
+      "sha256": "cc4a6b36253a91e90a997f3c280c3090a8bb3504f9bd53b4e05b196a02262b86",
+      "bytes": 5153
+    }
+  }
+}
