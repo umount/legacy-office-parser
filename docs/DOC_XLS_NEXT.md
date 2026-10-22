@@ -30,3 +30,5 @@ resource access and conversion to OOXML are outside this work.
   malformed outer row terminators cannot establish condition context.
 - XLS bounded variable-denominator fractions and nonintegral optional-decimal
   displays implemented with preserved-source reference comparisons.
+- Independent reviews, full regression suite, preserved-source reference checks
+  and mutation/resource sampling complete. See TESTING.md for evidence.

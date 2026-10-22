@@ -361,3 +361,10 @@ individual note bodies and bounded XLS fraction formats. It also verifies deep
 serialization and process isolation. Remaining format coverage is tracked in
 [EXTRACTION_GAPS.md](EXTRACTION_GAPS.md); a completed iteration does not mean
 universal rendering parity.
+
+## DOC identities and XLS displays (0.24)
+
+See [DOC_XLS_NEXT.md](DOC_XLS_NEXT.md) for the next ordered iteration and
+[EXTRACTION_GAPS.md](EXTRACTION_GAPS.md) for the retained limits. Source identities
+and numeric displays are supported only with validated ownership and independent
+expected results.

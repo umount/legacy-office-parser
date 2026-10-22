@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register for development after 0.22. Each item requires a verified example, independent
+Working register for 0.24. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -102,7 +102,7 @@ does not establish completeness.
   with raw typed values retained. Thirteen preserved-XLS cells match the
   independent LibreOffice CSV oracle. Fraction formatting remains deferred.
 
-## Implemented after 0.22
+## Completed in 0.23
 
 - Supported inherited RTF visibility and stored ODF paragraph/style/section
   visibility; conditional rendering and complete revision histories remain out
@@ -137,16 +137,35 @@ does not establish completeness.
 - Documented structured XLS row assembly and consumer-owned DOC heading paths.
   These adapter policies do not change the library's flat-text projection.
 
+## Completed in 0.24
+
+- DOC: source-owned header/footer slots with section/variant identity, empty-slot
+  inheritance and live main/header textbox ranges. No drawing/page anchors are
+  inferred. Legacy pooled text stays available without inherited text copies.
+- DOC: exact selections of complete outer table rows, including fully closed
+  nested tables; partial rows and mixed text/table spans still require proof.
+- DOC: row-only conditional visibility on unequal grids and horizontal merges
+  with empty continuation cells. Unknown columns, vertical spans and malformed
+  row terminators cannot establish this additional condition context.
+- XLS: exact variable-fraction masks/built-ins 12/13 recognize bounded rationals
+  whose binary64 encoding equals the stored value, including repeating fractions.
+  General approximation and other placeholder/layout masks remain unsupported.
+- XLS: all-optional decimal cores retain nonintegral rounded results; integral
+  zero/carry results, scaling/percent/currency combinations retain fallback.
+- DOC: decoded UTF-16 uses source-character limits separately from OLE input-byte
+  limits, including compressed notes and comments.
+
 ## Next areas to verify
 
-- DOC: header/footer and frame identities; ink and complex
-  source selections crossing cells, rows, sections or other unproven boundaries.
+- DOC: page/header-selection flags, drawing/frame associations and ink;
+  partial-row, inner-row-only, mixed text/table and cross-section selections.
 - DOC: remaining conditional table styles and explicit geometry that does not
   require page layout.
 - PPT: text in extensions and embedded passive documents; agreement with a
   converted presentation does not substitute for understanding unknown constructs.
-- XLS: general localization, variable-denominator/alignment fraction formats, conditional hiding and wider
-  text-section formats. Hidden values must remain available in typed data.
+- XLS: general localization, approximate fractions and wider alignment masks,
+  negative conditional displays, integral optional-decimal results, conditional
+  hiding and wider text-section formats. Hidden values must remain available in typed data.
 - RTF: legacy shape text without primary shptxt; safe selection between primary
   and fallback representations without duplication.
 - ODF: passive text in embedded objects and extensions where the format defines

@@ -725,3 +725,30 @@ The wheel and source distribution are built locally. An isolated installed-wheel
 smoke test checks all seven formats and the new normalization/note APIs. Package
 contents are checked against tracked source, tests, tools and documentation;
 private corpus files and temporary directories are excluded.
+
+## DOC identities and XLS display subsets (0.24.0)
+
+The complete suite passes **6,437 tests**, with **71 optional skips**; Ruff passes.
+DOC coverage includes section/variant identities, explicit-empty versus inherited
+headers, body/guard boundaries, live textbox source ordinals, source CP limits,
+complete-row comment selections, and row-only conditions on unequal grids.
+Negative cases cover malformed row terminators and source/metadata budget bounds.
+Independent reviews exercise inheritance, fields/table isolation, unknown source
+ownership, and compressed-story expansion without confusing input bytes and CPs.
+
+The authored DOC heading reference passes all seven tests with live LibreOffice.
+XLS preserved-source oracles pass **50** variable-fraction cases and **28**
+optional-decimal cases. Both verify original BIFF FORMAT/XF ownership and unchanged
+input bytes. They run in the existing reference CI job. Neither oracle generates
+expected text from the production parser or silently resaves the target masks.
+
+All **7,800** deterministic public-fixture mutations and **12** bounded resource
+cases pass. All **78** public fixtures parse with unchanged plain-text hashes
+versus 0.23.0. Structured output can gain auxiliary identities and diagnostics.
+Private integration-corpus testing is separate and is not claimed by this run.
+
+Built wheel/source contents match the checked source. An isolated installed-wheel
+smoke check covers all seven format families, auxiliary identities, normalization
+and the new numeric display functions. These checks do not establish universal
+format fidelity; approximation, locale, geometry and selection exclusions remain
+listed in EXTRACTION_GAPS.md and the feature research documents.

@@ -31,10 +31,10 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.23.0 adds supported stored visibility, explicit text cleanup,
-coded diagnostics, ODF templates, individual RTF/ODT note bodies, and a bounded
-XLS fraction-format subset. The published `v0.22.0` remains unchanged. Full
-compatibility with arbitrary documents has not been established; see
+Version 0.24.0 adds proven DOC header/footer and textbox identities, complete-row
+comment selections, additional row-only table visibility, and bounded XLS display
+formats. It preserves typed values and explicit fallbacks for unverified cases.
+Full compatibility with arbitrary documents has not been established; see
 [coverage and limitations](docs/TESTING.md).
 
 - DOC 97–2003: paragraphs, nested tables and merges; separate text stories and
@@ -178,6 +178,7 @@ remain in their original languages.
 - [Explicit text normalization](docs/NORMALIZATION.md)
 - [Stable diagnostic codes](docs/DIAGNOSTICS.md)
 - [Development sequence](docs/NEXT_STEPS.md)
+- [DOC and XLS iteration](docs/DOC_XLS_NEXT.md)
 - [Output format: Python and JSON contract](docs/OUTPUT_FORMAT.md)
 - [Structured integration guide](docs/INTEGRATION.md)
 - [Achievements and alternatives](docs/COMPARISON.md)

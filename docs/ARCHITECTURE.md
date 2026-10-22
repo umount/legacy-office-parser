@@ -191,3 +191,18 @@ RTF and ODT retain individual note bodies as ranges into their structured storie
 including empty visible bodies. They do not invent source CPs or reference
 anchors. Repeated ODT bodies consume structure and projection budgets before
 materialization. DOC retains its existing source-reference model.
+
+## DOC source identities
+
+Validated header slots and live textbox PLC records produce `AuxiliaryStory`
+metadata referencing existing story blocks. Header inheritance references an
+earlier source ordinal rather than cloning text. Guard marks stay in the legacy
+projection but are outside body ranges. Source coordinates remain relative UTF-16
+positions, independent of display normalization. Unknown drawing/page ownership
+is not inferred.
+
+Comment selection checks use source paragraph boundaries. A lazily built bounded
+index proves complete outer rows, including fully closed nested tables, without
+rescanning each overlapping comment. Conditional table visibility separately
+proves row-only conditions on nonrectangular/horizontally merged grids; unsafe
+column ownership retains fallback.

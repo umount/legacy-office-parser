@@ -83,6 +83,14 @@ def main():
     assert len(note.notes) == 1 and note.notes[0].source_cp is None
     assert note.notes[0].body.block_end == 2
     assert [p.text for p in note.story_blocks['footnotes']] == ['first', 'second']
+    header = next(a for a in headings.auxiliary_stories
+                  if a.source == 'header' and a.kind == 'header' and a.variant == 'odd')
+    assert (header.ordinal, header.section) == (8, 1)
+    assert headings.story_blocks[header.story][header.block_start].text == 'Header heading specimen'
+    from legacy_office_parser._xls_formats import render_number
+    assert render_number(1 / 3, '# ?/?') == ' 1/3'
+    assert render_number(1.23, '0.##') == '1.23'
+    assert render_number(1.0, '0.##') is None
     print('Installed wheel: seven formats and DOC/XLS/RTF feature regressions passed')
 
 
