@@ -1,6 +1,6 @@
 # Testing
 
-For current 0.20 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
+For current 0.22 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
 For achievements and comparisons with other libraries and LibreOffice, see
 [Comparison](COMPARISON.md). Version-specific results below are historical snapshots.
 
@@ -657,3 +657,28 @@ layouts and main/header integration cases; live endpoints stay story-bounded,
 and reserved or reusable text stays excluded. Bounded local LibreOffice readback
 confirmed the affected live textbox content after whitespace normalization.
 The final CP domain boundary is covered explicitly. Sampling is not exhaustive.
+
+## RTF and ODT heading metadata (0.22.0)
+
+The full suite passes **5,048 tests**, with **68 optional skips**; Ruff passes.
+All **75** pre-existing public fixture JSON results remain unchanged. The three
+new original heading fixtures have separate independent source/readback and
+parser-policy expectations; all three live LibreOffice 7.4 readbacks pass. See
+[RTF/ODT heading evidence](research-rtf-odt-headings.md).
+
+**7,800** deterministic mutations over the expanded 78-fixture corpus produced
+no unexpected exceptions. All **12** bounded resource checks pass. Independent
+RTF regressions cover suppressed style metadata, consecutive empty cells and
+implicit nested-table boundaries. ODT regressions cover invalid and unsupported
+levels across body, cells and stories, including very long numeric attributes.
+
+The same local 47-file corpus, with the documented 500,000-record/128 MiB
+classification profile, still produces 46 documents and one unsupported
+container. Plain-text hashes are unchanged for every successful document.
+Structured output adds 73 RTF and 37 ODT heading levels; RTF name inference is
+reported by a warning. These counts do not establish correctness of every
+heading or downstream chunk count. Private content remains outside the repository.
+
+The [output format reference](OUTPUT_FORMAT.md) documents all seven families and
+serialization omissions. Its four synthetic JSON examples match model validation
+and serialization.

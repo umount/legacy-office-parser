@@ -1,5 +1,6 @@
 # Integrating structured extraction
 
+The [output format reference](OUTPUT_FORMAT.md) defines the fields and omission rules.
 Use `Document.to_dict()` or the Python models when preparing rows and chunks for
 search or language models. `Document.text` is a convenient projection, but it
 does not preserve every distinction available in the structured result. Retain
@@ -82,10 +83,9 @@ to propagate a merged header's label, treat that as header policy and retain the
 original range. Do not duplicate merged data values into absent cells or infer
 merges from blank displays. Selection of hidden sheets is also adapter policy.
 
-## DOC: build heading paths from explicit paragraph metadata
+## Text documents: build heading paths from paragraph metadata
 
-`Paragraph.heading_level` is an integer from 1 through 9 for an explicitly
-identified heading, or `None` for an ordinary body paragraph. In JSON, body
+`Paragraph.heading_level` is an integer from 1 through 9 for an identified heading, or `None` for an ordinary body paragraph. In JSON, body
 paragraphs omit `heading_level`; read an absent key as `None`. Heading text stays
 in `text`, and `kind` remains `paragraph`. `heading_path` is adapter-generated
 metadata, not a field emitted by the parser.
@@ -103,7 +103,7 @@ level 2 heading replaces the level 3 entry. Keep level numbers separately when
 consumers need to distinguish a skipped level from a contiguous hierarchy.
 
 ```python
-def doc_main_blocks(document):
+def text_main_blocks(document):
     stack = []
     for block in document.get("blocks", []):
         if block["kind"] == "paragraph":
@@ -119,7 +119,7 @@ def doc_main_blocks(document):
         }
 ```
 
-Call this example for DOC main-story blocks. It deliberately treats a table as
+Call this example for DOC, RTF or ODT main-story blocks. It deliberately treats a table as
 one main-story block: the table receives the enclosing heading path, but headings
 inside its cells do not change the context for later main-story paragraphs.
 If traversing `Cell.blocks`, including nested tables, keep any heading stack
@@ -133,10 +133,14 @@ must not mutate the main stack. Story identity and source references should stay
 available even when text is chunked together. Avoid ingesting both a structured
 story and its equivalent combined string projection as separate content.
 
-This contract does not infer headings for other formats. Do not guess levels
+Heading metadata is supported for DOC, RTF and ODT paragraphs. This contract
+does not infer headings for spreadsheet cells or presentation slides. Do not guess levels
 from font size, boldness, numbering, capitalization, slide titles, or paragraph
-position. Missing DOC metadata is also not evidence of a heading. Preserve
-warnings and consult [DOC heading coverage](research-doc-headings.md).
+position. Missing metadata is also not evidence of a heading. Preserve
+warnings and consult [DOC heading coverage](research-doc-headings.md) and
+[RTF/ODT evidence](research-rtf-odt-headings.md). RTF can infer levels from exact
+built-in heading style names when outline metadata is absent; that fallback emits
+a warning and cannot recover an explicit body override lost by an upstream writer.
 
 ## Resource profiles for large documents
 

@@ -30,8 +30,8 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.21 adds explicit DOC paragraph heading levels for structured chunking,
-including inherited styles and headings inside cells and auxiliary stories. Full compatibility with arbitrary documents has not
+Version 0.22 adds RTF and ODT paragraph heading levels alongside DOC headings,
+including headings inside cells and auxiliary stories. Full compatibility with arbitrary documents has not
 yet been established; [coverage and limitations](docs/TESTING.md) are documented
 separately.
 
@@ -43,10 +43,10 @@ separately.
   unsupported.
 - PPT 97–2003: current slides, titles, text, WordArt, ordinary text from active
   masters, stored static dates/footers, notes and comments.
-- RTF: code pages and Unicode, paragraphs, tables with ordinary rectangular
+- RTF: code pages and Unicode, paragraph heading levels, tables with ordinary rectangular
   merges, nested tables, shape text, explicitly enabled Unicode WordArt and auxiliary text stories. Ambiguous merges
   produce warnings.
-- ODT: paragraphs, nested tables, notes, frames and headers/footers from selected
+- ODT: paragraphs and explicit heading levels, nested tables, notes, frames and headers/footers from selected
   master pages; ODS: sheets and cells; ODP: slides and notes.
 
 Macros, scripts, active objects and document commands are never executed.
@@ -147,11 +147,11 @@ CLI exit codes: 0 means a result was produced; 2 means an error; 3 with `--stric
 means the result contains warnings. Structure and text limits are enforced
 inside the parsers; the calling process sets the system memory limit and timeout.
 
-For adapters that build labeled spreadsheet rows or DOC heading paths, see the
+The [output format reference](docs/OUTPUT_FORMAT.md) defines the Python and JSON
+result, field meanings, omission rules and format-specific limitations.
+For adapters that build labeled spreadsheet rows or heading paths, see the
 [structured integration guide](docs/INTEGRATION.md). It covers sparse cells,
-repeated column labels, retained values, and story-local heading context. The
-new optional DOC heading metadata is currently in progress; the guide describes
-its integration contract without claiming completed validation.
+repeated column labels, retained values, and story-local heading context.
 
 ## Development
 
@@ -169,6 +169,7 @@ remain in their original languages.
 
 ## Documentation
 
+- [Output format: Python and JSON contract](docs/OUTPUT_FORMAT.md)
 - [Structured integration guide](docs/INTEGRATION.md)
 - [Achievements and alternatives](docs/COMPARISON.md)
 - [Plan and status](docs/PLAN.md)

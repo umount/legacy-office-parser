@@ -343,3 +343,11 @@ without weakening live text boundaries. Reproduce both with original synthetic
 regressions; private corpus files, names and content are not repository fixtures.
 Retain the default record budget and document explicit consumer resource profiles
 for large, structurally dense documents.
+
+### Text-document heading contract (0.22)
+
+Extend the shared paragraph model to RTF and ODT while preserving text, table
+ownership and story-local context. Validate explicit outline controls separately
+from RTF style-name inference; preserve independent reference-reader evidence
+when a writer loses source metadata. Document the complete Python/JSON output
+contract and omission rules in [OUTPUT_FORMAT.md](OUTPUT_FORMAT.md).

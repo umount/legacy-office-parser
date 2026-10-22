@@ -147,7 +147,11 @@ DOC text cleaning delegates note and comment reference observation separately,
 before field controls or visibility filtering. Neither extraction adds a second
 source scan or changes source-CP ownership and final anchor resolution.
 
-`Paragraph.heading_level` optionally carries an explicit DOC outline level 1–9.
+`Paragraph.heading_level` optionally carries a level 1–9 for DOC, RTF and ODT.
+RTF resolves direct and inherited outlines, with a warned fallback for exact
+built-in heading style names. ODT reads explicit `text:h` levels; plain `text:p`
+elements are not promoted from style names. Unrepresentable ODT levels retain
+text and produce a warning.
 The default `None` is omitted from JSON; plain text projection is unchanged.
 DOC resolves inherited outline operands in the bounded paragraph-style walk and
 applies fixed heading precedence to the selected paragraph style. Heading-bearing
@@ -169,3 +173,5 @@ subject to CP-domain and ordering validation; it never controls a text slice.
 The same rule applies to main and header textbox stories. See
 [MS-DOC FTXBXS](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/d0a81fe8-f9e8-4130-9233-84732e3d9420)
 and the [CP domain](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a3d44e16-7d29-46f7-bb7b-d0d8a5734f83).
+
+See the [output format reference](OUTPUT_FORMAT.md) for field and omission rules.

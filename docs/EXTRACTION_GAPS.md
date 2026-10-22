@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register after 0.21. Each item requires a verified example, independent
+Working register after 0.22. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -101,6 +101,16 @@ does not establish completeness.
 - XLS: quoted/escaped literal-only fourth text sections, including empty display,
   with raw typed values retained. Thirteen preserved-XLS cells match the
   independent LibreOffice CSV oracle. Fraction formatting remains deferred.
+
+## Completed in 0.22
+
+- RTF: direct and inherited outline levels, body overrides, and warned exact
+  built-in style-name fallback. Heading context stays local to cells and stories.
+- ODT: explicit `text:h` levels in paragraphs, cells and stories. Levels outside
+  the shared 1–9 range retain text with a warning; plain paragraphs are not
+  promoted by their styles.
+- Published [output contract](OUTPUT_FORMAT.md) and independent
+  [RTF/ODT heading evidence](research-rtf-odt-headings.md).
 
 ## Completed in 0.21
 
