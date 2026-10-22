@@ -653,6 +653,49 @@ class _Doc:
             self.warn('Symbol control code is retained literally, not interpreted as a DOC delimiter.')
         return chr(code)
 
+    def _observe_note_reference(self, cp, ch, props, *, fields, coverage_known,
+                                styles_present, table_known):
+        """Observe a note before field transitions, preserving its marker policy."""
+        flags = [name for name in ('hidden', 'deleted') if props.get(name)]
+        if props.get('field_hidden'):
+            flags.append('field_hidden')
+        if fields and not all(fields):
+            flags.append('field_instruction')
+        if not coverage_known or not styles_present or not table_known:
+            flags.append('unknown')
+        automatic = self.note_references[cp] == 'automatic'
+        if automatic and ch != '\x02':
+            raise InvalidDocumentError('DOC automatic note reference has no U+0002 marker')
+        if automatic and props.get('special') is not True:
+            if 'unknown' not in flags:
+                flags.append('unknown')
+            self.warn('Note reference CFSpec is not established; its output anchor is unresolved.')
+        else:
+            self.paragraph_anchors.append(cp)
+        self.note_visibility[cp] = flags
+
+    def _observe_comment_marker(self, cp, props, *, fields, coverage_known,
+                                styles_present, table_known):
+        """Observe body/reference markers without borrowing note marker policy."""
+        special = props.get('special')
+        if special is False or ('special' not in props and coverage_known):
+            raise InvalidDocumentError('DOC comment marker has CFSpec=false')
+        known = special is True
+        self.comment_marker_known[cp] = known
+        if not known:
+            self.warn('DOC comment marker CFSpec is unknown; its unproven body is omitted.')
+        if cp in self.comment_references:
+            flags = [name for name in ('hidden', 'deleted', 'field_hidden') if props.get(name)]
+            if fields and not all(fields):
+                flags.append('field_instruction')
+            if not coverage_known or not styles_present or not table_known:
+                flags.append('unknown')
+            self.note_visibility[cp] = flags
+            # CPs are unique in the scan. A custom note may already
+            # have appended this CP; dictionary membership is constant time.
+            if known and cp not in self.note_references:
+                self.paragraph_anchors.append(cp)
+
     def clean(self, start, end, mark_cp=None, *, table_hidden=False, table_known=True):
         paragraph_style = self.properties(end if mark_cp is None else mark_cp).style
         self.styles.hidden(paragraph_style, 1, table_hidden)  # Also validate empty paragraphs.
@@ -672,45 +715,20 @@ class _Doc:
         for ch in value:
             cp = next_cp
             next_cp += 2 if ord(ch) > 0xFFFF else 1
+            # Reference observation precedes field transitions and text filtering.
+            # Keep separate property lookups: each updates character coverage.
             if cp in self.note_references:
                 props = self._character_props(cp, paragraph_style, table_hidden)
-                flags = [name for name in ('hidden', 'deleted') if props.get(name)]
-                if props.get('field_hidden'):
-                    flags.append('field_hidden')
-                if self.fields and not all(self.fields):
-                    flags.append('field_instruction')
-                if not self.character_coverage_known or not self.styles.present or not table_known:
-                    flags.append('unknown')
-                automatic = self.note_references[cp] == 'automatic'
-                if automatic and ch != '\x02':
-                    raise InvalidDocumentError('DOC automatic note reference has no U+0002 marker')
-                if automatic and props.get('special') is not True:
-                    if 'unknown' not in flags:
-                        flags.append('unknown')
-                    self.warn('Note reference CFSpec is not established; its output anchor is unresolved.')
-                else:
-                    self.paragraph_anchors.append(cp)
-                self.note_visibility[cp] = flags
+                self._observe_note_reference(
+                    cp, ch, props, fields=self.fields,
+                    coverage_known=self.character_coverage_known,
+                    styles_present=self.styles.present, table_known=table_known)
             if cp in self.comment_markers:
                 props = self._character_props(cp, paragraph_style, table_hidden)
-                special = props.get('special')
-                if special is False or ('special' not in props and self.character_coverage_known):
-                    raise InvalidDocumentError('DOC comment marker has CFSpec=false')
-                known = special is True
-                self.comment_marker_known[cp] = known
-                if not known:
-                    self.warn('DOC comment marker CFSpec is unknown; its unproven body is omitted.')
-                if cp in self.comment_references:
-                    flags = [name for name in ('hidden', 'deleted', 'field_hidden') if props.get(name)]
-                    if self.fields and not all(self.fields):
-                        flags.append('field_instruction')
-                    if not self.character_coverage_known or not self.styles.present or not table_known:
-                        flags.append('unknown')
-                    self.note_visibility[cp] = flags
-                    # CPs are unique in the scan. A custom note may already
-                    # have appended this CP; dictionary membership is constant time.
-                    if known and cp not in self.note_references:
-                        self.paragraph_anchors.append(cp)
+                self._observe_comment_marker(
+                    cp, props, fields=self.fields,
+                    coverage_known=self.character_coverage_known,
+                    styles_present=self.styles.present, table_known=table_known)
             if ch == '\x13':
                 if len(self.fields) >= self.limits.max_depth:
                     raise LimitExceededError('DOC field nesting limit exceeded')
