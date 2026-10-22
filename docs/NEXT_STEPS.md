@@ -29,3 +29,4 @@ complete rendering, revision acceptance or arbitrary-format equivalence.
 ## Progress
 
 - Step 1: supported RTF/ODF visibility implemented and regression-tested.
+- Step 2: explicit normalization and iterative model copying implemented.

@@ -1,6 +1,6 @@
 """Small, format-independent extraction model; no rendering or service dependencies."""
 from __future__ import annotations
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Literal
 
 @dataclass(slots=True)
@@ -172,32 +172,8 @@ class Document:
         return '\n\n'.join(p for p in parts if p)
 
     def to_dict(self) -> dict:
-        def compatible_cells(items):
-            result = dict(items)
-            if result.get('kind') == 'paragraph' and result.get('heading_level') is None:
-                result.pop('heading_level', None)
-            if 'row_span' in result:
-                if not result.get('blocks'):
-                    result.pop('blocks', None)
-                if not result.get('omitted'):
-                    result.pop('omitted', None)
-            if 'reply_depth' in result and result['reply_depth'] is None:
-                result.pop('reply_depth')
-                if result.get('parent_ordinal') is None:
-                    result.pop('parent_ordinal', None)
-            if 'comments' in result and not result['comments']:
-                result.pop('comments')
-            if 'drawings' in result and not result['drawings']:
-                result.pop('drawings')
-            if 'format' in result:
-                if not result.get('story_blocks'):
-                    result.pop('story_blocks', None)
-                if not result.get('notes'):
-                    result.pop('notes', None)
-                if not result.get('comment_text'):
-                    result.pop('comment_text', None)
-            return result
-        return asdict(self, dict_factory=compatible_cells)
+        from ._serialization import model_to_dict
+        return model_to_dict(self)
 
 
 def _clone_cell(source: Cell) -> Cell:
