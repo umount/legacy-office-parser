@@ -5,6 +5,80 @@ For chunking, heading paths, spreadsheet header selection, deduplication, and
 resource profiles, see [Integrating structured extraction](INTEGRATION.md).
 Those are consumer policies, not additional output fields.
 
+## Contents
+
+- [Versioning and output changes](#versioning-and-output-changes)
+- [Python API and CLI JSON](#python-api-and-cli-json)
+- [Document and format families](#document-and-format-families)
+- [Paragraphs and headings](#paragraphs-and-headings)
+- [Text-document tables and cells](#text-document-tables-and-cells)
+- [Sheets and sparse spreadsheet cells](#sheets-and-sparse-spreadsheet-cells)
+- [Slides and slide comments](#slides-and-slide-comments)
+- [Auxiliary stories, notes, and DOC comments](#auxiliary-stories-notes-and-doc-comments)
+- [Plain-text projection and interpretation](#plain-text-projection-and-interpretation)
+- [Text normalization and decoding](#text-normalization-and-decoding)
+- [Visibility and revision state](#visibility-and-revision-state)
+- [Lists, hyperlinks and embedded objects](#lists-hyperlinks-and-embedded-objects)
+- [Warning stability](#warning-stability)
+- [OpenDocument detection, MIME types, and templates](#opendocument-detection-mime-types-and-templates)
+- [ODF visibility and tracked changes](#odf-visibility-and-tracked-changes)
+- [ODF whitespace, Unicode, and control characters](#odf-whitespace-unicode-and-control-characters)
+- [ODF lists, links, and embedded objects](#odf-lists-links-and-embedded-objects)
+- [XLS dates and times](#xls-dates-and-times)
+- [Older binary formats and error boundaries](#older-binary-formats-and-error-boundaries)
+- [Failures and exception boundaries](#failures-and-exception-boundaries)
+- [Limits and refusal versus omission](#limits-and-refusal-versus-omission)
+- [Execution, state, and worker isolation](#execution-state-and-worker-isolation)
+- [Determinism and serialized ordering](#determinism-and-serialized-ordering)
+
+## Versioning and output changes
+
+This reference describes package **0.22.0**. The package version is available as
+`legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
+Store the exact package version alongside persisted results. Published version
+tags identify immutable releases; a branch name is not a reproducible dependency.
+
+For the pre-1.0 series, the compatibility policy is:
+
+- A **minor release** (`0.x` to `0.(x+1)`) is required for intentional removal or
+  renaming of public fields, changes to field types or meanings, changed omission
+  rules, or changes to public API signatures. Such changes must be documented.
+  New extraction features and additive structured metadata also use a minor
+  release. Consumers should tolerate additional fields when reading JSON.
+- A **patch release** may correct extraction, ordering, decoding, visibility,
+  bounds handling or metadata to match the documented contract. It may accept a
+  previously rejected input, reject an invalid input, or change extracted content
+  and diagnostics for affected files. Documentation-only corrections do not
+  change runtime output. Patches do not intentionally redesign the public model.
+- Warning messages are human-readable diagnostics, not stable codes; their text
+  or presence can change in a patch. An error classification correction can
+  also change the exception for a previously mishandled input.
+
+**Schema compatibility does not imply identical extracted content.** A patch
+can change an output hash. Pin exact versions and record the release, effective
+limits, input hash and consumer normalization policy in cache provenance. Decide
+whether to regenerate stored content from the release's affected formats and
+behavior changes; neither “patch” nor “unchanged fields” establishes that old
+results remain equivalent. Changes to defaults must be recorded explicitly.
+
+Recent output history:
+
+- **0.22.0:** `heading_level` is populated for supported RTF and ODT paragraphs,
+  including cells and auxiliary stories. These can gain `Cell.blocks` or
+  `story_blocks` where formerly only text projections were retained. RTF exact
+  built-in style-name inference and unrepresentable ODT heading levels produce
+  warnings. Existing plain-text results in the checked corpus are unchanged.
+- **0.21.1:** one terminal NUL after a complete RTF root is accepted with a
+  warning; arbitrary trailing data is still rejected. Reserved DOC textbox
+  sentinel coordinates no longer reject otherwise valid live text ranges.
+  Previously rejected documents can now produce output. Defaults are unchanged.
+- **0.21.0:** optional paragraph `heading_level` (1–9) for DOC, with supporting
+  cell/story blocks. Body paragraphs omit the JSON key.
+- **0.20.1–0.20.2:** internal refactoring; no intended output changes.
+
+Earlier feature history and measured limits are recorded in
+[the extraction register](EXTRACTION_GAPS.md) and [validation history](TESTING.md).
+
 ## Python API and CLI JSON
 
 `parse(source)` detects the format from content. The explicit readers
@@ -182,7 +256,9 @@ textbox and carries no inferred coordinates.
 or shift later columns. A `SpreadsheetCell` has:
 
 - `row: int`, `column: int`: source coordinates.
-- `value: str | float | int | bool | None`: typed stored data or cached result.
+- `value: str | float | int | bool | None`: typed extracted data or cached result.
+  Recognized XLS dates are converted to strings as described below; this is not
+  an unconditional raw-source-value field.
 - `value_type: str`: format-dependent type label. XLS uses labels such as
   `number`, `string`, `boolean`, `error`, and `empty`; ODS also uses its source
   labels such as `float`, `percentage`, `currency`, `date`, and `time`.
@@ -197,6 +273,7 @@ flags. Python's computed `address` gives an A1-style address; JSON contains the
 numeric coordinates instead. Date/time representations depend on the source
 and supported formatting; do not assume every `value` is a Python date object.
 No formulas are executed or refreshed; cached results can be stale.
+See [XLS dates and times](#xls-dates-and-times) for the date conversion contract.
 
 A `CellRange` contains integer `start_row`, `start_column`, `end_row`, and
 `end_column`: **one-based, inclusive** merge bounds. Merges are separate metadata;
@@ -332,3 +409,543 @@ not a machine-readable feature inventory. Unsupported constructs can be omitted;
 malformed, encrypted, unsupported, or over-limit inputs can raise parser errors
 instead of returning a document. Formula execution, external-link fetching,
 macros, and active embedded content are not part of extraction.
+
+## Text normalization and decoding
+
+Strings are Unicode, but **no Unicode normalization (NFC/NFD/NFKC/NFKD) is
+performed**. There is no universal LF-only, control-free or NUL-free guarantee.
+JSON escaping does not sanitize strings: decoding JSON restores their original
+characters. The CLI is not a terminal-control sanitizer. Consumers needing NFC
+or a restricted character set must apply and version their own normalization.
+
+Normalization is format-specific:
+
+- DOC ordinary paragraph/cell markers become structure. In the ordinary cleaner,
+  VT/FF and supported line controls become LF, object/reference markers are
+  omitted, and unsupported C0 controls are omitted with a warning. However,
+  supported symbol properties can supply a literal control code, including NUL,
+  which is retained with a warning rather than reinterpreted as structure.
+  DEL/C1 and private-use characters are not universally filtered.
+- RTF literal CR/LF used to format the source are ignored; `\line` and `\tab`
+  generate LF and TAB, and paragraph/table controls generate structure. Escaped
+  CR, NUL, VT and other control characters can survive as text. Ignoring a single
+  terminal NUL **after** the root group is separate from text sanitization.
+- Other format readers apply their own structural transformations; the shared
+  model validator does not impose a final normalization or character filter.
+
+There is no package-wide `.strip()` policy. Leading/trailing whitespace can carry
+content; some format-specific projections trim boundaries or omit empty strings.
+`Document.text` inserts separators and omits empty block projections. Retain
+structured fields when whitespace or empty paragraphs matter. Applying `.strip()`
+everywhere is a consumer transformation, not a required repair or a lossless step.
+
+RTF uses the effective document/font codec, including supported legacy code pages
+such as cp1251. Undecodable byte sequences become U+FFFD with a warning; unsupported
+code pages fall back to Windows-1252 with a warning. Unpaired Unicode surrogate
+units are replaced with a warning. These diagnostics are deduplicated, not
+per-character counts. A replacement warning can also be triggered by an encoded
+literal U+FFFD. Fallback does not establish correct linguistic decoding.
+
+DOC UTF-16 pieces use replacement with a warning on invalid sequences. Compressed
+DOC pieces use the format's fixed FcCompressed character mapping, not an arbitrary
+system locale or cp1251 decoder. Unsupported language/encoding cases remain
+limited; consult warnings. Structural corruption may instead raise a parsing
+error: recovery with replacement is not guaranteed for every invalid input.
+
+## Visibility and revision state
+
+Extraction is **not a rendering of accepted revisions, a visible-only transcript,
+or a redaction operation**. Supported hidden/deleted runs are filtered, but the
+coverage is format- and construct-specific. Not every omission emits a warning.
+
+- DOC filters supported hidden, direct revision-deleted and field-hidden runs.
+  Supported hidden properties resolve through paragraph/character styles, direct
+  formatting and verified table-style contexts. Unproven conditional contexts
+  use the documented fallback and warnings. Hidden/deleted structural paragraph
+  or cell marks can retain boundaries; revision-driven paragraph merging is not
+  implemented. Inserted text is not removed merely because it is an insertion.
+- RTF filters direct group-scoped `\v` and `\deleted` text with a generic
+  warning. It does **not** resolve inherited hidden/deleted stylesheet properties
+  or every visibility flag such as `\webhidden`. Thus “everything Word displays
+  as hidden is absent” is not an available guarantee. Auxiliary-story entry has
+  its own scope rules; it must not be inferred from the main-story flag alone.
+- DOC note/comment `visibility` describes the **reference**. A hidden or deleted
+  reference does not necessarily remove its separately stored body from
+  `story_blocks`, pooled strings or `Document.text`.
+
+Keep the separate visibility rules for ODF below. Hidden spreadsheet sheets and
+presentation slides remain in the model and text projection with their flags.
+Consumers requiring complete exclusion of all hidden/deleted material must not
+assume that a successful parse or an empty warning list proves that condition.
+
+## Lists, hyperlinks and embedded objects
+
+There is no semantic list model or general reconstruction of generated numbering.
+DOC does not synthesize labels from list definitions. RTF can retain stored visible
+labels (for example ordinary `listtext`/`pntext` groups), while list definitions do
+not generate text. Literal bullets/numbers already in text can survive. Do not
+infer complete list hierarchy or numbering from paragraph order.
+
+DOC and RTF fields retain supported stored result/display text and suppress field
+instructions. A hyperlink URL in its instruction is not appended automatically;
+a URL already present as visible text remains text. Field results are not evaluated
+or refreshed, and targets are never fetched. No hyperlink relationship model is
+published.
+
+Embedded OLE documents are not recursively parsed. DOC object markers and RTF
+picture/object payloads are omitted; an RTF object's skipped fallback result is
+not an independently parsed document. Recognized textbox/WordArt text is a separate,
+bounded extraction feature. Reading an OLE container is distinct from executing or
+extracting every embedded object it contains. ODF package-local text-object behavior
+is described below; no external resource is opened.
+
+## Warning stability
+
+`warnings` remains `list[str]` in 0.22.0. **Stable warning codes are not currently
+exposed.** Messages are human-readable, may aggregate multiple occurrences, and
+are not an exhaustive omission ledger. Their wording, presence and order may
+change between releases. Do not build control flow, occurrence counts or stable
+metrics by matching exact strings. `--strict` checks only whether the list is
+nonempty; it cannot certify complete extraction.
+
+A future coded-diagnostic API would require an explicit versioned addition while
+preserving existing string warnings. Codes would need defined meanings and
+emission at the detection sites; deriving codes from today's messages would not
+make them a stable contract.
+
+## OpenDocument detection, MIME types, and templates
+
+OpenDocument input must be a supported ZIP package. The supported MIME-to-format
+mapping is exactly:
+
+- `application/vnd.oasis.opendocument.text` → `odt`.
+- `application/vnd.oasis.opendocument.spreadsheet` → `ods`.
+- `application/vnd.oasis.opendocument.presentation` → `odp`.
+
+Detection does not use the filename extension. The package's `mimetype` member
+is authoritative when present; otherwise the manifest entry for `/` supplies the
+MIME. A nonempty manifest root MIME that disagrees with `mimetype` is rejected.
+The MIME must be supported and the `office:body` child must match its family.
+The explicit ODF readers also require their expected family.
+
+**Template MIME types are currently unsupported.** The MIME types ending in
+`text-template`, `spreadsheet-template`, and `presentation-template` raise
+`UnsupportedFormatError`; OTT, OTS, and OTP are not accepted template families
+and are not normalized to `odt`, `ods`, or `odp`. Renaming an ordinary supported
+ODF package to `.ott`, `.ots`, or `.otp` does not prevent its extraction, because
+its content still declares an ordinary supported MIME. That is not template
+support. A MIME/manifest mismatch can instead fail earlier with
+`InvalidDocumentError`.
+
+The parser reads ZIP members in memory; it does not extract an archive directory.
+Only stored and deflated ZIP compression is supported. Flat XML ODF input is not
+an alternative accepted input to the public ZIP-based ODF readers.
+
+## ODF visibility and tracked changes
+
+ODF extraction is a supported-content traversal, not a rendered-page or universal
+visible-text filter. The following rules must not be generalized to all hidden
+content or all ODF families:
+
+- In supported ODT block and cell traversal, a `text:section` whose
+  `text:display` is exactly `none` is omitted with a warning. Its descendants,
+  including nested stories, are not extracted through that section.
+- For supported inline spans, links, metadata wrappers, and cached fields, a
+  child with `text:display="none"` or `text:is-hidden="true"`/`"1"` is skipped.
+  Text following the child remains eligible for extraction. This suppression
+  does not itself emit a warning.
+- The same checks are not a general paragraph visibility rule. In particular,
+  `text:hidden-paragraph` with `text:is-hidden="true"` does **not** suppress its
+  containing paragraph: surrounding paragraph text remains. Root paragraph
+  visibility attributes are not checked by the inline child filter. Hidden
+  text properties in paragraph/character styles are not resolved as a general
+  text-visibility model; styled hidden text can be returned without a warning.
+  Conditional visibility expressions are not evaluated.
+- ODS cell traversal and ODP shape traversal do not apply the ODT hidden-section
+  filter. Text inside `text:section text:display="none"` can be returned there.
+  Hidden sheet/slide flags describe supported source properties; they do not
+  remove those sheets/slides or their text from `Document.text`. Hidden row or
+  column state is not an output visibility/filtering contract.
+- `text:tracked-changes` is not traversed as ordinary document content, so
+  deletion payloads stored there are omitted with an unsupported-content
+  warning. Inline `text:change-start` and `text:change-end` markers are ignored;
+  ordinary text between them remains. No change-ID resolution, revision graph,
+  accept/reject operation, or historical view is reconstructed. A standalone
+  `text:change` marker is unsupported and contributes no content.
+- ODF annotations are omitted rather than emitted as document comments.
+
+Consequently, successful extraction and even an empty warning list do not
+establish that every returned character would be visible in an office renderer,
+or that the result is a fully reconstructed final revision view. This output
+must not be described as a redaction or hidden-content removal service.
+
+## ODF whitespace, Unicode, and control characters
+
+In ODF paragraph/heading inline text, runs of raw XML space, tab, carriage return,
+and line feed collapse to a single ordinary space, including across supported
+span boundaries. Leading and trailing raw whitespace is dropped. Explicit
+`text:s` expands to its positive `text:c` count (default 1), `text:tab` produces
+`\t`, and `text:line-break` produces `\n`; these explicit characters, including
+leading and trailing spaces, are retained subject to limits. Thus raw XML tabs
+and newlines are not equivalent to their explicit ODF text elements.
+
+This is not general Unicode whitespace normalization: nonbreaking spaces,
+soft hyphens, zero-width characters, and bidi controls can survive. No shared
+NFC/NFKC normalization or general control-character scrub is applied. For example,
+`e` followed by U+0301 remains decomposed, and U+007F is retained in valid XML.
+XML-forbidden characters such as literal U+0001 cause `InvalidDocumentError`
+rather than being stripped or repaired. DTD/entity declarations are rejected;
+this parser does not resolve external entities. XML decoding and line-ending
+handling occur before the paragraph whitespace rules.
+
+These paragraph rules do not promise identical normalization for all stored
+attributes, spreadsheet values, or other format families. ODS date/time values
+are source attribute strings, not Python date/time objects. No blanket claim of
+sanitized or source-offset-preserving output should be attached to `Document.text`.
+Projection separators are additional formatting: text-document blocks/stories
+use blank lines, table cells use tabs, table rows use newlines, and ODF cell
+paragraphs use newlines. Empty structured paragraphs can survive even when a
+plain-text projection omits their empty contribution.
+
+## ODF lists, links, and embedded objects
+
+Supported list wrappers are flattened in source traversal order. Item paragraphs
+and supported nested content are retained; there is no list/item model, list-depth
+field, numbering continuation, or synthesized bullet/number prefix. Literal
+bullet/number characters present in source text can remain. Nested list items
+therefore do not establish an output hierarchy merely from consecutive paragraphs.
+
+A supported `text:a` contributes its displayed inline text, subject to the inline
+visibility rules. Its target URI, relationship identity, and link boundaries are
+not retained as metadata or appended to the label. The URI is not dereferenced.
+Supported drawing-link wrappers similarly do not create an output hyperlink model.
+
+ODT has a narrow passive inline-object exception: a `draw:object` alternative in
+a frame can contribute the direct `office:document` text body when it declares
+`application/vnd.oasis.opendocument.text`, has the required single-document/body
+shape, and has no `xlink:href`. Its supported text and structure are pooled into
+`textboxes`/`story_blocks.textboxes`; supported embedded notes use the pooled note
+stories. A warning explains the loss of object identity, anchors, and embedded
+page layout. Embedded styles/masters are not imported as an independent rendering
+scope. In a frame, the first supported representation wins, even when empty;
+other alternatives must not be assumed to be concatenated.
+
+This does not mean recursive extraction of arbitrary embedded files. Linked or
+package-referenced objects, OLE payloads, images and their replacement/attached
+text, scripts, and unsupported embedded document families are not executed or
+opened as child documents. ODS/ODP do not share the ODT inline text-object support.
+Supported ODS floating labels are sheet-owned `drawings`, not embedded-object
+extraction. Unsupported content encountered by traversal generally produces a
+warning; warnings are not a complete inventory of unvisited package members.
+
+## XLS dates and times
+
+XLS interpretation depends on the cell XF/number format and the workbook date
+mode, not simply on a number resembling a date. A recognized supported date/time
+format converts the serial to a string and sets `value_type="date"`.
+**Both `value` and `text` contain that converted string; the original numeric
+serial is not retained in another output field.** There are no Python
+`date`, `datetime`, or `time` objects in this representation. The same numeric
+interpretation path applies to supported cached numeric formula results;
+formula expressions are not evaluated.
+
+Examples from synthetic BIFF8 workbooks:
+
+- 1900 mode, serial 61 with built-in date format 14:
+  `value == text == "1900-03-01"`, `value_type == "date"`.
+- 1904 mode, serial 0 with format 14: `"1904-01-01"`.
+- 1904 mode, serial 1.5 with format 14: `"1904-01-02T12:00:00"`.
+- Time-only format 20, serial 1.5: `"12:00:00"`, still with type `date`;
+  the day component is discarded, not represented as an elapsed duration.
+
+The 1900 system uses a base of 1899-12-31 and adjusts serials from 60 onward for
+Excel's fictitious leap day. For calendar-date output, the interval
+`60 <= serial < 61` in 1900 mode is unrepresentable and stays numeric with a
+warning. Time-only formats are exempt from that calendar-date rejection. The
+1904 system uses 1904-01-01 without that adjustment. Missing DATEMODE defaults
+to 1900 mode; values other than 0 or 1 are rejected as invalid.
+
+Date-only results use `YYYY-MM-DD` when the interpreted time is midnight.
+Otherwise results use a timezone-free ISO-style datetime string. Time-only
+results use an ISO-style clock string. Formatting uses millisecond precision
+with trailing fractional zeroes removed. These are normalized interpreted
+values, not a reproduction of the source's exact date mask, locale, AM/PM label,
+calendar display, or timezone. A date-only source mask can still produce a
+full datetime if its stored serial has a time fraction.
+
+Supported built-in date/time IDs are 14–22, 45, and 47. Format 46 (elapsed time)
+and locale-dependent IDs 27–36 and 50–58 fall back with a warning. A bounded
+custom-format recognizer accepts plain date/time tokens and supported separators;
+not every Excel date format is recognized. Unsupported/ambiguous formats, missing
+XFs, negative date serials, and out-of-range dates retain the raw numeric value,
+set `value_type="number"`, and emit warnings; the fallback display is `str(value)`.
+Non-finite numeric input is rejected. Ordinary supported numeric formatting
+retains the number in `value` and only changes `text`, which differs from the date
+conversion behavior above. ODS follows its own source-value/display rules.
+
+## Older binary formats and error boundaries
+
+The XLS reader supports BIFF8. An older recognized BOF, including a BIFF5 version
+0x0500 in a valid OLE `Book` or `Workbook` stream, raises
+`UnsupportedFormatError` (currently `only XLS BIFF8 is supported`). `Book` is an
+accepted stream name, not evidence that old BIFF versions are supported.
+
+The DOC reader explicitly rejects Word 6/95 signature 0xA5DC with
+`UnsupportedFormatError` (currently `Word 6/95 DOC is not supported`). Newer DOC
+FIB layouts and supported version values are validated separately; this is not
+a DOC95 compatibility reader or fallback text scraper.
+
+These are outcomes after the applicable container/stream checks succeed.
+Malformed or truncated OLE containers, missing/wrong-type streams, bad signatures,
+invalid layouts, or resource limits may fail earlier with a different parser
+error. A `.doc` or `.xls` filename alone does not guarantee a particular exception.
+Public automatic and explicit readers were checked for the recognized older
+signatures. The CLI handles parser errors with status 2 and diagnostics on stderr;
+it does not convert unsupported legacy versions through an external office suite.
+
+## Failures and exception boundaries
+
+The public readers return a `Document` on successful extraction. Recognized
+format failures use this hierarchy, exported by `legacy_office_parser` and
+defined in `legacy_office_parser.errors`:
+
+```text
+ValueError
+└── ParseError
+    ├── InvalidDocumentError
+    ├── UnsupportedFormatError
+    ├── EncryptedDocumentError
+    └── LimitExceededError
+```
+
+- `InvalidDocumentError`: recognized malformed structure, invalid container or
+  syntax, required data missing, or an explicit format/body mismatch. An unknown
+  non-ZIP/non-RTF byte string can also produce this error when OLE detection fails;
+  format detection does not classify every unrecognized input as unsupported.
+- `UnsupportedFormatError`: a recognized unsupported format, variant, or package
+  feature, such as an unsupported ODF MIME type or ZIP compression method.
+- `EncryptedDocumentError`: detected encryption. Detection is not decryption and
+  there is no password parameter.
+- `LimitExceededError`: a checked resource ceiling or implementation safety
+  ceiling prevented extraction. This can happen with otherwise valid input.
+- `ParseError`: common base for those controlled parser failures. Because it is
+  a `ValueError` subclass, catch it before a broader `ValueError` handler when
+  distinguishing parse failures from invalid options.
+
+Classify controlled failures by class, not by matching exception messages.
+Messages and the first detected problem can change as validation evolves.
+A document violating several rules has no promised error-priority ordering.
+
+**Not every possible failure is a `ParseError`.** The public API does not wrap
+all exceptions around the complete read, parse, validate, and serialize flow:
+
+- Sources are `str` paths, `pathlib.Path` paths, or immutable `bytes` content.
+  Other objects, including `bytearray` and open file-like objects, raise
+  `TypeError`. A bytes value is content, not a bytes filesystem path. Arbitrary
+  `os.PathLike` objects are not explicitly accepted unless they are also `Path`.
+- Opening or reading a path can propagate `OSError` subclasses such as
+  `FileNotFoundError`, `PermissionError`, and `IsADirectoryError`. An embedded
+  NUL in a path can raise ordinary `ValueError`. These are source-access failures,
+  not evidence of malformed document bytes.
+- Invalid `Limits` construction raises ordinary `ValueError`. The documented
+  `limits` argument is `Limits | None`; other types are outside the contract and
+  may cause `AttributeError`, `TypeError`, or other exceptions. There is no
+  comprehensive runtime type check of this argument at the API boundary.
+- Selected container/decoder exceptions are translated internally, but there is
+  no universal conversion of dependency failures or implementation defects.
+  Resource exhaustion can still produce `MemoryError`; Python recursion failures
+  are not universally translated. `KeyboardInterrupt` and `SystemExit` are not
+  controlled parse errors.
+- `Document.text`, `Document.to_dict()`, and external JSON encoding are separate
+  operations. `to_dict()` serializes dataclasses; it neither validates a
+  caller-modified model nor provides a general recursion/resource wrapper.
+  Arbitrarily deep or cyclic caller-created models are outside the validated
+  reader-result contract.
+
+With supported arguments, available input bytes and a functioning runtime, an
+unexpected exception caused solely by document parsing is an implementation or
+dependency defect to report, not an additional supported content-error category.
+Do not silently classify such failures as malformed input. This distinguishes the
+intended parsing-error contract from the environmental and argument failures above.
+
+A parser exception returns no partial `Document`. Successful extraction can
+still include supported fallbacks and omissions; inspect `warnings`. Neither
+successful return nor an empty warning list establishes complete source fidelity.
+
+### CLI behavior
+
+The CLI catches `ParseError`, `OSError`, and `ValueError` inside its extraction
+and output block, emits diagnostics to stderr, and returns status 2. Ordinary
+argument-parser failures occur earlier through `argparse` and raise
+`SystemExit(2)` when `main()` is called directly. Other exception classes are not
+universally caught; the CLI is not an all-failures-to-status-2 boundary.
+
+On successful extraction it writes plain text or JSON to stdout, then writes
+warnings to stderr. With `--strict`, warnings produce status 3 **after output has
+been written**; without strict mode the same result has status 0. Each printed
+output has a final newline. A downstream stdout failure can happen during a
+write, so exit status alone does not promise atomic publication of output.
+
+## Limits and refusal versus omission
+
+`Limits` is a frozen, slotted dataclass. Every field must be a positive Python
+integer; booleans are rejected. `max_file_bytes` and `max_stream_bytes` must also
+be strictly less than the running interpreter's `sys.maxsize`. Raising a limit
+changes a ceiling, not format coverage or the requirement for valid structure.
+
+All defaults are listed here; byte units are bytes, not decimal megabytes:
+
+- `max_file_bytes = 67_108_864` (64 MiB): input size. Path reads request at most
+  this value plus one byte so an oversized input can be rejected.
+- `max_stream_bytes = 67_108_864` (64 MiB): internal stream/member size. Applies
+  to OLE streams, ODF ZIP members, and relevant RTF stream/binary bounds; the RTF
+  reader also checks the complete input against this ceiling.
+- `max_text_chars = 10_000_000`: format-specific source, decoded/expanded text,
+  retained output, and relevant metadata/projection budgets. It is not simply
+  `len(Document.text)` or the size of JSON in bytes.
+- `max_records = 200_000`: parser record/work and structural-metadata ceilings.
+  Accounting varies by format and can include tokens, formatting work, directory
+  nodes, and expanded structures. It is not a count of visible paragraphs.
+- `max_depth = 32`: supported nested container, group, XML, table, and related
+  traversal bounds. The exact depth unit depends on the format and operation.
+- `max_cells = 100_000`: table/spreadsheet cell budgets, including expanded
+  copies and relevant merge accounting. Nested cells can count independently.
+- `max_slides = 10_000`: presentation slide count.
+- `max_sheets = 256`: spreadsheet sheet count.
+- `max_rows = 1_048_576`: spreadsheet dimensions/coordinates and applicable ODF
+  row, repeat, and span bounds.
+- `max_columns = 16_384`: spreadsheet dimensions/coordinates and applicable ODF
+  column, repeat, and span bounds.
+- `max_archive_entries = 4_096`: ODF ZIP inventory entry count.
+- `max_uncompressed_bytes = 134_217_728` (128 MiB): aggregate declared
+  uncompressed ODF ZIP inventory size.
+
+ODF inventory checks apply to all ZIP entries, including members not ultimately
+rendered as text. This does not mean that every member is extracted to disk or
+parsed: selected members are read in memory, and their reads are bounded too.
+The ZIP central directory has already been decoded when its entry count is
+checked; this is not a guarantee that no allocation precedes a budget check.
+
+Source text, expanded repeats, nested retained blocks, and their string
+projections can consume different budgets. DOC source text positions use UTF-16
+units in relevant checks; output string accounting uses Python string lengths.
+ODF also charges XML text and attributes. A limit can therefore be reached even
+when the final visible text would be short. A per-file limit is not a cap on
+aggregate memory across concurrent documents.
+
+When an enforced extraction budget is exceeded, the parser raises
+`LimitExceededError`; it does not return a document cut to the requested number
+of characters, rows, or cells. Partial output is not the recovery API. Limits
+are not progressively relaxed by the library after a failure.
+
+There are also fixed support/safety bounds. For example, ODF XML and relevant
+style traversals cap effective depth at 256 even with a higher `max_depth`, and
+eligible RTF WordArt property text is bounded by
+`min(65_536, max_text_chars)`. Some fixed syntax bounds produce
+`InvalidDocumentError`, such as an oversized RTF numeric parameter, rather than
+`LimitExceededError`.
+
+**Unsupported-feature omission is distinct from budget refusal.** Bounded
+observers can stop retaining a candidate that will not be extracted. An
+oversized RTF WordArt property that is ultimately disabled, hidden, malformed,
+or otherwise ineligible can be discarded with warnings while the surrounding
+text is returned. The eligible oversized counterpart raises
+`LimitExceededError`. No truncated WordArt prefix is published. Similarly,
+unsupported numeric display formats can fall back to a stored numeric value
+with warnings, and bounded style-name recognition can stop without assigning a
+heading. These behaviors must not be described as either guaranteed complete
+extraction or a promise that every oversized source feature aborts the document.
+
+The library supplies no elapsed-time limit, resident-memory limit, cancellation
+parameter, or total concurrent-work budget. It reads source data and builds
+in-memory structures; it is not a streaming-output interface. Caller-selected
+large limits do not remove Python/dependency constraints. Choose resource
+profiles before parsing and impose process-level limits where required. See
+[Integrating structured extraction](INTEGRATION.md) for consumer policies.
+
+## Execution, state, and worker isolation
+
+Parsing is local and passive. The implementation uses Python code, standard
+library facilities, and `olefile`; it does not launch an office application,
+converter, shell, or document-provided program. It does not execute formulas,
+macros, or embedded scripts, refresh cached fields, or fetch hyperlink targets
+and other external document resources. Available cached labels/results can be
+retained. ODF rejects DTD/entity declarations and reads selected ZIP members
+into memory rather than extracting an archive to a filesystem directory.
+
+The parser creates no temporary files or directories and performs no document
+output writes. The API reads a caller-supplied path, if used; the CLI writes to
+stdout/stderr. Normal Python imports may read code/dependency files and write
+bytecode caches according to interpreter settings. That runtime behavior is
+separate from parser-owned temporary or document files.
+
+Path input is not a path-access sandbox. The caller selects the path, and normal
+OS resolution and access permissions apply; the API does not restrict paths to
+an approved root or reject every special-file type before opening. Slow or
+blocking source reads are not covered by a parser timeout. Passing an immutable
+bytes snapshot separates source acquisition from document parsing and prevents
+concurrent changes to a path's contents from changing that parse's input.
+
+Parser counters, output buffers, caches, and warnings are attached to newly
+created parser/model instances. The inspected implementation has no shared
+cross-document result cache or persistent parsing session. It does contain
+module-level mutable dictionaries and sets used as format lookup tables and
+membership constants; their read-only use is a convention, not enforced
+immutability. Do not mutate internals, codec registrations, dependency settings,
+or global interpreter state while parsing.
+
+Public parsing collects warnings in the result; some private DOC helpers have
+`warnings.warn` defaults when invoked independently. Private-helper behavior is
+not a promise that the public API modifies Python's global warning filters.
+The numeric XLS renderer uses explicit local Decimal contexts for its supported
+numeric formatting rather than changing the caller's decimal precision.
+
+Independent calls can be scheduled by an application in worker processes.
+There is no built-in pool or cross-process coordination. Create/import workers
+using the appropriate platform rules; pass supported sources and `Limits`, and
+receive ordinary returned models or serialized data. Do not share active
+internal parser instances. Process startup, pickling, worker termination,
+worker crashes, and pool exceptions belong to the caller's execution layer and
+are not converted into `ParseError` by the library.
+
+Observed per-call state isolation supports concurrent independent use, but this
+is not a formal thread-safety guarantee across all formats, Python builds, or
+dependency versions. Returned models are mutable; sharing and mutating the same
+`Document` while another thread reads or serializes it is caller-controlled.
+Processes provide a clearer resource/failure boundary for untrusted workloads;
+using a pool by itself does not impose a memory or time limit.
+
+## Determinism and serialized ordering
+
+For identical input bytes, reader selection, `Limits`, package code, Python
+runtime, dependency versions, and relevant interpreter configuration, extraction
+is designed to be repeatable. It does not deliberately insert current timestamps,
+random identifiers, or host paths into the result. Date conversion uses stored
+spreadsheet serials and epochs; extraction does not consult the current time to
+refresh fields. Pin the execution environment when reproducibility matters.
+
+This is not a promise of byte-identical output across library releases, Python
+versions, codec/dependency implementations, platforms, or changed resource
+profiles. Changed coverage, validation, formatting, or warning behavior can
+change results. Altered codecs, monkeypatching, mutable source paths, and
+caller-mutated models also invalidate an identical-input comparison.
+
+Lists carry the model's ordering semantics: main blocks and retained stories
+follow extraction order; table rows/cells retain structural positions; sheets
+and slides follow their extracted order; current spreadsheet parsers sort
+sparse cells by `(row, column)`. Warning strings are generally deduplicated in
+encounter order. They are human-facing diagnostics, not stable ordered codes.
+
+`to_dict()` builds ordinary insertion-ordered dictionaries from dataclass fields
+and story dictionaries, applying its documented omissions. CLI JSON uses
+`json.dumps(..., ensure_ascii=False, allow_nan=False)` with default separators
+and without `sort_keys=True`, followed by a newline. It includes neither computed
+`Document.text` nor computed spreadsheet addresses. The current object-key order
+can be observed, but consumers must address keys by name rather than depend on
+positions or treat JSON as a canonical byte serialization.
+
+For content comparisons, parse JSON and compare the relevant structured values.
+If serialized hashing is needed, define a consumer-owned normalization and
+encoding policy, record versions and limits, and preserve the semantic ordering
+of arrays. Sorting object keys alone does not guarantee stability across changed
+extraction semantics, numeric rendering, or warning text.

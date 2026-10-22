@@ -15,13 +15,14 @@ scripts and commands are never executed; links and external resources are not op
 
 - Text retains its order. Empty and merged cells must not shift data into
   neighboring columns. Nested tables are available as separate blocks.
-- Spreadsheet cells separate the original value, type, display text and formula
+- Spreadsheet cells separate the typed value, type, display text and formula
   flag. For example, the fraction `0.125` and the text `12.50%` convey related
   but distinct information. Number-format support grows through verified cases.
 - Formulas use stored results; extraction does not trigger calculations or
   external data updates. A stored result may be stale.
-- Unknown constructs and limitations are reported through `warnings`.
-  Successful parsing alone does not establish extraction completeness.
+- Warnings report some unsupported constructs and extraction limitations;
+  they are not an exhaustive inventory of omissions. Successful parsing alone
+  does not establish extraction completeness.
 
 Quality means complete and faithful data relevant to the model. Exact layout,
 styling and pagination are outside the scope. During development, LibreOffice
@@ -148,7 +149,8 @@ means the result contains warnings. Structure and text limits are enforced
 inside the parsers; the calling process sets the system memory limit and timeout.
 
 The [output format reference](docs/OUTPUT_FORMAT.md) defines the Python and JSON
-result, field meanings, omission rules and format-specific limitations.
+result, field meanings, omission rules, release compatibility, errors and limits,
+text/visibility behavior and format-specific limitations.
 For adapters that build labeled spreadsheet rows or heading paths, see the
 [structured integration guide](docs/INTEGRATION.md). It covers sparse cells,
 repeated column labels, retained values, and story-local heading context.

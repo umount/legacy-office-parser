@@ -26,7 +26,9 @@ Keep these cell fields separate:
 
 - `text` is the extracted display string. Prefer it for display-oriented row
   text, including supported number formats and literal replacements.
-- `value` and `value_type` retain typed data independently of that display. Keep
+- `value` and `value_type` retain typed extracted data independently of that display.
+  Recognized XLS dates use an ISO-style string, not the original numeric serial;
+  see [date/time semantics](OUTPUT_FORMAT.md#xls-dates-and-times). Keep
   them in structured metadata for arithmetic, filtering, or provenance.
 - `is_formula` indicates a formula cell. Its value is a stored result and may be
   stale; extraction does not recalculate it. For XLS, `formula` is generally
