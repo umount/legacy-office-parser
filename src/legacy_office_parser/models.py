@@ -6,6 +6,7 @@ from typing import Literal
 @dataclass(slots=True)
 class Paragraph:
     text: str
+    heading_level: int | None = None
     kind: Literal['paragraph'] = field(default='paragraph', init=False)
 
 @dataclass(slots=True)
@@ -173,6 +174,8 @@ class Document:
     def to_dict(self) -> dict:
         def compatible_cells(items):
             result = dict(items)
+            if result.get('kind') == 'paragraph' and result.get('heading_level') is None:
+                result.pop('heading_level', None)
             if 'row_span' in result:
                 if not result.get('blocks'):
                     result.pop('blocks', None)
@@ -205,7 +208,7 @@ def _clone_cell(source: Cell) -> Cell:
         src, dst = pending.pop()
         for block in src:
             if isinstance(block, Paragraph):
-                dst.append(Paragraph(block.text))
+                dst.append(Paragraph(block.text, heading_level=block.heading_level))
             else:
                 table = Table()
                 dst.append(table)

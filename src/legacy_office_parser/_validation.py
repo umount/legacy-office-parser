@@ -23,6 +23,9 @@ def _validate_result(doc: Document, limits: Limits) -> Document:
         if depth > limits.max_depth:
             raise LimitExceededError('output table nesting depth limit exceeded')
         if isinstance(block, Paragraph):
+            if block.heading_level is not None and (
+                    type(block.heading_level) is not int or not 1 <= block.heading_level <= 9):
+                raise InvalidDocumentError('invalid paragraph heading level')
             total += len(block.text)
         else:
             for row in block.rows:
