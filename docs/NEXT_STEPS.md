@@ -25,3 +25,7 @@ Each behavior change must update OUTPUT_FORMAT.md and the extraction register.
 Use original synthetic fixtures. Office-suite conversions are development
 references, never runtime dependencies. A supported subset is not a claim of
 complete rendering, revision acceptance or arbitrary-format equivalence.
+
+## Progress
+
+- Step 1: supported RTF/ODF visibility implemented and regression-tested.

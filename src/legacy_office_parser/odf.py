@@ -105,6 +105,145 @@ class _Parser:
             if root is not None:
                 for e in root.iter(q('style:style')):
                     self.styles[(e.get(q('style:family')), e.get(q('style:name')))] = e
+        self.visibility_scopes = {}
+        self.paragraph_visibility = {}
+        self.empty_visibility_scope = ({}, {}, {}, {})
+        self.visibility_omissions = 0
+        self.suppressed_cell_displays = set()
+        shared = self.visibility_definitions(roots)
+        for root in roots:
+            if root is None:
+                continue
+            scope = self.visibility_scope(root, shared)
+            pending = [(root, scope)]
+            while pending:
+                element, scope = pending.pop()
+                if element is not root and element.tag == q('office:document'):
+                    scope = self.visibility_scope(element, self.visibility_definitions((element,)))
+                self.visibility_scopes[element] = scope
+                pending.extend((child, scope) for child in element)
+
+    @staticmethod
+    def visibility_insert(index, key, element):
+        # Duplicate names are ambiguous, not a last-wins visibility override.
+        index[key] = None if key in index else element
+
+    def visibility_definitions(self, roots):
+        common, defaults = {}, {}
+        for root in roots:
+            if root is None:
+                continue
+            for element in root.findall(q('office:styles') + '/' + q('style:style')):
+                self.visibility_insert(common, (element.get(q('style:family')),
+                                                element.get(q('style:name'))), element)
+            for element in root.findall(q('office:styles') + '/' + q('style:default-style')):
+                self.visibility_insert(defaults, element.get(q('style:family')), element)
+        return common, defaults
+
+    def visibility_scope(self, root, shared):
+        automatic = {}
+        for element in root.findall(q('office:automatic-styles') + '/' + q('style:style')):
+            self.visibility_insert(automatic, (element.get(q('style:family')),
+                                               element.get(q('style:name'))), element)
+        return (*shared, automatic, {})
+
+    def text_display(self, element, family, *, include_default=True):
+        """ODF 1.3 §§16.2, 19.510, 20.427: nearest text property wins.
+
+        Automatic styles belong to their XML document; parents are common
+        styles of the same family. Embedded documents have their own scope.
+        None leaves the enclosing text's visibility unchanged.
+        """
+        common, defaults, automatic, cache = self.visibility_scopes.get(
+            element, self.empty_visibility_scope)
+        name = element.get(q('text:style-name'))
+        key = family, name, include_default
+        if key in cache:
+            return cache[key]
+        index = automatic if (family, name) in automatic else common
+        visited, chain = set(), []
+        while name:
+            marker = id(index), name
+            if marker in visited:
+                self.warn('ODF cyclic text visibility style; available properties used.')
+                break
+            if len(visited) >= min(self.limits.max_depth, 256):
+                raise LimitExceededError('ODF style inheritance depth limit exceeded')
+            visited.add(marker)
+            lookup = family, name
+            if lookup not in index:
+                self.warn('ODF text visibility style missing; available inherited properties used.')
+                break
+            style = index[lookup]
+            if style is None:
+                self.warn('ODF duplicate text visibility style; ambiguous properties ignored.')
+                break
+            chain.append(style)
+            name = style.get(q('style:parent-style-name'))
+            index = common
+        # Text spans inherit enclosing text before family defaults (16.2).
+        if include_default and family in defaults:
+            if defaults[family] is None:
+                self.warn('ODF duplicate default text visibility style ignored.')
+            else:
+                chain.append(defaults[family])
+        result = None
+        for style in chain:
+            if style.find(q('style:map')) is not None:
+                self.warn('ODF conditional text styles are not evaluated; base style used.')
+            prop = style.find(q('style:text-properties'))
+            if result is None and prop is not None and q('text:display') in prop.attrib:
+                raw = prop.get(q('text:display'))
+                if raw not in {'none', 'true'}:
+                    self.warn('ODF conditional or invalid text visibility is not evaluated.')
+                    # An explicit unsupported property still overrides ancestors.
+                    result = 'unknown'
+                else:
+                    result = raw
+        cache[key] = result
+        return result
+
+    def paragraph_hidden(self, element):
+        """Use stored field state, never evaluate expressions (7.7.11, 19.821).
+
+        A visible marker overrides hidden markers in the same paragraph. Do
+        not cross note, frame, annotation, deleted-content, or field boundaries.
+        """
+        if element in self.paragraph_visibility:
+            hidden = self.paragraph_visibility[element]
+            self.visibility_omissions += hidden
+            return hidden
+        states = set()
+        pending = list(element)
+        while pending:
+            child = pending.pop()
+            if child.tag == q('text:hidden-paragraph'):
+                state = child.get(q('text:is-hidden'), '').strip(' \t\r\n')
+                if state in {'true', '1'}:
+                    states.add(True)
+                elif state in {'false', '0'}:
+                    states.add(False)
+                else:
+                    self.warn('ODF hidden paragraph has no supported stored visibility; '
+                              'condition not evaluated.')
+            elif child.tag in INLINE or child.tag == q('text:ruby'):
+                pending.extend(child)
+        hidden = True in states and False not in states
+        if hidden:
+            self.warn('ODF hidden paragraph omitted using stored visibility.')
+            self.visibility_omissions += 1
+        self.paragraph_visibility[element] = hidden
+        return hidden
+
+    def section_hidden(self, element):
+        if hidden_section(element):
+            self.warn('ODF hidden section omitted.')
+            self.visibility_omissions += 1
+            return True
+        if (element.tag == q('text:section') and
+                element.get(q('text:display')) == 'condition'):
+            self.warn('ODF conditional section visibility is not evaluated; content retained.')
+        return False
 
     def warn(self, text):
         if text not in self.doc.warnings:
@@ -142,32 +281,44 @@ class _Parser:
                 raise LimitExceededError('ODF paragraph text limit exceeded')
             tokens.append((s, explicit))
 
-        def walk(e):
-            if e.text:
+        def walk(e, hidden=None):
+            if e.tag in PARAS or e.tag in {q('text:span'), q('text:a')}:
+                display = self.text_display(e, 'paragraph' if e.tag in PARAS else 'text',
+                                            include_default=e.tag in PARAS or hidden is None)
+                if display in {'none', 'true'}:
+                    hidden = display == 'none'
+                if hidden:
+                    self.warn('ODF hidden styled text omitted.')
+                    self.visibility_omissions += 1
+            if e.text and not hidden:
                 add(e.text)
             for child in e:
-                if child.tag in INLINE or child.tag in CACHED_FIELDS:
+                if child.tag == q('text:hidden-paragraph'):
+                    pass  # A paragraph control, never displayed field text.
+                elif child.tag in INLINE or child.tag in CACHED_FIELDS:
                     if child.get(q('text:display')) != 'none' and child.get(q('text:is-hidden')) not in {'true', '1'}:
-                        walk(child)
-                elif self.doc.format == 'odt' and child.tag in DRAW_STORIES:
+                        walk(child, hidden)
+                    else:
+                        self.visibility_omissions += 1
+                elif not hidden and self.doc.format == 'odt' and child.tag in DRAW_STORIES:
                     self.drawing(child)
-                elif child.tag == q('text:note'):
+                elif not hidden and child.tag == q('text:note'):
                     self.note(child)
                 elif child.tag == q('text:ruby'):
                     for base in child:
                         if base.tag == q('text:ruby-base'):
-                            walk(base)
+                            walk(base, hidden)
                     self.warn('ODF ruby annotations omitted; base text retained.')
-                elif child.tag == q('text:s'):
+                elif not hidden and child.tag == q('text:s'):
                     n = positive(child, 'text:c', cap(self.limits, 'max_text_chars', 10_000_000))
                     if count + n > cap(self.limits, 'max_text_chars', 10_000_000):
                         raise LimitExceededError('ODF expanded spaces limit exceeded')
                     add(' ' * n, True)
-                elif child.tag in {q('text:tab'), q('text:line-break')}:
+                elif not hidden and child.tag in {q('text:tab'), q('text:line-break')}:
                     add('\t' if child.tag == q('text:tab') else '\n', True)
-                else:
+                elif not hidden:
                     self.unsupported(child)
-                if child.tail:
+                if child.tail and not hidden:
                     add(child.tail)
         walk(element)
         # Raw XML whitespace collapses across span boundaries; explicit ODF
@@ -440,20 +591,28 @@ class _Parser:
         def flow(parent):
             for e in parent:
                 if e.tag in PARAS or e.tag == q('table:table'):
-                    yield e
-                elif e.tag in BLOCK_WRAPPERS and not hidden_section(e):
+                    if e.tag not in PARAS or not self.paragraph_hidden(e):
+                        yield e
+                elif e.tag in BLOCK_WRAPPERS and not self.section_hidden(e):
                     yield from flow(e)
                 # No references from notes, frames, deleted text, or cell paragraphs.
 
-        def soft_breaks(e):
+        def soft_breaks(e, hidden=None):
+            if e.tag in PARAS and self.paragraph_hidden(e):
+                return
+            if e.tag in PARAS or e.tag in {q('text:span'), q('text:a')}:
+                display = self.text_display(e, 'paragraph' if e.tag in PARAS else 'text',
+                                            include_default=e.tag in PARAS or hidden is None)
+                if display in {'none', 'true'}:
+                    hidden = display == 'none'
             for child in e:
-                if child.tag == q('text:soft-page-break'):
+                if child.tag == q('text:soft-page-break') and not hidden:
                     yield child
                 elif child.tag in (INLINE | CACHED_FIELDS | PARAS | BLOCK_WRAPPERS |
                                    ROW_WRAPPERS | {q('table:table-row'), q('table:table-cell')}):
                     if (child.get(q('text:display')) != 'none' and
                             child.get(q('text:is-hidden')) not in {'true', '1'}):
-                        yield from soft_breaks(child)
+                        yield from soft_breaks(child, hidden)
 
         def initial():
             if len(sequences) > 1:
@@ -507,10 +666,11 @@ class _Parser:
 
     def paragraphs(self, element):
         for child in element:
-            if self.doc.format == 'odt' and hidden_section(child):
-                self.warn('ODF hidden section omitted.')
+            if self.section_hidden(child):
                 continue
             if child.tag in PARAS:
+                if self.paragraph_hidden(child):
+                    continue
                 self.read_heading_level(child)
                 yield self.inline(child)
             elif self.doc.format == 'odt' and child.tag in DRAW_STORIES:
@@ -525,6 +685,7 @@ class _Parser:
     def cell_text(self, e):
         parts = []
         size = 0
+        omissions = self.visibility_omissions
         for text in self.paragraphs(e):
             size += len(text) + bool(parts)
             # Paragraph expansion is individually bounded; check their aggregate
@@ -532,16 +693,18 @@ class _Parser:
             if size + self.budget.output_chars > self.limits.max_text_chars:
                 raise LimitExceededError('ODF cell text limit exceeded')
             parts.append(text)
+        if self.visibility_omissions != omissions:
+            self.suppressed_cell_displays.add(e)
         return '\n'.join(parts)
 
     def cell_content(self, element):
         def structured(parent):
             for child in parent:
-                if hidden_section(child):
+                if self.section_hidden(child):
                     continue
                 if child.tag == q('table:table'):
                     return True
-                if heading_level(child) is not None:
+                if heading_level(child) is not None and not self.paragraph_hidden(child):
                     return True
                 if child.tag in BLOCK_WRAPPERS and structured(child):
                     return True
@@ -679,10 +842,11 @@ class _Parser:
         if destination is None:
             destination = self.doc.blocks
         for e in parent:
-            if hidden_section(e):
-                self.warn('ODF hidden section omitted.')
+            if self.section_hidden(e):
                 continue
             if e.tag in PARAS:
+                if self.paragraph_hidden(e):
+                    continue
                 value = self.inline(e)
                 self.budget.text(len(value))
                 destination.append(Paragraph(value, heading_level=self.read_heading_level(e)))
@@ -742,7 +906,9 @@ class _Parser:
             self.warn('ODF formulas are not evaluated; only cached values and formula text are retained.')
         if kind != 'empty' and value is None:
             self.warn('ODF cell has no supported cached value; display text retained.')
-        if not text and value is not None:
+        # Preserve raw cached values, but do not resurrect suppressed display
+        # content from office:string-value (or another value attribute).
+        if not text and value is not None and e not in self.suppressed_cell_displays:
             text = ('true' if value else 'false') if isinstance(value, bool) else str(value)
         return value, kind, text, formula
 
@@ -772,8 +938,11 @@ class _Parser:
 
             def paragraphs(parent, level='root'):
                 for child in parent:
+                    if self.section_hidden(child):
+                        continue
                     if child.tag == q('text:p'):
-                        yield self.inline(child)
+                        if not self.paragraph_hidden(child):
+                            yield self.inline(child)
                     elif child.tag == q('text:list'):
                         yield from paragraphs(child, 'list')
                     elif level == 'list' and child.tag in {q('text:list-item'), q('text:list-header')}:
@@ -870,6 +1039,8 @@ class _Parser:
             parts = {'title': [], 'text': [], 'notes': []}
 
             def walk(e, destination='text'):
+                if self.section_hidden(e):
+                    return
                 if e.tag in SKIP:
                     self.unsupported(e)
                     return
@@ -881,6 +1052,8 @@ class _Parser:
                     self.warn('ODF slide headers, footers, dates and page numbers omitted.')
                     return
                 if e.tag in PARAS:
+                    if self.paragraph_hidden(e):
+                        return
                     text = self.inline(e)
                     self.budget.text(len(text))
                     parts[destination].append(text)

@@ -30,6 +30,9 @@ nonesttables
 """.split())
 _SHAPE_CONTAINERS = {'shp', 'shpinst', 'shpgrp'}
 _HEADERS = set('header headerl headerr headerf footer footerl footerr footerf'.split())
+# Visibility filters character content, not table coordinates or boundaries.
+_STRUCTURAL = set('par sect page intbl itap trowd cellx trleft cell row '
+                  'clmgf clmrg clvmgf clvmrg nestcell nestrow'.split())
 _CHARS = dict(zip(
     'tab line emdash endash bullet lquote rquote ldblquote rdblquote emspace enspace '
     'qmspace zwj zwnj ltrmark rtlmark'.split(),
@@ -259,13 +262,16 @@ class _WordArt:
 
 
 class _Stylesheet:
-    """Observe only top-level paragraph styles; retain a bounded ASCII name.
+    """Observe top-level paragraph/character styles; retain a bounded ASCII name.
 
     The existing lexer bounds records and depth. Resolution is iterative and
     memoized, including cycles and missing bases, so long chains stay linear.
     """
-    def __init__(self, depth: int):
+    def __init__(self, depth: int, limits: Limits, uc: int):
         self.depth = depth
+        self.limits = limits
+        self.default_uc = self.uc = uc
+        self.fallback = 0
         self.styles: dict[int, tuple[int | None, int | None]] = {}
         self.style = 0
         self.base = self.outline = None
@@ -273,15 +279,38 @@ class _Stylesheet:
         self.name = bytearray()
         self.name_valid = True
         self.named = set()
+        self.visibility = {}
+        self.kind = 's'
+        self.entry_first = True
+        self.hidden = self.deleted = None
+        self.additive = False
+        self.visibility_cycle = False
+        self.visibility_missing = False
 
     def token(self, kind, value, number, depth):
+        if kind in {'open', 'close'}:
+            self.fallback = 0
+        elif depth == self.depth + 1 and self.fallback:
+            count = min(self.fallback, len(value)) if kind == 'bytes' else 1
+            self.fallback -= count
+            if kind != 'bytes' or count == len(value):
+                return
+            value = value[count:]
         if kind == 'open' and depth == self.depth:
             self.style = 0
             self.base = self.outline = None
             self.paragraph_style = True
             self.name.clear()
             self.name_valid = True
+            self.kind = 's'
+            self.entry_first = True
+            self.hidden = self.deleted = None
+            self.additive = False
+            self.uc = self.default_uc
         elif depth == self.depth + 1:
+            if kind == 'close' and self.kind is not None:
+                self.visibility[self.kind, self.style] = (
+                    self.base, self.hidden, self.deleted, self.additive)
             if kind == 'close' and self.paragraph_style:
                 # Compatibility with Word/LibreOffice built-in style names:
                 # LibreOffice sw/source/writerfilter/dmapper/StyleSheetTable.cxx,
@@ -296,6 +325,7 @@ class _Stylesheet:
                     self.named.discard(self.style)
                 self.styles[self.style] = self.base, self.outline
             elif kind == 'bytes':
+                self.entry_first = False
                 if len(self.name) + len(value) <= 64 and value.isascii():
                     self.name.extend(value)
                 else:
@@ -304,14 +334,42 @@ class _Stylesheet:
                 self.name_valid = False
                 if kind == 'symbol' and value == '*':
                     self.paragraph_style = False
+                    self.kind = None
             elif kind == 'word':
+                if value == 'cs' and self.entry_first:
+                    self.kind = 'cs'
+                    if number is None or number < 0:
+                        self.kind = None
+                    else:
+                        self.style = number
+                elif value in {'cs', 'ds', 'ts'}:
+                    self.kind = None
+                self.entry_first = False
+                if value in {'v', 'deleted'}:
+                    if value == 'v':
+                        self.hidden = number != 0
+                    else:
+                        self.deleted = number != 0
+                elif value == 'plain':
+                    self.hidden = self.deleted = False
+                elif value == 'additive':
+                    self.additive = number != 0
                 if value in {'u', 'uc'}:
                     self.name_valid = False
+                    if value == 'u':
+                        self.fallback = self.uc
+                    else:
+                        if number is None or number < 0:
+                            raise InvalidDocumentError('Invalid RTF Unicode fallback count')
+                        if number > self.limits.max_stream_bytes:
+                            raise LimitExceededError('RTF Unicode fallback limit exceeded')
+                        self.uc = number
                 if value in {'cs', 'ds', 'ts'}:
                     self.paragraph_style = False
                 elif value == 's':
                     if number is None or number < 0:
                         self.paragraph_style = False
+                        self.kind = None
                     else:
                         self.style = number
                 elif value == 'sbasedon':
@@ -337,6 +395,39 @@ class _Stylesheet:
                 resolved[item] = outline
         return resolved
 
+    def resolve_visibility(self):
+        # Resolve each property independently: a nearer explicit false is as
+        # significant as true. Missing properties do not overwrite ancestors.
+        # Iterative memoization bounds work by the lexically bounded style count.
+        properties = []
+        for slot in (1, 2):
+            resolved = {}
+            for key in self.visibility:
+                path, seen = [], set()
+                current = key
+                value = None
+                while current in self.visibility:
+                    if current in resolved:
+                        value = resolved[current]
+                        break
+                    if current in seen:
+                        self.visibility_cycle = True
+                        break
+                    seen.add(current)
+                    path.append(current)
+                    record = self.visibility[current]
+                    value = record[slot]
+                    if value is not None or record[0] is None:
+                        break
+                    current = current[0], record[0]
+                else:
+                    self.visibility_missing = True
+                for item in path:
+                    resolved[item] = value
+            properties.append(resolved)
+        return {key: (properties[0][key], properties[1][key], record[3])
+                for key, record in self.visibility.items()}
+
 
 @dataclass(slots=True)
 class _State:
@@ -350,8 +441,11 @@ class _State:
     font: int | None = None
     encoding: str = 'cp1252'
     uc: int = 1
-    hidden: bool = False
-    deleted: bool = False
+    # None means no direct override; explicit false must beat inherited true.
+    hidden: bool | None = None
+    deleted: bool | None = None
+    character_style: int | None = None
+    style_visibility: bool = True
     first: bool = True
     starred: bool = False
     target: int = 0
@@ -662,8 +756,11 @@ class _Parser:
         self.uncertain_encoding = False
         self.stylesheet: _Stylesheet | None = None
         self.style_outlines: dict[int, int | None] = {}
+        self.style_visibility = {}
 
     def heading_level(self):
+        if any(self.visibility()):
+            return None
         outline = self.state.outline
         if outline is None:
             outline = self.style_outlines.get(self.state.style)
@@ -690,10 +787,31 @@ class _Parser:
     def sink(self):
         return self.sinks[self.state.target].at_depth(self.state.depth)
 
+    def visibility(self):
+        s = self.state
+        hidden = deleted = False
+        if s.style_visibility:
+            hidden, deleted, _ = self.style_visibility.get(('s', s.style), (None, None, False))
+            character = self.style_visibility.get(('cs', s.character_style))
+            if character is not None:
+                char_hidden, char_deleted, additive = character
+                if not additive:
+                    hidden = deleted = False
+                if char_hidden is not None:
+                    hidden = char_hidden
+                if char_deleted is not None:
+                    deleted = char_deleted
+        return (hidden if s.hidden is None else s.hidden,
+                deleted if s.deleted is None else s.deleted)
+
     def visible(self):
-        return not (self.state.skip or self.state.font_table or self.state.shape_container
-                    or self.state.legacy_container
-                    or self.state.hidden or self.state.deleted)
+        if (self.state.skip or self.state.font_table or self.state.shape_container
+                or self.state.legacy_container):
+            return False
+        if any(self.visibility()):
+            self.warn('Hidden or deleted text omitted.')
+            return False
+        return True
 
     def high_end(self):
         if self.pending_high is not None:
@@ -782,8 +900,8 @@ class _Parser:
                 or s.legacy_ancestor and word in _SHAPE_CONTAINERS | {'shptxt'}):
             s.skip = True
             return
-        if word == 'stylesheet' and not (drawing or s.font_table or s.hidden or s.deleted):
-            self.stylesheet = _Stylesheet(len(self.stack))
+        if word == 'stylesheet' and not (drawing or s.font_table or any(self.visibility())):
+            self.stylesheet = _Stylesheet(len(self.stack), self.limits, s.uc)
             s.skip = True
         elif word in _SKIP:
             s.skip = True
@@ -811,7 +929,7 @@ class _Parser:
         elif word in _SHAPE_CONTAINERS:
             if (word == 'shp' and s.first and not s.starred
                     and not s.shape_ancestor and not s.font_table
-                    and not s.hidden and not s.deleted and self.wordart is None
+                    and not any(self.visibility()) and self.wordart is None
                     and not self.uncertain_encoding
                     and self.encoding() in {'cp1252', 'cp1251', 'cp932'}):
                 self.wordart = _WordArt(len(self.stack), self.limits, self.encoding(), s.uc)
@@ -833,9 +951,8 @@ class _Parser:
             s.legacy_container = False
             if word == 'shptxt':
                 s.shape_ancestor = True
-            if word not in {'shptxt', 'dptxbxtext'}:
-                s.hidden = False
-                s.deleted = False
+            # Story ownership does not make inherited hidden/deleted text
+            # visible. Explicit run/style resets inside the story still apply.
         elif s.starred and word not in {'fldrslt', 'ud'}:
             s.skip = True
             self.warn('Unknown optional destinations omitted.')
@@ -890,9 +1007,29 @@ class _Parser:
         elif word == 'f':
             s.font = number
         elif word == 'plain':
+            self.high_end()
             s.font = self.default_font
-            s.hidden = False
-            s.deleted = False
+            s.hidden = s.deleted = None
+            s.character_style = None
+            s.style_visibility = False
+        elif word in {'s', 'cs'} and number is not None and number >= 0:
+            self.high_end()
+            if word == 's':
+                s.style = number
+            else:
+                s.character_style = number
+            s.style_visibility = True
+            if self.visible():
+                self.update_heading()
+        elif word == 'pard':
+            if s.nested_properties:
+                raise InvalidDocumentError('Paragraph reset inside RTF nested properties')
+            self.high_end()
+            s.style = 0
+            s.outline = None
+            if self.visible():
+                self.update_heading()
+            s.depth = 1
         elif word in {'v', 'deleted'}:
             self.high_end()
             if word == 'v':
@@ -902,34 +1039,22 @@ class _Parser:
             self.warn('Hidden or deleted text omitted.')
         elif word == 'ftnalt' and self.sink.story == 'footnotes':
             self.sink.story = 'endnotes'
-        elif self.visible():
+        elif self.visible() or word in _STRUCTURAL:
             if word in _CHARS:
                 self.emit(_CHARS[word])
             elif word in {'par', 'sect', 'page'}:
                 self.high_end()
-                self.sink.paragraph(force=True)
+                self.sink.paragraph(force=self.visible())
             elif word == 'intbl' and number != 0:
                 # Late outer definitions are legal too. Do not resolve/reset
                 # nesting here: writers emit pard/intbl/itap2 between cells.
                 root = self.sinks[s.target]
                 if s.depth == 1 and root.row is None:
                     root.row = []
-            elif word in {'outlinelevel', 's'}:
-                if number is not None and (0 <= number <= 9 if word == 'outlinelevel' else number >= 0):
-                    self.high_end()
-                    if word == 'outlinelevel':
-                        s.outline = number
-                    else:
-                        s.style = number
-                    self.update_heading()
-            elif word == 'pard':
-                if s.nested_properties:
-                    raise InvalidDocumentError('Paragraph reset inside RTF nested properties')
+            elif word == 'outlinelevel' and number is not None and 0 <= number <= 9:
                 self.high_end()
-                s.style = 0
-                s.outline = None
+                s.outline = number
                 self.update_heading()
-                s.depth = 1
             elif word == 'itap':
                 if number is None or number < 0:
                     raise InvalidDocumentError('Invalid RTF table nesting depth')
@@ -1063,6 +1188,11 @@ class _Parser:
                 sheet.token(kind, value, number, len(self.stack))
                 if kind == 'close' and len(self.stack) == sheet.depth:
                     self.style_outlines.update(sheet.resolve())
+                    self.style_visibility.update(sheet.resolve_visibility())
+                    if sheet.visibility_cycle:
+                        self.warn('Cyclic RTF style inheritance; only available visibility properties used.')
+                    if sheet.visibility_missing:
+                        self.warn('RTF style base missing or wrong kind; only available visibility properties used.')
                     if sheet.named:
                         self.warn('RTF heading levels inferred from built-in style names.')
                     self.stylesheet = None
