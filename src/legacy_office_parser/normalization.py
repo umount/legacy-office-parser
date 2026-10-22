@@ -22,17 +22,22 @@ _TEXT_FIELDS = {
 
 
 def normalize_text(document: Document, *, unicode_form: str | None = None,
+                   drop_soft_hyphens: bool = True,
                    limits: Limits | None = None) -> Document:
     """Copy a document, normalize display text, and validate retained budgets.
 
     Preserve TAB/LF and spaces; map CRLF/CR/VT/FF/NEL to LF; remove other C0/C1
     controls and DEL; replace lone surrogate code points with U+FFFD. Optional
-    NFC is explicit, never compatibility normalization. Spreadsheet values and
-    formulas, source offsets, metadata and warning messages remain unchanged.
+    NFC is explicit, never compatibility normalization. Remove U+00AD by default;
+    drop_soft_hyphens=False preserves it. U+200B and other Cf characters remain.
+    Spreadsheet values, formulas, source offsets, metadata and warning messages
+    remain unchanged.
     This is not a sanitizer for markup, bidi controls, or hidden source content.
     """
     if not isinstance(document, Document):
         raise TypeError('document must be a Document')
+    if type(drop_soft_hyphens) is not bool:
+        raise TypeError('drop_soft_hyphens must be bool')
     if unicode_form not in (None, 'NFC'):
         raise ValueError('unicode_form must be None or NFC')
     if limits is not None and not isinstance(limits, Limits):
@@ -45,6 +50,8 @@ def normalize_text(document: Document, *, unicode_form: str | None = None,
     def clean(text):
         nonlocal changed
         value = text.replace('\r\n', '\n').translate(_TRANSLATE)
+        if drop_soft_hyphens:
+            value = value.replace('\u00ad', '')
         if unicode_form:
             value = unicodedata.normalize(unicode_form, value)
         changed |= value != text
