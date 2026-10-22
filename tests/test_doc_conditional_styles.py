@@ -201,6 +201,8 @@ def test_unproven_context_retains_unconditional(monkeypatch, kind):
         kwargs["flags"] = [2, 1, 0]
     if kind == "grid":
         kwargs["row_extra"] = lambda r: definition([0, 0, 0], [0, 110, 200, 300]) if r == 1 else b""
+        # Unequal grids now support row-only rules; column ownership remains unproven.
+        kwargs["chpx"] = cnf(1, 1) + cnf(4, 1)
     if kind == "pcnf":
         kwargs["papx"] = sprm(0xC666, b"\2\1\0")
     if kind == "tcnf":

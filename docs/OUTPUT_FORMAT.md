@@ -64,7 +64,8 @@ results remain equivalent. Changes to defaults must be recorded explicitly.
 
 Recent output history:
 
-- **0.24.0:** DOC auxiliary-story identities and validated header inheritance.
+- **0.24.0:** DOC auxiliary-story identities, validated header inheritance,
+  complete-row comment selections and row-only conditional table visibility.
 
 - **0.23.0:** supported inherited/stored visibility filtering, optional
   display-text normalization, coded diagnostics, ODF templates and individual
@@ -525,7 +526,10 @@ coverage is format- and construct-specific. Not every omission emits a warning.
 
 - DOC filters supported hidden, direct revision-deleted and field-hidden runs.
   Supported hidden properties resolve through paragraph/character styles, direct
-  formatting and verified table-style contexts. Unproven conditional contexts
+  formatting and verified table-style contexts. Row-only conditional rules also
+  cover proven unequal grids and horizontal merges with empty continuations;
+  vertical merges and unproven column/corner contexts retain fallback.
+  See [row-condition evidence](research-doc-conditional-rows.md). Unproven conditional contexts
   use the documented fallback and warnings. Hidden/deleted structural paragraph
   or cell marks can retain boundaries; revision-driven paragraph merging is not
   implemented. Inserted text is not removed merely because it is an insertion.

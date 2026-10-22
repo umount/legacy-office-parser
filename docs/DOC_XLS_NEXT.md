@@ -25,3 +25,6 @@ resource access and conversion to OOXML are outside this work.
 ## Progress
 
 - DOC auxiliary identities implemented; public corpus plain text unchanged.
+- Complete outer-row comment selections implemented with bounded source proof.
+- Row-only conditional visibility implemented for proven unequal/horizontally merged rows;
+  malformed outer row terminators cannot establish condition context.
