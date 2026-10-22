@@ -175,3 +175,19 @@ The same rule applies to main and header textbox stories. See
 and the [CP domain](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a3d44e16-7d29-46f7-bb7b-d0d8a5734f83).
 
 See the [output format reference](OUTPUT_FORMAT.md) for field and omission rules.
+
+## Output processing
+
+Raw extraction remains the default. `normalize_text` validates and copies the
+model, cleans display strings, optionally applies NFC, and validates output
+budgets again. It preserves typed values, formulas and source relationships.
+Iterative copying and serialization avoid a Python call stack per nested block;
+cyclic caller models are rejected. A downstream JSON encoder has its own limits.
+
+Diagnostics carry codes assigned at emission sites. The legacy warnings remain
+strings; serialization adds a derived diagnostic list when warnings exist.
+
+RTF and ODT retain individual note bodies as ranges into their structured stories,
+including empty visible bodies. They do not invent source CPs or reference
+anchors. Repeated ODT bodies consume structure and projection budgets before
+materialization. DOC retains its existing source-reference model.

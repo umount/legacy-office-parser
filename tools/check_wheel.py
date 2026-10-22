@@ -3,7 +3,7 @@ import argparse
 from importlib.metadata import version
 from pathlib import Path
 
-from legacy_office_parser import __version__, parse
+from legacy_office_parser import __version__, normalize_text, parse
 
 
 def main():
@@ -74,6 +74,15 @@ def main():
     terminated = parse(br'{\rtf1 Original}' + b'\0')
     assert terminated.text == 'Original'
     assert terminated.warnings == ['A single terminal NUL after the RTF root was ignored.']
+    controls = parse(b'{\\rtf1 A\x00B}')
+    assert controls.text == 'A\x00B'
+    normalized = normalize_text(controls)
+    assert normalized.text == 'AB' and controls.text == 'A\x00B'
+    assert normalized.diagnostics[-1].code == 'text_normalized'
+    note = parse(br'{\rtf1 Body{\footnote first\par second}}')
+    assert len(note.notes) == 1 and note.notes[0].source_cp is None
+    assert note.notes[0].body.block_end == 2
+    assert [p.text for p in note.story_blocks['footnotes']] == ['first', 'second']
     print('Installed wheel: seven formats and DOC/XLS/RTF feature regressions passed')
 
 

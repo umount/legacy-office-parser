@@ -693,3 +693,35 @@ processes under CPython 3.12.14/olefile 0.47, including hash seeds 1 and 271,
 fresh/repeated parsing, and reversed corpus order. Unsorted JSON bytes and warning
 order matched within that fixed environment. This is evidence for the corpus, not
 a guarantee across releases, runtimes, arbitrary inputs or caller mutations.
+
+## Post-0.22 development validation
+
+The 0.23 development suite passes **5,642 tests**, with **69 optional skips**;
+Ruff passes. New cases cover inherited/stored visibility, explicit normalization,
+coded diagnostics, ODF templates, individual RTF/ODT note bodies, fixed-denominator
+XLS fractions and invalid API limits. Empty visible notes retain identity;
+suppressed destinations and repeated bodies remain subject to budgets.
+
+Serialization tests cover deep models, cycles and independent mutable copies.
+Reproducibility tests exercise all seven families in spawned process pools and
+subprocesses with different hash seeds. These are fixed-environment checks, not
+a promise of identical output across releases or arbitrary caller mutations.
+Independent note review passed 24 additional cases, including explicit visibility
+resets in empty RTF notes.
+
+All **7,800** deterministic mutations across the 78 public fixtures and **12**
+bounded resource cases pass. This is sampling, not exhaustive proof. The XLS
+fraction reference test independently checks 44 preserved-source cases against
+LibreOffice; unsupported masks and midpoint values retain explicit fallbacks.
+
+The local private corpus still yields **46 successful parses out of 47**, with
+one unsupported container, using the same documented classification profile.
+Successful plain-text hashes are unchanged from 0.22. All 78 public fixtures
+parse; the 75 fixtures shared with the saved baseline retain status and text
+hashes. JSON intentionally gains coded diagnostics and note-body metadata.
+No private source content, filename or fixture is distributed.
+
+The wheel and source distribution are built locally. An isolated installed-wheel
+smoke test checks all seven formats and the new normalization/note APIs. Package
+contents are checked against tracked source, tests, tools and documentation;
+private corpus files and temporary directories are excluded.

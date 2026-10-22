@@ -33,7 +33,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.22.0**. The package version is available as
+This reference describes development package **0.23.0.dev0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -51,7 +51,8 @@ For the pre-1.0 series, the compatibility policy is:
   and diagnostics for affected files. Documentation-only corrections do not
   change runtime output. Patches do not intentionally redesign the public model.
 - Warning messages are human-readable diagnostics, not stable codes; their text
-  or presence can change in a patch. An error classification correction can
+  or presence can change in a patch. Diagnostic codes have stable meanings; new
+  codes may be added, but changing an existing meaning requires a minor release. An error classification correction can
   also change the exception for a previously mishandled input.
 
 **Schema compatibility does not imply identical extracted content.** A patch
@@ -62,6 +63,11 @@ behavior changes; neither “patch” nor “unchanged fields” establishes tha
 results remain equivalent. Changes to defaults must be recorded explicitly.
 
 Recent output history:
+
+- **0.23 development:** supported inherited/stored visibility filtering, optional
+  display-text normalization, coded diagnostics, ODF templates and individual
+  RTF/ODT note bodies. Supported fixed-denominator XLS fraction displays are added.
+  See [development sequence](NEXT_STEPS.md) for validation and remaining limits.
 
 - **0.22.0:** `heading_level` is populated for supported RTF and ODT paragraphs,
   including cells and auxiliary stories. These can gain `Cell.blocks` or
@@ -128,10 +134,12 @@ The document fields are:
 - `footnotes`, `endnotes`, `headers_footers`, `textboxes`: strings containing the
   respective pooled auxiliary text; default `""`.
 - `warnings: list[str]`: extraction limitations and diagnostics; default `[]`.
+- `diagnostics`: a computed list of `Diagnostic(code, message)` objects, serialized
+  as dictionaries when warnings exist. See [diagnostic codes](DIAGNOSTICS.md).
 - `story_blocks: dict[str, list[Paragraph | Table]]`: optional structured auxiliary
   stories. Supported keys are `footnotes`, `endnotes`, `headers_footers`,
   `textboxes`, and `comment_text`.
-- `notes: list[Note]`: individual note bodies from DOC, RTF and ODT.
+- `notes: list[Note]`: individual note-body metadata for DOC, RTF and ODT.
   Source CPs and structural reference anchors are currently available only for DOC.
 - `comments: list[Comment]`: document comment metadata, currently from DOC.
 - `comment_text: str`: combined DOC comment-body projection; default `""`.
@@ -418,7 +426,11 @@ macros, and active embedded content are not part of extraction.
 
 ## Text normalization and decoding
 
-Strings are Unicode, but **no Unicode normalization (NFC/NFD/NFKC/NFKD) is
+Use [normalize_text](NORMALIZATION.md) for an independent display-text-normalized
+copy, with optional NFC. The following describes raw parsing; source values,
+formulas and reference metadata remain outside the cleanup operation.
+
+Raw parsed strings are Unicode, but **no Unicode normalization (NFC/NFD/NFKC/NFKD) is
 performed**. There is no universal LF-only, control-free or NUL-free guarantee.
 JSON escaping does not sanitize strings: decoding JSON restores their original
 characters. The CLI is not a terminal-control sanitizer. Consumers needing NFC
@@ -470,11 +482,11 @@ coverage is format- and construct-specific. Not every omission emits a warning.
   use the documented fallback and warnings. Hidden/deleted structural paragraph
   or cell marks can retain boundaries; revision-driven paragraph merging is not
   implemented. Inserted text is not removed merely because it is an insertion.
-- RTF filters direct group-scoped `\v` and `\deleted` text with a generic
-  warning. It does **not** resolve inherited hidden/deleted stylesheet properties
-  or every visibility flag such as `\webhidden`. Thus “everything Word displays
-  as hidden is absent” is not an available guarantee. Auxiliary-story entry has
-  its own scope rules; it must not be inferred from the main-story flag alone.
+- RTF filters supported direct and inherited paragraph/character-style `\v`
+  and `\deleted` properties, including additive styles and direct/group overrides.
+  Missing/cyclic definitions produce diagnostics and use proven properties.
+  Table/section styles, `\webhidden` and complete revision-history semantics are
+  not implemented. Structural boundaries remain even when their text is hidden.
 - DOC note/comment `visibility` describes the **reference**. A hidden or deleted
   reference does not necessarily remove its separately stored body from
   `story_blocks`, pooled strings or `Document.text`.
@@ -507,26 +519,23 @@ is described below; no external resource is opened.
 
 ## Warning stability
 
-`warnings` remains `list[str]` in 0.22.0. **Stable warning codes are not currently
-exposed.** Messages are human-readable, may aggregate multiple occurrences, and
-are not an exhaustive omission ledger. Their wording, presence and order may
-change between releases. Do not build control flow, occurrence counts or stable
-metrics by matching exact strings. `--strict` checks only whether the list is
-nonempty; it cannot certify complete extraction.
+`warnings` remains a list of human-readable strings. `Document.diagnostics` and
+JSON `diagnostics` add stable codes at the emission sites; see the
+[code catalog](DIAGNOSTICS.md). Preserve unknown future codes. Message wording may
+change, codes do not represent occurrence counts or severity, and neither list
+is an exhaustive inventory of omissions. Caller-added uncoded warnings receive
+`unclassified_warning`. No runtime string matching determines a code.
 
-A future coded-diagnostic API would require an explicit versioned addition while
-preserving existing string warnings. Codes would need defined meanings and
-emission at the detection sites; deriving codes from today's messages would not
-make them a stable contract.
+`--strict` still checks the warning list. It cannot certify complete extraction.
 
 ## OpenDocument detection, MIME types, and templates
 
 OpenDocument input must be a supported ZIP package. The supported MIME-to-format
-mapping is exactly:
+mapping includes ordinary packages and their template variants:
 
-- `application/vnd.oasis.opendocument.text` → `odt`.
-- `application/vnd.oasis.opendocument.spreadsheet` → `ods`.
-- `application/vnd.oasis.opendocument.presentation` → `odp`.
+- `application/vnd.oasis.opendocument.text` and `text-template` → `odt`.
+- `application/vnd.oasis.opendocument.spreadsheet` and `spreadsheet-template` → `ods`.
+- `application/vnd.oasis.opendocument.presentation` and `presentation-template` → `odp`.
 
 Detection does not use the filename extension. The package's `mimetype` member
 is authoritative when present; otherwise the manifest entry for `/` supplies the
@@ -550,41 +559,23 @@ an alternative accepted input to the public ZIP-based ODF readers.
 
 ## ODF visibility and tracked changes
 
-ODF extraction is a supported-content traversal, not a rendered-page or universal
-visible-text filter. The following rules must not be generalized to all hidden
-content or all ODF families:
+Supported explicit hidden sections, stored hidden-paragraph field states and
+inherited paragraph/text-style `text:display` properties are checked before text
+and detached stories are collected. Common/default/automatic styles keep their
+scopes; embedded text documents do not redefine their host's visibility styles.
+The hidden-section filter applies to ODT, ODS and ODP. Explicit visible overrides
+are respected. Original regression cases and boundaries are described in
+[stored visibility](research-visibility.md).
 
-- In supported ODT block and cell traversal, a `text:section` whose
-  `text:display` is exactly `none` is omitted with a warning. Its descendants,
-  including nested stories, are not extracted through that section.
-- For supported inline spans, links, metadata wrappers, and cached fields, a
-  child with `text:display="none"` or `text:is-hidden="true"`/`"1"` is skipped.
-  Text following the child remains eligible for extraction. This suppression
-  does not itself emit a warning.
-- The same checks are not a general paragraph visibility rule. In particular,
-  `text:hidden-paragraph` with `text:is-hidden="true"` does **not** suppress its
-  containing paragraph: surrounding paragraph text remains. Root paragraph
-  visibility attributes are not checked by the inline child filter. Hidden
-  text properties in paragraph/character styles are not resolved as a general
-  text-visibility model; styled hidden text can be returned without a warning.
-  Conditional visibility expressions are not evaluated.
-- ODS cell traversal and ODP shape traversal do not apply the ODT hidden-section
-  filter. Text inside `text:section text:display="none"` can be returned there.
-  Hidden sheet/slide flags describe supported source properties; they do not
-  remove those sheets/slides or their text from `Document.text`. Hidden row or
-  column state is not an output visibility/filtering contract.
-- `text:tracked-changes` is not traversed as ordinary document content, so
-  deletion payloads stored there are omitted with an unsupported-content
-  warning. Inline `text:change-start` and `text:change-end` markers are ignored;
-  ordinary text between them remains. No change-ID resolution, revision graph,
-  accept/reject operation, or historical view is reconstructed. A standalone
-  `text:change` marker is unsupported and contributes no content.
-- ODF annotations are omitted rather than emitted as document comments.
+Conditional expressions are not evaluated. Unknown, duplicate or cyclic styles
+produce diagnostics; the parser uses available properties without claiming a
+complete rendered view. Hidden sheet/slide flags remain metadata and do not
+remove those sheets or slides. Hidden row/column rendering is not reconstructed.
 
-Consequently, successful extraction and even an empty warning list do not
-establish that every returned character would be visible in an office renderer,
-or that the result is a fully reconstructed final revision view. This output
-must not be described as a redaction or hidden-content removal service.
+`text:tracked-changes` deletion payloads are not traversed as ordinary content.
+Ordinary inserted content remains; there is no accept/reject operation or revision
+graph reconstruction. ODF annotations remain omitted. Output is not a redaction
+service or proof that every character would be visible in an office renderer.
 
 ## ODF whitespace, Unicode, and control characters
 
@@ -755,19 +746,17 @@ all exceptions around the complete read, parse, validate, and serialize flow:
   NUL in a path can raise ordinary `ValueError`. These are source-access failures,
   not evidence of malformed document bytes.
 - Invalid `Limits` construction raises ordinary `ValueError`. The documented
-  `limits` argument is `Limits | None`; other types are outside the contract and
-  may cause `AttributeError`, `TypeError`, or other exceptions. There is no
-  comprehensive runtime type check of this argument at the API boundary.
+  `limits` argument is `Limits | None`; other types raise `TypeError` before source access. False-like values are not
+  silently replaced with defaults.
 - Selected container/decoder exceptions are translated internally, but there is
   no universal conversion of dependency failures or implementation defects.
   Resource exhaustion can still produce `MemoryError`; Python recursion failures
   are not universally translated. `KeyboardInterrupt` and `SystemExit` are not
   controlled parse errors.
 - `Document.text`, `Document.to_dict()`, and external JSON encoding are separate
-  operations. `to_dict()` serializes dataclasses; it neither validates a
-  caller-modified model nor provides a general recursion/resource wrapper.
-  Arbitrarily deep or cyclic caller-created models are outside the validated
-  reader-result contract.
+  operations. `to_dict()` iteratively serializes model trees and rejects cycles with
+  `InvalidDocumentError`. It does not validate caller-modified semantics or bound
+  arbitrary expanded output size. Downstream JSON encoding has its own limits.
 
 With supported arguments, available input bytes and a functioning runtime, an
 unexpected exception caused solely by document parsing is an implementation or
@@ -943,8 +932,8 @@ and slides follow their extracted order; current spreadsheet parsers sort
 sparse cells by `(row, column)`. Warning strings are generally deduplicated in
 encounter order. They are human-facing diagnostics, not stable ordered codes.
 
-`to_dict()` builds ordinary insertion-ordered dictionaries from dataclass fields
-and story dictionaries, applying its documented omissions. CLI JSON uses
+`to_dict()` builds ordinary insertion-ordered dictionaries through an iterative
+model traversal, applies documented omissions, and appends coded diagnostics. CLI JSON uses
 `json.dumps(..., ensure_ascii=False, allow_nan=False)` with default separators
 and without `sort_keys=True`, followed by a newline. It includes neither computed
 `Document.text` nor computed spreadsheet addresses. The current object-key order

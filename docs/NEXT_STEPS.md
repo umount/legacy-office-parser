@@ -36,3 +36,7 @@ complete rendering, revision acceptance or arbitrary-format equivalence.
   repeat budgets and suppressed destinations covered by regression tests.
 - Step 6: bounded fixed-denominator XLS fractions verified against an independent
   reader; alternate PPT metroBlob content remains excluded as specified.
+- Step 7: deep serialization, process isolation and determinism covered by tests;
+  mutation/resource sampling, package checks and corpus comparisons recorded in
+  TESTING.md. This sequence is complete; remaining format limits stay explicit
+  in EXTRACTION_GAPS.md.

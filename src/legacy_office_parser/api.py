@@ -8,6 +8,14 @@ from ._validation import _validate_result as _validate_result
 
 Source = str | Path | bytes
 
+
+def _limits(value: Limits | None) -> Limits:
+    if value is None:
+        return Limits()
+    if not isinstance(value, Limits):
+        raise TypeError('limits must be Limits or None')
+    return value
+
 def _read(source: Source, limits: Limits) -> bytes:
     if isinstance(source, bytes):
         data = source
@@ -22,29 +30,29 @@ def _read(source: Source, limits: Limits) -> bytes:
 
 def parse_doc(source: Source, *, limits: Limits | None = None) -> Document:
     from .doc import parse_doc_bytes
-    limits = limits or Limits()
+    limits = _limits(limits)
     return _validate_result(parse_doc_bytes(_read(source, limits), limits), limits)
 
 def parse_ppt(source: Source, *, limits: Limits | None = None) -> Document:
     from .ppt import parse_ppt_bytes
-    limits = limits or Limits()
+    limits = _limits(limits)
     return _validate_result(parse_ppt_bytes(_read(source, limits), limits), limits)
 
 def parse_xls(source: Source, *, limits: Limits | None = None) -> Document:
     from .xls import parse_xls_bytes
-    limits = limits or Limits()
+    limits = _limits(limits)
     return _validate_result(parse_xls_bytes(_read(source, limits), limits), limits)
 
 
 def parse_rtf(source: Source, *, limits: Limits | None = None) -> Document:
     from .rtf import parse_rtf_bytes
-    limits = limits or Limits()
+    limits = _limits(limits)
     return _validate_result(parse_rtf_bytes(_read(source, limits), limits), limits)
 
 
 def _parse_odf(source: Source, expected: str | None, limits: Limits | None) -> Document:
     from .odf import parse_odf_bytes
-    limits = limits or Limits()
+    limits = _limits(limits)
     return _validate_result(parse_odf_bytes(_read(source, limits), limits,
                                            expected_format=expected), limits)
 
@@ -63,7 +71,7 @@ def parse_odp(source: Source, *, limits: Limits | None = None) -> Document:
 
 def parse(source: Source, *, limits: Limits | None = None) -> Document:
     """Detect supported formats by content, never by filename extension."""
-    limits = limits or Limits()
+    limits = _limits(limits)
     data = _read(source, limits)
     signature = data.removeprefix(b'\xef\xbb\xbf').lstrip(b' \t\r\n')
     if signature.startswith(b'{\\rtf'):

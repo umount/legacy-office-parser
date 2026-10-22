@@ -351,3 +351,13 @@ ownership and story-local context. Validate explicit outline controls separately
 from RTF style-name inference; preserve independent reference-reader evidence
 when a writer loses source metadata. Document the complete Python/JSON output
 contract and omission rules in [OUTPUT_FORMAT.md](OUTPUT_FORMAT.md).
+
+## Post-0.22 output fidelity
+
+The ordered work is recorded in [NEXT_STEPS.md](NEXT_STEPS.md), with validation
+in [TESTING.md](TESTING.md). This development iteration adds supported visibility
+filtering, optional display normalization, diagnostic codes, ODF templates,
+individual note bodies and bounded XLS fraction formats. It also verifies deep
+serialization and process isolation. Remaining format coverage is tracked in
+[EXTRACTION_GAPS.md](EXTRACTION_GAPS.md); a completed iteration does not mean
+universal rendering parity.

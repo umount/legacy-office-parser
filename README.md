@@ -31,16 +31,18 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.22 adds RTF and ODT paragraph heading levels alongside DOC headings,
-including headings inside cells and auxiliary stories. Full compatibility with arbitrary documents has not
-yet been established; [coverage and limitations](docs/TESTING.md) are documented
-separately.
+Development after 0.22 adds supported stored visibility, explicit text cleanup,
+coded diagnostics, ODF templates, individual RTF/ODT note bodies, and a bounded
+XLS fraction-format subset. The published `v0.22.0` remains unchanged. Full
+compatibility with arbitrary documents has not been established; see
+[coverage and limitations](docs/TESTING.md).
 
 - DOC 97–2003: paragraphs, nested tables and merges; separate text stories and
   inherited style visibility and heading levels; comments with authors and source references.
 - XLS BIFF8: sheets, sparse typed cells, merges and stored formula results;
   percentages, decimals, digit grouping and scientific notation; explicit text
-  labels before/after numbers and strings, and sign-based sections. Older BIFF versions are
+  labels before/after numbers and strings, sign-based sections, and verified
+  fixed-denominator fractions. Older BIFF versions are
   unsupported.
 - PPT 97–2003: current slides, titles, text, WordArt, ordinary text from active
   masters, stored static dates/footers, notes and comments.
@@ -48,7 +50,8 @@ separately.
   merges, nested tables, shape text, explicitly enabled Unicode WordArt and auxiliary text stories. Ambiguous merges
   produce warnings.
 - ODT: paragraphs and explicit heading levels, nested tables, notes, frames and headers/footers from selected
-  master pages; ODS: sheets and cells; ODP: slides and notes.
+  master pages; ODS: sheets and cells; ODP: slides and notes. OTT/OTS/OTP
+  template MIME families map to the corresponding document family.
 
 Macros, scripts, active objects and document commands are never executed.
 Formulas are not recalculated: stored values are returned with formula flags.
@@ -96,7 +99,8 @@ text projection. For tables in auxiliary DOC, RTF and ODT stories,
 `Document.story_blocks` contains blocks under `footnotes`, `endnotes`,
 `headers_footers` and `textboxes`. The corresponding strings remain available
 for the text API. Empty `story_blocks` is omitted from JSON; `Document.text`
-does not duplicate structured stories. For DOC, `Document.notes` links individual
+does not duplicate structured stories. For RTF/ODT, `Document.notes` identifies individual body ranges without
+inventing source anchors or printed citation labels. For DOC, it links individual
 note bodies to source references. `body` identifies a block range in
 `story_blocks`; `anchor_path` points to a main-story paragraph or cell.
 `source_cp` is a position in the source DOC, not an index into normalized text.
@@ -171,6 +175,9 @@ remain in their original languages.
 
 ## Documentation
 
+- [Explicit text normalization](docs/NORMALIZATION.md)
+- [Stable diagnostic codes](docs/DIAGNOSTICS.md)
+- [Development sequence](docs/NEXT_STEPS.md)
 - [Output format: Python and JSON contract](docs/OUTPUT_FORMAT.md)
 - [Structured integration guide](docs/INTEGRATION.md)
 - [Achievements and alternatives](docs/COMPARISON.md)

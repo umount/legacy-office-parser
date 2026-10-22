@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register after 0.22. Each item requires a verified example, independent
+Working register for development after 0.22. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -102,6 +102,22 @@ does not establish completeness.
   with raw typed values retained. Thirteen preserved-XLS cells match the
   independent LibreOffice CSV oracle. Fraction formatting remains deferred.
 
+## Implemented after 0.22
+
+- Supported inherited RTF visibility and stored ODF paragraph/style/section
+  visibility; conditional rendering and complete revision histories remain out
+  of scope. See [evidence and limits](research-visibility.md).
+- Explicit copy-based display cleanup and optional NFC; source values and
+  reference metadata remain unchanged. See [normalization](NORMALIZATION.md).
+- Stable codes accompanying legacy warning strings; see [diagnostics](DIAGNOSTICS.md).
+- OTT/OTS/OTP MIME families use their existing ODT/ODS/ODP model.
+- Individual RTF/ODT note body ranges and per-kind ordinals, without invented
+  source CPs, reference anchors or printed citation labels.
+- Bounded fixed-denominator XLS fraction display; raw values preserved and
+  ambiguous midpoint/layout cases explicitly unsupported.
+- Iterative model copying/serialization, cycle refusal, strict Limits argument
+  types, and reproducibility/process-isolation checks.
+
 ## Completed in 0.22
 
 - RTF: direct and inherited outline levels, body overrides, and warned exact
@@ -129,7 +145,7 @@ does not establish completeness.
   require page layout.
 - PPT: text in extensions and embedded passive documents; agreement with a
   converted presentation does not substitute for understanding unknown constructs.
-- XLS: general localization, fraction formats, conditional hiding and wider
+- XLS: general localization, variable-denominator/alignment fraction formats, conditional hiding and wider
   text-section formats. Hidden values must remain available in typed data.
 - RTF: legacy shape text without primary shptxt; safe selection between primary
   and fallback representations without duplication.
@@ -153,3 +169,12 @@ are outside the current text-parser contract. Pre-Word-97 DOC, pre-BIFF8 files
 and encrypted documents require separate decoders; fixing known cases in the
 supported formats does not add support for them. Full equivalence to an office
 application on arbitrary files is not promised.
+
+## Passive PowerPoint alternatives investigated
+
+The `metroBlob` (0x03A9) alternate DrawingML representation remains excluded.
+The [MS-ODRAW definition](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-odraw/0505b55f-f58a-4166-b574-83785d1035c1)
+says that the alternate representation should be ignored. Original probes
+confirmed native text is retained while matching/conflicting alternate data is
+not added. Missing native text does not establish authoritative fallback ownership.
+This research does not justify synthesizing additional slide text from the blob.
