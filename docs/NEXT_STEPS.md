@@ -31,3 +31,4 @@ complete rendering, revision acceptance or arbitrary-format equivalence.
 - Step 1: supported RTF/ODF visibility implemented and regression-tested.
 - Step 2: explicit normalization and iterative model copying implemented.
 - Step 3: warning codes assigned at emission sites; legacy strings retained.
+- Step 4: OTT/OTS/OTP MIME families accepted with existing ODF validation.

@@ -88,8 +88,14 @@ def xml(data, budget):
         raise InvalidDocumentError('Malformed ODF XML') from exc
 
 
+# ODF 1.3 Part 3 document-type definitions and Appendix C pair templates
+# with the same text/spreadsheet/presentation bodies. Normalize only the public
+# model format; read_package still compares the actual package/manifest MIME.
+# https://docs.oasis-open.org/office/OpenDocument/v1.3/os/part3-schema/OpenDocument-v1.3-os-part3-schema.html
 MIMES = {f'application/vnd.oasis.opendocument.{suffix}': fmt
-         for suffix, fmt in [('text', 'odt'), ('spreadsheet', 'ods'), ('presentation', 'odp')]}
+         for suffix, fmt in [('text', 'odt'), ('text-template', 'odt'),
+                             ('spreadsheet', 'ods'), ('spreadsheet-template', 'ods'),
+                             ('presentation', 'odp'), ('presentation-template', 'odp')]}
 
 
 def read_package(data, budget, expected):

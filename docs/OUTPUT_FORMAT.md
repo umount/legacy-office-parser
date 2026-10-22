@@ -528,14 +528,15 @@ MIME. A nonempty manifest root MIME that disagrees with `mimetype` is rejected.
 The MIME must be supported and the `office:body` child must match its family.
 The explicit ODF readers also require their expected family.
 
-**Template MIME types are currently unsupported.** The MIME types ending in
-`text-template`, `spreadsheet-template`, and `presentation-template` raise
-`UnsupportedFormatError`; OTT, OTS, and OTP are not accepted template families
-and are not normalized to `odt`, `ods`, or `odp`. Renaming an ordinary supported
-ODF package to `.ott`, `.ots`, or `.otp` does not prevent its extraction, because
-its content still declares an ordinary supported MIME. That is not template
-support. A MIME/manifest mismatch can instead fail earlier with
-`InvalidDocumentError`.
+**Template MIME types are accepted in the post-0.22 development version.**
+`text-template`, `spreadsheet-template` and `presentation-template` map to
+`odt`, `ods` and `odp` respectively. Their original family is not a separate
+output `format`; use `parse` or the corresponding explicit ODF reader. Ordinary
+and template MIME families have the same bounded extraction and body validation.
+A mismatch between `mimetype` and the manifest remains invalid, even when both
+MIMEs map to the same output family. Filename extensions do not override content.
+Templates are read passively; document creation rules, macros and external
+resources are not executed.
 
 The parser reads ZIP members in memory; it does not extract an archive directory.
 Only stored and deflated ZIP compression is supported. Flat XML ODF input is not
