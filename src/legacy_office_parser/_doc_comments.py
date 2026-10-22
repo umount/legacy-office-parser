@@ -5,6 +5,7 @@ join metadata to starts, whose ibkl selects an exclusive limit. Marker CFSpec,
 body paragraph/table validity, and ordinary selection validity belong to _Doc.
 The supplemental row index proves exact source spans without changing bookmarks.
 """
+from bisect import bisect_right
 from dataclasses import dataclass
 import struct
 import warnings
@@ -247,21 +248,53 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
             for i, (ordinal, cp, author, initials, begin, end) in enumerate(descriptors)]
 
 
+@dataclass(slots=True)
+class MixedRowSelections:
+    """Contiguous safe source atoms; table atoms require exact row endpoints."""
+
+    starts: list[int]
+    ends: list[int]
+    ordinary: list[bool]
+    runs: list[int]
+    text: memoryview
+
+    def append(self, begin, end, ordinary):
+        run = self.runs[-1] if self.ends and self.ends[-1] == begin else len(self.starts)
+        self.starts.append(begin)
+        self.ends.append(end)
+        self.ordinary.append(ordinary)
+        self.runs.append(run)
+
+    def contains(self, begin, end):
+        if not 0 <= begin < end <= len(self.text) // 2:
+            return False
+        i = bisect_right(self.starts, begin) - 1
+        j = bisect_right(self.starts, end - 1) - 1
+        return (0 <= i <= j and begin < self.ends[i] and end <= self.ends[j]
+                and self.runs[i] == self.runs[j]
+                and (self.ordinary[i] or begin == self.starts[i])
+                and (self.ordinary[j] or end == self.ends[j])
+                and not 0xdc00 <= struct.unpack_from('<H', self.text, begin * 2)[0] <= 0xdfff
+                and not 0xd800 <= struct.unpack_from('<H', self.text, (end - 1) * 2)[0] <= 0xdbff)
+
+
 @dataclass(frozen=True, slots=True)
 class WholeRowSelections:
     """Source-only proof for exact runs of complete outer table rows."""
 
     starts: dict[int, tuple[int, int]]
     ends: dict[int, tuple[int, int]]
+    mixed: MixedRowSelections | None = None
 
     def contains(self, begin, end):
         first, last = self.starts.get(begin), self.ends.get(end)
         return (first is not None and last is not None
-                and first[0] == last[0] and first[1] <= last[1])
+                and first[0] == last[0] and first[1] <= last[1]) or (
+                    self.mixed is not None and self.mixed.contains(begin, end))
 
 
 def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known,
-                                 limits: Limits, *, record=None):
+                                 limits: Limits, *, record=None, include_ordinary=False):
     """Index complete outer rows, including fully closed nested tables.
 
     ``paragraphs`` is the main-story source prepass: (begin, end, mark,
@@ -272,7 +305,8 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
     """
     # Charge before iterating or allocating indexes. Each paragraph can retain
     # at most one pending row, two endpoint entries, and one stack frame.
-    cost = 6 * len(paragraphs) + 1
+    # Mixed proof retains four additional per-paragraph arrays, charged here.
+    cost = (10 if include_ordinary else 6) * len(paragraphs) + 1
     if cost > limits.max_records:
         raise LimitExceededError('DOC comment selection record limit exceeded')
     if record is not None:
@@ -283,6 +317,7 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
     if len(text) % 2:
         return WholeRowSelections(starts, ends)
     count = len(text) // 2
+    mixed = MixedRowSelections([], [], [], [], memoryview(text)) if include_ordinary else None
     stack, rows = [], []
     bad = fields = False
     previous_end = 0
@@ -295,6 +330,8 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
                     continue
                 starts[begin] = (run, ordinal)
                 ends[end] = (run, ordinal)
+                if mixed is not None:
+                    mixed.append(begin, end, False)
 
     for begin, end, mark, mark_cp, props, _, known in paragraphs:
         # Reject an incomplete, overlapping, or out-of-bounds prepass outright.
@@ -318,6 +355,10 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
             if len(stack) == 1 and stack[0][1:] == [0, False]:
                 stack.pop()
             publish()
+            if (mixed is not None and known and paragraph_known(mark_cp) and ordinary
+                    and mark == 13 and mark_cp not in section_ends
+                    and not (props.row_end or props.inner_cell or props.inner_ttp)):
+                mixed.append(begin, end + 1, True)
             stack, rows = [], []
             bad = False
             run += 1
@@ -381,4 +422,4 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
     # field delimiters, even when a particular row does not contain one.
     if fields:
         return WholeRowSelections({}, {})
-    return WholeRowSelections(starts, ends)
+    return WholeRowSelections(starts, ends, mixed)

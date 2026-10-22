@@ -186,13 +186,14 @@ def test_crossing_nested_table_never_uses_equal_outer_depth_as_proof(monkeypatch
     assert selection(result) == (None, None)
 
 
-def test_omitted_grid_cells_cannot_bridge_source_table(monkeypatch):
+def test_complete_source_rows_bridge_omitted_output_grid_positions(monkeypatch):
     main = 'Before\rX\7\7L\7R\7\7After\x05\r'
     props = [b'', IN, ROW + definition([0], [100, 200]), IN, IN,
              ROW + definition([0, 0], [0, 100, 200]), b'', b'', b'']
     result = parse(monkeypatch, ranged(main, 0, main.index('\x05'), props=props))
     assert result.blocks[1].rows[0][0].omitted
-    assert selection(result) == (None, None)
+    # Both source rows are complete; output padding is not a source cell.
+    assert selection(result) == (0, 20)
     assert result.comments[0].anchor_path == ['blocks', 2]
 
 

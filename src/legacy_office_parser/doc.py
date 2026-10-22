@@ -903,8 +903,10 @@ class _Doc:
         region, previous_depth, boundary = 0, None, False
         fields = False
         whole_rows = None
+        has_outer_row = False
         for begin, end, mark, mark_cp, props, _, known in paragraphs:
             depth = props.depth or (1 if props.in_table else 0)
+            has_outer_row |= depth == 1 and mark == 7 and props.row_end
             if boundary or depth != previous_depth:
                 region += 1
             regions.append(region)
@@ -943,18 +945,25 @@ class _Doc:
                           and end <= last_end + include_cr
                           and not 0xdc00 <= _u16(self.text, begin * 2) <= 0xdfff
                           and not 0xd800 <= _u16(self.text, (end - 1) * 2) <= 0xdbff)
-            if not proven and not fields and 0 <= j < len(paragraphs):
-                _, _, last_mark, last_cp, last_props, _, _ = paragraphs[j]
-                if (last_mark == 7 and last_props.row_end
-                        and (last_props.depth or 1) == 1 and end == last_cp + 1):
-                    if whole_rows is None:
-                        from ._doc_comments import whole_row_comment_selections
+            # Only try the supplementary proof when a row exists and an
+            # endpoint is ordinary or the limit is exactly an outer TTP.
+            mixed_candidate = False
+            if has_outer_row and 0 <= i <= j < len(paragraphs):
+                first_props, last_props = paragraphs[i][4], paragraphs[j][4]
+                mixed_candidate = (
+                    not (first_props.depth or first_props.in_table)
+                    or not (last_props.depth or last_props.in_table)
+                    or (paragraphs[j][2] == 7 and last_props.row_end
+                        and (last_props.depth or 1) == 1 and end == paragraphs[j][3] + 1))
+            if not proven and not fields and mixed_candidate:
+                if whole_rows is None:
+                    from ._doc_comments import whole_row_comment_selections
 
-                        whole_rows = whole_row_comment_selections(
-                            memoryview(self.text)[:self.counts[0] * 2], paragraphs, self.section_ends,
-                            self._comment_paragraph_known, self.limits,
-                            record=self.budget.record)
-                    proven = whole_rows.contains(begin, end)
+                    whole_rows = whole_row_comment_selections(
+                        memoryview(self.text)[:self.counts[0] * 2], paragraphs, self.section_ends,
+                        self._comment_paragraph_known, self.limits,
+                        record=self.budget.record, include_ordinary=True)
+                proven = whole_rows.contains(begin, end)
             if proven:
                 self.comment_selections[source.source_cp] = (begin, end)
             else:

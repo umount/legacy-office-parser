@@ -1,0 +1,82 @@
+{
+  "story_counts": [
+    35,
+    0,
+    0,
+    39,
+    0,
+    0,
+    0
+  ],
+  "main": "Lead 😀 Intro\rA\u0007B\u0007\u0007Outro 🚀\u0005 tail.\r",
+  "comment_story": "\u0005Review paragraph and table together.\r\r",
+  "owners": [
+    "Ada Mixed"
+  ],
+  "reference_sentinel": 36,
+  "text_cps": [
+    0,
+    38,
+    39
+  ],
+  "comments": [
+    {
+      "source_cp": 27,
+      "source_unit": 5,
+      "initials": "",
+      "owner_index": 0,
+      "tag": 4294967295,
+      "body_cps": [
+        0,
+        38
+      ],
+      "body": "\u0005Review paragraph and table together.\r",
+      "selection_cps": [
+        27,
+        27
+      ],
+      "selection": ""
+    }
+  ],
+  "marker_chpx": [
+    {
+      "cp": 27,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 35,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    }
+  ],
+  "raw_parts_hex": {
+    "4": "1b000000240000000000000000000000000000000000000000000000000000000000ffffffff",
+    "5": "000000002600000027000000",
+    "36": "090041006400610020004d006900780065006400",
+    "37": "",
+    "42": "",
+    "43": "",
+    "112": "000be1870000000000000000000000000000"
+  },
+  "source_xml": [
+    {
+      "author": "Ada Mixed",
+      "body": [
+        "Review paragraph and table together."
+      ],
+      "selection": "Intro\rA\rB\rOutro 🚀"
+    }
+  ],
+  "lo_readback_xml": [
+    {
+      "author": "Ada Mixed",
+      "body": [
+        "Review paragraph and table together."
+      ],
+      "selection": null
+    }
+  ]
+}
