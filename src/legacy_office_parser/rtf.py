@@ -258,6 +258,86 @@ class _WordArt:
         return None
 
 
+class _Stylesheet:
+    """Observe only top-level paragraph styles; retain a bounded ASCII name.
+
+    The existing lexer bounds records and depth. Resolution is iterative and
+    memoized, including cycles and missing bases, so long chains stay linear.
+    """
+    def __init__(self, depth: int):
+        self.depth = depth
+        self.styles: dict[int, tuple[int | None, int | None]] = {}
+        self.style = 0
+        self.base = self.outline = None
+        self.paragraph_style = True
+        self.name = bytearray()
+        self.name_valid = True
+        self.named = set()
+
+    def token(self, kind, value, number, depth):
+        if kind == 'open' and depth == self.depth:
+            self.style = 0
+            self.base = self.outline = None
+            self.paragraph_style = True
+            self.name.clear()
+            self.name_valid = True
+        elif depth == self.depth + 1:
+            if kind == 'close' and self.paragraph_style:
+                # Compatibility with Word/LibreOffice built-in style names:
+                # LibreOffice sw/source/writerfilter/dmapper/StyleSheetTable.cxx,
+                # StyleNameMap; no localized names, prefixes or sN heuristics.
+                name = bytes(self.name).strip().removesuffix(b';').strip()
+                if (self.outline is None and self.name_valid and len(name) == 9
+                        and name[:8] in {b'heading ', b'Heading '}
+                        and b'1' <= name[8:] <= b'9'):
+                    self.outline = name[8] - ord('1')
+                    self.named.add(self.style)
+                else:
+                    self.named.discard(self.style)
+                self.styles[self.style] = self.base, self.outline
+            elif kind == 'bytes':
+                if len(self.name) + len(value) <= 64 and value.isascii():
+                    self.name.extend(value)
+                else:
+                    self.name_valid = False
+            elif kind in {'symbol', 'binary'}:
+                self.name_valid = False
+                if kind == 'symbol' and value == '*':
+                    self.paragraph_style = False
+            elif kind == 'word':
+                if value in {'u', 'uc'}:
+                    self.name_valid = False
+                if value in {'cs', 'ds', 'ts'}:
+                    self.paragraph_style = False
+                elif value == 's':
+                    if number is None or number < 0:
+                        self.paragraph_style = False
+                    else:
+                        self.style = number
+                elif value == 'sbasedon':
+                    self.base = number if number != 222 else None
+                elif value == 'outlinelevel' and number is not None and 0 <= number <= 9:
+                    self.outline = number
+
+    def resolve(self):
+        resolved: dict[int, int | None] = {}
+        for style in self.styles:
+            path = set()
+            current = style
+            outline = None
+            while current in self.styles and current not in path:
+                if current in resolved:
+                    outline = resolved[current]
+                    break
+                path.add(current)
+                current, outline = self.styles[current]
+                if outline is not None:
+                    break
+            for item in path:
+                resolved[item] = outline
+        return resolved
+
+
 @dataclass(slots=True)
 class _State:
     skip: bool = False
@@ -279,6 +359,8 @@ class _State:
     children: int = 0
     depth: int = 1
     nested_properties: bool = False
+    style: int = 0
+    outline: int | None = None
 
 
 class _Sink:
@@ -287,7 +369,9 @@ class _Sink:
         self.story = story
         self.blocks: list[Paragraph | Table] = []
         self.parts: list[str] = []
-        self.paragraph_ends: list[int] = []
+        self.paragraph_ends: list[tuple[int, int | None]] = []
+        self.heading_level: int | None = None
+        self.text_heading_level: int | None = None
         self.row: list[Cell] | None = None
         self.expected = 0
         self.table: Table | None = None
@@ -309,7 +393,7 @@ class _Sink:
             if current.row is None:
                 raise InvalidDocumentError('RTF nested table has no containing row')
             if current.child is None:
-                current.flush_cell_paragraphs()
+                current.flush_cell_paragraphs(implicit_boundary=True)
                 current.nested = True
                 self.parser.has_nested = True
                 current.child = _Sink(self.parser)
@@ -319,15 +403,19 @@ class _Sink:
         current.close_child()
         return current
 
-    def flush_cell_paragraphs(self):
+    def flush_cell_paragraphs(self, implicit_boundary: bool = False):
         # Keep actual paragraph boundaries separate from \line text. A final
         # \par terminates the last paragraph; a final \line remains in its text.
         start = 0
-        for end in self.paragraph_ends:
-            self.cell_blocks.append(Paragraph(''.join(self.parts[start:end - 1])))
+        for end, heading in self.paragraph_ends:
+            self.cell_blocks.append(Paragraph(''.join(self.parts[start:end - 1]), heading))
             start = end
         if start < len(self.parts):
-            self.cell_blocks.append(Paragraph(''.join(self.parts[start:])))
+            # A new nested table implicitly terminates its parent's pending
+            # paragraph. Its leading pard/style controls belong to the child;
+            # preserve the parent properties captured with its last text.
+            heading = self.text_heading_level if implicit_boundary else self.heading_level
+            self.cell_blocks.append(Paragraph(''.join(self.parts[start:]), heading))
         self.parts.clear()
         self.paragraph_ends.clear()
 
@@ -347,7 +435,17 @@ class _Sink:
     def projected_cell(self):
         self.close_child()
         if not self.cell_blocks:
-            return Cell(''.join(self.parts))
+            text = ''.join(self.parts)
+            if self.heading_level is None and not any(h is not None for _, h in self.paragraph_ends):
+                return Cell(text)
+            # Keep the legacy ordinary-cell projection, including trailing par.
+            self.parser.charge(len(text))
+            if not self.parts:
+                self.cell_blocks.append(Paragraph('', self.heading_level))
+            self.flush_cell_paragraphs()
+            cell = Cell(text, blocks=self.cell_blocks)
+            self.cell_blocks = []
+            return cell
         self.flush_cell_paragraphs()
         # Charge every stored projection before constructing it, including
         # repeated descendant text at each ancestor and all delimiters.
@@ -372,17 +470,24 @@ class _Sink:
             if self.level > 1 and self.row is None:
                 self.row = []
             self.parser.charge(len(text))
+            self.heading_level = self.parser.heading_level()
+            self.text_heading_level = self.heading_level
             self.parts.append(text)
 
     def paragraph(self, force: bool = False):
         if self.level > 1 and self.row is None:
             self.row = []
+        if not self.parts or force:
+            self.heading_level = self.parser.heading_level()
         if self.row is not None:
+            heading = self.heading_level
             self.text('\n')
-            self.paragraph_ends.append(len(self.parts))
+            self.paragraph_ends.append((len(self.parts), heading))
+            self.heading_level = None
         elif self.parts or force:
-            self.blocks.append(Paragraph(''.join(self.parts)))
+            self.blocks.append(Paragraph(''.join(self.parts), self.heading_level))
             self.parts.clear()
+            self.heading_level = None
             self.table = None
             self.vertical_anchors.clear()
 
@@ -452,10 +557,20 @@ class _Sink:
             # only newly inserted separators; input text was already budgeted.
             fragments = [c.text for c in self.row[start:end] if c.text]
             self.parser.charge(max(0, len(fragments) - 1))
+            if any(c.blocks for c in self.row[start:end]):
+                blocks = []
+                for cell in self.row[start:end]:
+                    if cell.blocks:
+                        blocks.extend(cell.blocks)
+                    elif cell.text:
+                        self.parser.charge(len(cell.text))
+                        blocks.append(Paragraph(cell.text))
+                anchor.blocks = blocks
             anchor.text = '\n'.join(fragments)
             anchor.col_span = end - start
             for cell in self.row[start + 1:end]:
                 cell.text = ''
+                cell.blocks = []
                 cell.covered = True
             key = (left, right, start, end)
             if vertical == 'clvmgf':
@@ -479,7 +594,12 @@ class _Sink:
         self.parser.cells += 1
         if self.parser.cells > self.parser.limits.max_cells:
             raise LimitExceededError('RTF cell limit exceeded')
+        if not self.parts and not self.cell_blocks and self.child is None:
+            # Cell terminators do not reset paragraph properties. Empty cells
+            # have no text emission to refresh the cached heading themselves.
+            self.heading_level = self.parser.heading_level()
         self.row.append(self.projected_cell())
+        self.heading_level = None
         self.parts.clear()
         self.paragraph_ends.clear()
 
@@ -540,6 +660,22 @@ class _Parser:
         self.has_nested = False
         self.wordart: _WordArt | None = None
         self.uncertain_encoding = False
+        self.stylesheet: _Stylesheet | None = None
+        self.style_outlines: dict[int, int | None] = {}
+
+    def heading_level(self):
+        outline = self.state.outline
+        if outline is None:
+            outline = self.style_outlines.get(self.state.style)
+        return outline + 1 if outline is not None and 0 <= outline <= 8 else None
+
+    def update_heading(self):
+        # Property changes must not close/create nested tables (pard/intbl often
+        # precede itap2). Routing structural content remains the sink's job.
+        sink = self.sinks[self.state.target]
+        while sink.child is not None and sink.level < self.state.depth:
+            sink = sink.child
+        sink.heading_level = self.heading_level()
 
     def warn(self, message: str):
         if message not in self.document.warnings:
@@ -646,7 +782,10 @@ class _Parser:
                 or s.legacy_ancestor and word in _SHAPE_CONTAINERS | {'shptxt'}):
             s.skip = True
             return
-        if word in _SKIP:
+        if word == 'stylesheet' and not (drawing or s.font_table or s.hidden or s.deleted):
+            self.stylesheet = _Stylesheet(len(self.stack))
+            s.skip = True
+        elif word in _SKIP:
             s.skip = True
             if word in {'pict', 'object', 'mmath', 'moMath', 'moMathPara'}:
                 self.warn('Pictures, objects, shapes or equations omitted.')
@@ -775,10 +914,21 @@ class _Parser:
                 root = self.sinks[s.target]
                 if s.depth == 1 and root.row is None:
                     root.row = []
+            elif word in {'outlinelevel', 's'}:
+                if number is not None and (0 <= number <= 9 if word == 'outlinelevel' else number >= 0):
+                    self.high_end()
+                    if word == 'outlinelevel':
+                        s.outline = number
+                    else:
+                        s.style = number
+                    self.update_heading()
             elif word == 'pard':
                 if s.nested_properties:
                     raise InvalidDocumentError('Paragraph reset inside RTF nested properties')
                 self.high_end()
+                s.style = 0
+                s.outline = None
+                self.update_heading()
                 s.depth = 1
             elif word == 'itap':
                 if number is None or number < 0:
@@ -864,9 +1014,10 @@ class _Parser:
     def _finalize_auxiliary_stories(self):
         extras: dict[str, list[str]] = {}
         structured = {sink.story for sink in self.sinks[1:]
-                      if any(isinstance(block, Table) for block in sink.blocks)}
+                      if any(isinstance(block, Table) or block.heading_level is not None
+                             for block in sink.blocks)}
         for sink in self.sinks[1:]:
-            # Preserve all blocks of a table-bearing story, including paragraphs
+            # Preserve all blocks of a structured story, including paragraphs
             # from its other sinks. Legacy strings keep their existing projection.
             if sink.story in structured:
                 self.document.story_blocks.setdefault(sink.story, []).extend(sink.blocks)
@@ -907,6 +1058,14 @@ class _Parser:
                     self.warn('A single terminal NUL after the RTF root was ignored.')
                     continue
                 raise InvalidDocumentError('Data after RTF root group')
+            if self.stylesheet is not None:
+                sheet = self.stylesheet
+                sheet.token(kind, value, number, len(self.stack))
+                if kind == 'close' and len(self.stack) == sheet.depth:
+                    self.style_outlines.update(sheet.resolve())
+                    if sheet.named:
+                        self.warn('RTF heading levels inferred from built-in style names.')
+                    self.stylesheet = None
             if self.wordart is not None:
                 candidate = self.wordart
                 candidate.token(kind, value, number, len(self.stack))
@@ -916,6 +1075,7 @@ class _Parser:
                     if text:
                         sink = _Sink(self, 'textboxes')
                         sink.text(text)
+                        sink.heading_level = None
                         sink.finish()
                         self.sinks.append(sink)
                     elif text is None and candidate.attempted:
@@ -1048,8 +1208,9 @@ def parse_rtf_bytes(data: bytes, limits: Limits) -> Document:
     """Extract RTF text, simple tables and separate stories within ``limits``.
 
     Malformed syntax raises InvalidDocumentError; resource exhaustion raises
-    LimitExceededError. Both derive from ParseError. Formatting is intentionally
-    discarded. Only an uncompressed RTF root with version 1 is accepted.
+    LimitExceededError. Both derive from ParseError. Formatting other than
+    paragraph heading levels is intentionally discarded. Only an uncompressed
+    RTF root with version 1 is accepted.
     """
     if len(data) > limits.max_file_bytes:
         raise LimitExceededError('RTF file size limit exceeded')
