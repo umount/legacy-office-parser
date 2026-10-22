@@ -1,6 +1,7 @@
 """Original ODT shape probes; the optional independent oracle lives in passive_research."""
 import pytest
 
+from legacy_office_parser.models import Note, NoteBodyRange
 from legacy_office_parser import Limits, LimitExceededError, Paragraph, Table, parse_odt
 from legacy_office_parser.api import _validate_result
 from test_odf_inline_objects import package, p, frame, box, embedded, PREVIEW
@@ -29,7 +30,14 @@ def test_shape_routes_once_to_detached_story(kind, location):
     doc = parse_odt(package(body, extra))
     assert doc.textboxes == 'label'
     assert doc.text.count('label') == 1
-    assert doc.story_blocks == {}
+    if location == 'note':
+        # The shape owns the label; the note keeps only its empty body marker.
+        assert doc.story_blocks == {'footnotes': [Paragraph('')]}
+        assert doc.notes == [Note('footnote', 1, NoteBodyRange('footnotes', 0, 1))]
+        assert doc.footnotes == ''
+    else:
+        assert doc.story_blocks == {}
+        assert doc.notes == []
     if location.startswith('cell'):
         assert doc.blocks[0].rows[0][0].text == ('AB' if location == 'cell-inline' else '')
     if location == 'inline':

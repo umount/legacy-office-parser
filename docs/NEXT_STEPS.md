@@ -32,3 +32,5 @@ complete rendering, revision acceptance or arbitrary-format equivalence.
 - Step 2: explicit normalization and iterative model copying implemented.
 - Step 3: warning codes assigned at emission sites; legacy strings retained.
 - Step 4: OTT/OTS/OTP MIME families accepted with existing ODF validation.
+- Step 5: individual RTF/ODT note ranges retained, including visible empty bodies;
+  repeat budgets and suppressed destinations covered by regression tests.

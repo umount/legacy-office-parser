@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from legacy_office_parser.models import Note, NoteBodyRange, Paragraph
 from legacy_office_parser import Limits, LimitExceededError, parse_odt
 from legacy_office_parser.odf import parse_odf_bytes
 from test_odf import package, parse
@@ -114,10 +115,16 @@ def test_hidden_covered_and_unsupported_headings_do_not_opt_in():
 
 
 @pytest.mark.parametrize('key', KEYS)
-def test_invalid_headings_do_not_expand_legacy_story_contract(key):
+def test_invalid_headings_retain_note_boundaries_without_heading_metadata(key):
     doc = parse_odt(document(key, [h('title', '10')]))
     assert getattr(doc, key) == 'title'
-    assert doc.story_blocks == {}
+    if key in ('footnotes', 'endnotes'):
+        assert doc.story_blocks == {key: [Paragraph('title')]}
+        assert doc.notes == [Note(key[:-1], 1, NoteBodyRange(key, 0, 1))]
+    else:
+        assert doc.story_blocks == {}
+        assert doc.notes == []
+    assert 'heading_level' not in json.dumps(doc.to_dict().get('story_blocks', {}))
     assert doc.warnings.count(HEADING_WARNING) == 1
 
 

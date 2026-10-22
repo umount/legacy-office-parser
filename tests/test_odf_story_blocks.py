@@ -3,6 +3,7 @@ from dataclasses import replace
 
 import pytest
 
+from legacy_office_parser.models import Note, NoteBodyRange
 from legacy_office_parser import Limits, LimitExceededError, Paragraph, Table, parse_odt
 from legacy_office_parser.api import _validate_result
 from legacy_office_parser.odf import parse_odf_bytes
@@ -43,12 +44,25 @@ def test_table_key_keeps_all_sinks_and_interleaved_blocks(key):
 
 
 @pytest.mark.parametrize('key', KEYS)
-def test_pure_text_and_absent_stories_keep_legacy_json(key):
+def test_pure_text_notes_keep_boundaries_and_absent_stories_stay_absent(key):
     doc = parse_odt(document(key, ['', p(''), p('text')]))
-    assert getattr(doc, key) == 'text'
-    assert doc.story_blocks == {}
-    assert 'story_blocks' not in doc.to_dict()
-    assert 'story_blocks' not in parse_odt(package('')).to_dict()
+    assert getattr(doc, key) == doc.text == 'text'
+    if key in ('footnotes', 'endnotes'):
+        # First block is an empty-body marker; second is a source paragraph.
+        assert doc.story_blocks == {key: [Paragraph(''), Paragraph(''), Paragraph('text')]}
+        assert doc.notes == [Note(key[:-1], 1, NoteBodyRange(key, 0, 1)),
+                             Note(key[:-1], 2, NoteBodyRange(key, 1, 2)),
+                             Note(key[:-1], 3, NoteBodyRange(key, 2, 3))]
+        assert doc.to_dict()['story_blocks'] == {key: [
+            {'kind': 'paragraph', 'text': ''}, {'kind': 'paragraph', 'text': ''},
+            {'kind': 'paragraph', 'text': 'text'}]}
+    else:
+        assert doc.story_blocks == {}
+        assert doc.notes == []
+        assert 'story_blocks' not in doc.to_dict()
+    absent = parse_odt(package(''))
+    assert absent.notes == []
+    assert 'story_blocks' not in absent.to_dict()
 
 
 @pytest.mark.parametrize('key', KEYS)
@@ -57,10 +71,15 @@ def test_zero_row_zero_cell_and_empty_paragraph_semantics(key):
     zero_cells = '<table:table><table:table-row/></table:table>'
     doc = parse_odt(document(key, ['', p('') + zero_rows, zero_cells + p('')]))
     blocks = doc.story_blocks[key]
-    assert [type(b) for b in blocks] == [Paragraph, Table, Table, Paragraph]
-    assert blocks[0].text == blocks[3].text == ''
-    assert blocks[1].rows == []
-    assert blocks[2].rows == [[]]
+    if key in ('footnotes', 'endnotes'):
+        # Empty first body needs a marker; source empty paragraphs remain distinct.
+        assert blocks == [Paragraph(''), Paragraph(''), Table([]), Table([[]]), Paragraph('')]
+        assert doc.notes == [Note(key[:-1], 1, NoteBodyRange(key, 0, 1)),
+                             Note(key[:-1], 2, NoteBodyRange(key, 1, 3)),
+                             Note(key[:-1], 3, NoteBodyRange(key, 3, 5))]
+    else:
+        assert blocks == [Paragraph(''), Table([]), Table([[]]), Paragraph('')]
+        assert doc.notes == []
     assert getattr(doc, key) == doc.text == ''
 
 
@@ -140,11 +159,13 @@ def test_repeated_nested_structure_counts_every_projection():
         parse_odt(data, limits=Limits(max_depth=6))
 
 
-def test_only_table_keys_are_added_and_hidden_tables_do_not_opt_in():
+def test_tables_and_note_bodies_are_retained_but_hidden_tables_do_not_opt_in():
     body = (frame(table(p('box'))) + p(note(p('foot'))) +
             frame('<text:section text:display="none">' + table(p('hidden')) + '</text:section>'))
     doc = parse_odt(package(body))
-    assert set(doc.story_blocks) == {'textboxes'}
+    assert set(doc.story_blocks) == {'textboxes', 'footnotes'}
+    assert doc.story_blocks['footnotes'] == [Paragraph('foot')]
+    assert doc.notes == [Note('footnote', 1, NoteBodyRange('footnotes', 0, 1))]
     assert doc.footnotes == 'foot'
     assert doc.text == 'foot\n\nbox'
     hidden_only = document('textboxes', [p('visible') + '<text:section text:display="none">' +

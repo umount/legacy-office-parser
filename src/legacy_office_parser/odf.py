@@ -8,7 +8,8 @@ from .diagnostics import diagnostic_warning
 from ._odf_package import Budget, cap, q, read_package
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
-from .models import _clone_cell, Cell, CellRange, Document, Paragraph, Sheet, Slide, SpreadsheetCell, Table
+from .models import (_clone_cell, Cell, CellRange, Document, Note, NoteBodyRange,
+                     Paragraph, Sheet, Slide, SpreadsheetCell, Table)
 
 PARAS = {q('text:p'), q('text:h')}
 ROW_WRAPPERS = {q('table:table-header-rows'), q('table:table-rows'), q('table:table-row-group')}
@@ -89,6 +90,9 @@ class _Parser:
         self.max_rows = cap(self.limits, 'max_rows', 1_048_576)
         self.max_columns = cap(self.limits, 'max_columns', 16_384)
         self.notes = {"footnote": [], "endnote": []}
+        # Encounter order across both kinds. Indices address the corresponding
+        # story occurrence, not a source CP or an inferred reference anchor.
+        self.note_order = []
         self.stories = {**self.notes, "textboxes": [], "headers_footers": []}
         # Additional retained text not already charged by the extraction budget.
         # Original stories already charge descendant cell projections; copies
@@ -350,6 +354,12 @@ class _Parser:
         if self.doc.format != 'odt' or self.in_note or kind not in self.notes or len(bodies) != 1:
             self.unsupported(element)
             return
+        # Charge the logical metadata record before retaining or expanding it.
+        self.budget.nodes += 1
+        if self.budget.nodes > self.limits.max_records:
+            raise LimitExceededError('ODF note metadata record limit exceeded')
+        self.note_order.append((kind, len(self.notes[kind])))
+        self.structured_stories.add(kind)
         self.in_note = True
         try:
             self.story(bodies[0], self.notes[kind])
@@ -357,6 +367,7 @@ class _Parser:
             self.in_note = False
 
     def story(self, element, destination):
+        kind = next(kind for kind, stories in self.stories.items() if stories is destination)
         budget_start = self.budget.output_chars
         stories_start = self.story_budget_text
         # Reserve encounter order before extracting any nested frames. They are
@@ -365,6 +376,13 @@ class _Parser:
         blocks = []
         destination.append(('', blocks))
         self.blocks(element, blocks)
+        if kind in self.notes and not blocks:
+            # An empty/fully omitted body still owns a nonempty block range.
+            # This sentinel carries no invented citation, text, or anchor.
+            self.budget.nodes += 1
+            if self.budget.nodes > self.limits.max_records:
+                raise LimitExceededError('ODF empty note body record limit exceeded')
+            blocks.append(Paragraph(''))
         # table() charges parent projections for repeats, but descendant blocks
         # can have been charged only for their template. Count this story's
         # actual retained tree once, before it can become a repeat template.
@@ -403,7 +421,6 @@ class _Parser:
         # second time. The outer story can now isolate its own budget delta.
         self.story_budget_text += (self.budget.output_chars - budget_start -
                                    (self.story_budget_text - stories_start))
-        kind = next(kind for kind, stories in self.stories.items() if stories is destination)
         self.retained_story_text[kind] += charged
         if structured_blocks(blocks):
             self.structured_stories.add(kind)
@@ -758,14 +775,18 @@ class _Parser:
             yield e, column, repeat, rs, cs
             column += repeat
 
-    def repeat_stories(self, starts, copies, cells):
+    def repeat_stories(self, starts, copies, cells, note_start):
         """Clone detached stories with repeated table content, in reading order."""
         if not copies:
             return
         self.budget.cell(cells * copies)
         batches = {}
         copied_text = {}
-        legacy_text = records = 0
+        notes = self.note_order[note_start:]
+        # Include metadata in the preflight before any detached tree is cloned.
+        legacy_text = 0
+        records = len(notes) * copies
+        offsets = {kind: len(self.notes[kind]) for kind in self.notes}
         for kind, start in starts.items():
             values = self.stories[kind][start:]
             batches[kind] = values
@@ -807,6 +828,25 @@ class _Parser:
                 for value, blocks in values:
                     cloned = _clone_cell(Cell(blocks=blocks)).blocks
                     self.stories[kind].append((value, cloned))
+        for copy in range(copies):
+            self.note_order.extend(
+                (kind, offsets[kind] + copy * len(batches[kind]) + index - starts[kind])
+                for kind, index in notes)
+
+    def finish_notes(self):
+        """Resolve occurrence ranges after all row/column story copies exist."""
+        ranges = {}
+        for kind, stories in self.notes.items():
+            start = 0
+            ranges[kind] = []
+            for _, blocks in stories:
+                end = start + len(blocks)
+                ranges[kind].append((start, end))
+                start = end
+        for kind, index in self.note_order:
+            start, end = ranges[kind][index]
+            self.doc.notes.append(Note(kind=kind, ordinal=index + 1,
+                                       body=NoteBodyRange(kind + 's', start, end)))
 
     def table(self, element):
         result = Table()
@@ -821,19 +861,21 @@ class _Parser:
             self.budget.cell(max(width, 1) * repeat)
             template = []
             row_stories = {kind: len(values) for kind, values in self.stories.items()}
+            row_notes = len(self.note_order)
             row_cells = self.budget.cells
             for e, column, cr, rs, cs in specs:
                 if row_index + repeat + rs - 2 > self.max_rows:
                     raise LimitExceededError('ODF row span limit exceeded')
                 covered = e.tag == q('table:covered-table-cell')
                 cell_stories = {kind: len(values) for kind, values in self.stories.items()}
+                cell_notes = len(self.note_order)
                 cell_count = self.budget.cells
                 value, children = ('', []) if covered else self.cell_content(e)
-                self.repeat_stories(cell_stories, cr - 1, self.budget.cells - cell_count)
+                self.repeat_stories(cell_stories, cr - 1, self.budget.cells - cell_count, cell_notes)
                 self.budget.text(len(value) * cr * repeat)
                 prototype = Cell(value, rs, cs, covered, children)
                 template.extend(_clone_cell(prototype) for _ in range(cr))
-            self.repeat_stories(row_stories, repeat - 1, self.budget.cells - row_cells)
+            self.repeat_stories(row_stories, repeat - 1, self.budget.cells - row_cells, row_notes)
             for _ in range(repeat):
                 result.rows.append([_clone_cell(c) for c in template])
             row_index += repeat
@@ -1141,9 +1183,10 @@ def parse_odf_bytes(data: bytes, limits: Limits, expected_format: str | None = N
         field = {'footnote': 'footnotes', 'endnote': 'endnotes'}.get(kind, kind)
         setattr(doc, field, '\n\n'.join(value for value, _ in stories if value))
         # Opt in per pooled key, retaining all occurrences in encounter order.
-        # No note identities, frame anchors, or page placement are inferred.
+        # Note ranges identify body occurrences; frame/page anchors stay unknown.
         if kind in parser.structured_stories:
             doc.story_blocks[field] = [block for _, blocks in stories for block in blocks]
+    parser.finish_notes()
     _check_visible_text(doc, limits)
     if parser.heading_cells or doc.story_blocks or any(sheet.drawings for sheet in doc.sheets):
         # Retained structure and its legacy projection are separate allocations.

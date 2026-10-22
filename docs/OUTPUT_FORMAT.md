@@ -131,7 +131,8 @@ The document fields are:
 - `story_blocks: dict[str, list[Paragraph | Table]]`: optional structured auxiliary
   stories. Supported keys are `footnotes`, `endnotes`, `headers_footers`,
   `textboxes`, and `comment_text`.
-- `notes: list[Note]`: individual note-body/reference metadata, currently from DOC.
+- `notes: list[Note]`: individual note bodies from DOC, RTF and ODT.
+  Source CPs and structural reference anchors are currently available only for DOC.
 - `comments: list[Comment]`: document comment metadata, currently from DOC.
 - `comment_text: str`: combined DOC comment-body projection; default `""`.
 
@@ -317,19 +318,24 @@ require it; DOC note/comment relationships also retain body blocks. A missing
 structured key does not imply an empty corresponding string.
 
 Currently **only DOC extraction populates per-note and document-comment
-relationships**. RTF and ODT expose pooled footnote/endnote stories, not
-individual `Note` records with reference anchors. Do not split their strings on
-blank lines to manufacture note boundaries or associate them with text positions.
+reference relationships**. RTF and ODT now publish individual `Note` body ranges
+alongside their pooled strings. Their ordinals follow encountered note bodies
+within each kind; `source_cp` and `anchor_path` are null and `reference_kind` is
+unknown. Do not invent reference positions from these body ranges. Use the ranges
+in `story_blocks`, rather than splitting strings on blank lines.
 Likewise, pooled headers/footers and textboxes do not establish page placement,
 frame anchors, or a relationship to the nearest main-story paragraph.
 
-A DOC `Note` contains:
+A `Note` contains:
 
-- `kind: "footnote" | "endnote"` and `ordinal: int`: a positive source ordinal,
-  not reconstructed printed numbering. Retained ordinals may have gaps.
+- `kind: "footnote" | "endnote"` and `ordinal: int`: a positive ordinal,
+  not reconstructed printed numbering. DOC source ordinals may have gaps; RTF/ODT
+  ordinals identify encountered retained bodies within each note kind.
 - `body: NoteBodyRange`: `story` is `footnotes` or `endnotes`; `block_start` and
   `block_end` identify a **zero-based, half-open**, nonempty range in that
-  `story_blocks` list. The story must agree with `kind`.
+  `story_blocks` list. The story must agree with `kind`. An empty retained RTF/ODT
+  body has an empty paragraph block; it does not contribute pooled text. Retained
+  body blocks and their text projections both consume output budgets.
 - `source_cp: int | None`: source character position, not an output-text offset.
 - `reference_kind: "automatic" | "custom" | "unknown"`: reference classification,
   not a retained citation-label string.

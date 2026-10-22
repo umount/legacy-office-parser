@@ -11,7 +11,7 @@ import pytest
 
 from legacy_office_parser.errors import LimitExceededError
 from legacy_office_parser.limits import Limits
-from legacy_office_parser.models import Paragraph
+from legacy_office_parser.models import Note, NoteBodyRange, Paragraph
 from legacy_office_parser.odf import parse_odf_bytes
 from test_odf import NS, parse
 
@@ -182,7 +182,16 @@ def test_frames_and_notes_share_text_budget():
                 note('<text:p><text:s text:c="1000"/></text:p>') + '</text:p>')
     with pytest.raises(LimitExceededError, match='expanded text'):
         parse(xml, limits=Limits(max_text_chars=1999))
-    assert len(parse(xml, limits=Limits(max_text_chars=2002)).text) == 2002
+    # Plain textbox projection plus retained note paragraph and note projection.
+    retained_chars = 1000 + 1000 + 1000
+    with pytest.raises(LimitExceededError, match='output text size'):
+        parse(xml, limits=Limits(max_text_chars=retained_chars - 1))
+    doc = parse(xml, limits=Limits(max_text_chars=retained_chars))
+    assert doc.story_blocks == {'footnotes': [Paragraph(' ' * 1000)]}
+    assert doc.notes == [Note('footnote', 1, NoteBodyRange('footnotes', 0, 1))]
+    assert doc.textboxes == doc.footnotes == ' ' * 1000
+    assert doc.text == ' ' * 1000 + '\n\n' + ' ' * 1000
+    assert len(doc.text) == 2002
 
 
 def test_repeated_frame_text_is_charged():

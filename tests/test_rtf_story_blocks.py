@@ -5,7 +5,7 @@ import pytest
 
 from legacy_office_parser import parse_rtf, Limits
 from legacy_office_parser.errors import LimitExceededError
-from legacy_office_parser.models import Cell, Paragraph, Table
+from legacy_office_parser.models import Cell, Note, NoteBodyRange, Paragraph, Table
 from test_rtf_nested import nested, outer
 
 TABLE = r'\trowd\cellx100\cellx200 A\cell B\cell\row'
@@ -38,10 +38,27 @@ def test_all_sinks_of_same_story_keep_source_order():
     assert doc.text == doc.headers_footers
 
 
-def test_pure_text_story_json_is_unchanged():
-    doc = parse(r'{\header H}{\footnote N}')
-    assert not doc.story_blocks
-    assert 'story_blocks' not in doc.to_dict()
+def test_pure_text_notes_retain_ranges_while_non_note_stories_keep_legacy_json():
+    non_notes = r'{\header H}{\shptxt T}'
+    plain = parse(non_notes)
+    assert not plain.story_blocks
+    assert 'story_blocks' not in plain.to_dict()
+    assert not plain.notes
+
+    doc = parse(non_notes + r'{\footnote N}')
+    assert doc.story_blocks == {'footnotes': [Paragraph('N')]}
+    assert doc.notes == [Note('footnote', 1, NoteBodyRange('footnotes', 0, 1))]
+    assert doc.headers_footers == 'H' and doc.textboxes == 'T'
+    assert doc.footnotes == 'N'
+    assert doc.text == 'N\n\nH\n\nT'
+    result = doc.to_dict()
+    assert result['story_blocks'] == {'footnotes': [{'text': 'N', 'kind': 'paragraph'}]}
+    assert result['notes'] == [{
+        'kind': 'footnote', 'ordinal': 1,
+        'body': {'story': 'footnotes', 'block_start': 0, 'block_end': 1},
+        'source_cp': None, 'anchor_path': None,
+        'reference_kind': 'unknown', 'visibility': ['unknown'],
+    }]
 
 
 def test_nested_structure_survives_auxiliary_projection():

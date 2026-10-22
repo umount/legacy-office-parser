@@ -7,7 +7,7 @@ import subprocess
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
-from legacy_office_parser.models import Paragraph
+from legacy_office_parser.models import Note, NoteBodyRange, Paragraph
 from legacy_office_parser.odf import parse_odf_bytes
 
 import pytest
@@ -101,6 +101,13 @@ def test_empty_notes_do_not_add_separators():
     doc = parse('<text:p>A' + note('<text:p/>') +
                 note('<text:p>body</text:p>') + note('') + 'B</text:p>')
     assert doc.text == 'AB\n\nbody'
+    assert doc.story_blocks == {'footnotes': [Paragraph(''), Paragraph('body'), Paragraph('')]}
+    assert doc.notes == [
+        Note('footnote', 1, NoteBodyRange('footnotes', 0, 1)),
+        Note('footnote', 2, NoteBodyRange('footnotes', 1, 2)),
+        Note('footnote', 3, NoteBodyRange('footnotes', 2, 3)),
+    ]
+    assert doc.footnotes == 'body'
     assert doc.warnings == []
 
 
@@ -110,14 +117,33 @@ def test_note_separators_are_bounded(kind):
     xml = '<text:p>' + note(expanded, kind) * 2 + '</text:p>'
     with pytest.raises(LimitExceededError):
         parse(xml, limits=Limits(max_text_chars=1201))
-    assert len(parse(xml, limits=Limits(max_text_chars=1202)).text) == 1202
+    # Two retained paragraphs plus the pooled projection and its separator.
+    retained_chars = 2 * 600 + (2 * 600 + 2)
+    with pytest.raises(LimitExceededError, match='output text size'):
+        parse(xml, limits=Limits(max_text_chars=retained_chars - 1))
+    doc = parse(xml, limits=Limits(max_text_chars=retained_chars))
+    key = kind + 's'
+    assert doc.story_blocks == {key: [Paragraph(' ' * 600), Paragraph(' ' * 600)]}
+    assert doc.notes == [Note(kind, 1, NoteBodyRange(key, 0, 1)),
+                         Note(kind, 2, NoteBodyRange(key, 1, 2))]
+    assert getattr(doc, key) == doc.text == ' ' * 600 + '\n\n' + ' ' * 600
+    assert len(doc.text) == 1202
 
 
 def test_main_text_and_note_separator_are_bounded():
     xml = '<text:p>A' + note('<text:p><text:s text:c="1200"/></text:p>') + '</text:p>'
     with pytest.raises(LimitExceededError, match='rendered text'):
         parse(xml, limits=Limits(max_text_chars=1202))
-    assert len(parse(xml, limits=Limits(max_text_chars=1203)).text) == 1203
+    # Main paragraph, retained note paragraph, and pooled note projection.
+    retained_chars = 1 + 1200 + 1200
+    with pytest.raises(LimitExceededError, match='output text size'):
+        parse(xml, limits=Limits(max_text_chars=retained_chars - 1))
+    doc = parse(xml, limits=Limits(max_text_chars=retained_chars))
+    assert doc.blocks == [Paragraph('A')]
+    assert doc.story_blocks == {'footnotes': [Paragraph(' ' * 1200)]}
+    assert doc.notes == [Note('footnote', 1, NoteBodyRange('footnotes', 0, 1))]
+    assert doc.text == 'A\n\n' + ' ' * 1200
+    assert len(doc.text) == 1203
 
 
 def test_note_table_uses_cell_limits():
@@ -218,9 +244,19 @@ def test_repeated_note_text_is_charged(attribute):
            '</text:p></table:table-cell></table:table-row></table:table>')
     with pytest.raises(LimitExceededError, match='expanded text'):
         parse(xml, limits=Limits(max_text_chars=2001))
-    with pytest.raises(LimitExceededError, match='rendered text'):
-        parse(xml, limits=Limits(max_text_chars=2004))
-    assert len(parse(xml, limits=Limits(max_text_chars=2005)).footnotes) == 2002
+    # Empty parent cells; two note bodies plus their pooled projection.
+    retained_chars = 2 * 1000 + (2 * 1000 + 2)
+    with pytest.raises(LimitExceededError, match='ODF retained story text limit exceeded'):
+        parse(xml, limits=Limits(max_text_chars=retained_chars - 1))
+    doc = parse(xml, limits=Limits(max_text_chars=retained_chars))
+    assert doc.story_blocks == {'footnotes': [Paragraph(' ' * 1000), Paragraph(' ' * 1000)]}
+    assert doc.notes == [Note('footnote', 1, NoteBodyRange('footnotes', 0, 1)),
+                         Note('footnote', 2, NoteBodyRange('footnotes', 1, 2))]
+    assert doc.story_blocks['footnotes'][0] is not doc.story_blocks['footnotes'][1]
+    assert all(cell.text == '' for row in doc.blocks[0].rows for cell in row)
+    assert doc.footnotes == ' ' * 1000 + '\n\n' + ' ' * 1000
+    assert len(doc.footnotes) == 2002
+    assert len(doc.text) == 2005
 
 
 def test_repeated_note_tables_are_charged_to_cell_budget():

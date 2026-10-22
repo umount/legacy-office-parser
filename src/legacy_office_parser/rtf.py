@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from .diagnostics import diagnostic_warning
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
-from .models import Cell, Document, Paragraph, Table
+from .models import Cell, Document, Note, NoteBodyRange, Paragraph, Table
 
 # RTF destination names and charset numbers are format facts, not executable code
 # imported from another reader. Unknown starred destinations are also suppressed.
@@ -462,6 +462,11 @@ class _Sink:
     def __init__(self, parser: _Parser, story: str = ''):
         self.parser = parser
         self.story = story
+        self.is_note = story == 'footnotes'
+        self.note_depth = 0
+        # A visible empty note is real. An entirely suppressed note sink is not
+        # promoted merely because finishing it creates structural delimiters.
+        self.note_observed = self.is_note and parser.visible()
         self.blocks: list[Paragraph | Table] = []
         self.parts: list[str] = []
         self.paragraph_ends: list[tuple[int, int | None]] = []
@@ -562,6 +567,8 @@ class _Sink:
 
     def text(self, text: str):
         if text:
+            if self.is_note and self.parser.visible():
+                self.note_observed = True
             if self.level > 1 and self.row is None:
                 self.row = []
             self.parser.charge(len(text))
@@ -570,6 +577,8 @@ class _Sink:
             self.parts.append(text)
 
     def paragraph(self, force: bool = False):
+        if force and self.is_note and self.parser.visible():
+            self.note_observed = True
         if self.level > 1 and self.row is None:
             self.row = []
         if not self.parts or force:
@@ -786,7 +795,10 @@ class _Parser:
 
     @property
     def sink(self):
-        return self.sinks[self.state.target].at_depth(self.state.depth)
+        root = self.sinks[self.state.target]
+        if root.is_note and self.visible():
+            root.note_observed = True
+        return root.at_depth(self.state.depth)
 
     def visibility(self):
         s = self.state
@@ -941,10 +953,18 @@ class _Parser:
             s.shape_ancestor = True
             self.warn(diagnostic_warning('rtf_shape_drawing_and_layout_omitted', 'Shape drawing and layout omitted.'))
         elif word in _HEADERS or word in {'footnote', 'shptxt', 'dptxbxtext'}:
+            if word == 'footnote' and s.target != 0:
+                # Notes belong to the main story, including its table cells.
+                # A nested destination is not another reference or a continuation
+                # of the current note; do not merge its text into that note.
+                s.skip = True
+                self.warn(diagnostic_warning('rtf_note_destination_in_an_auxiliary_story_omitted', 'RTF note destination in an auxiliary story omitted.'))
+                return
             self.high_end()
             story = 'headers_footers' if word in _HEADERS else (
                 'footnotes' if word == 'footnote' else 'textboxes')
             self.sinks.append(_Sink(self, story))
+            self.sinks[-1].note_depth = len(self.stack)
             s.target = len(self.sinks) - 1
             s.depth = 1
             s.nested_properties = False
@@ -1038,8 +1058,11 @@ class _Parser:
             else:
                 s.deleted = number != 0
             self.warn(diagnostic_warning('hidden_text_omitted', 'Hidden or deleted text omitted.'))
-        elif word == 'ftnalt' and self.sink.story == 'footnotes':
-            self.sink.story = 'endnotes'
+        elif word == 'ftnalt':
+            # Classification belongs to the note root, never a nested cell sink.
+            root = self.sinks[s.target]
+            if root.is_note and (len(self.stack) == root.note_depth or self.visible()):
+                root.story = 'endnotes'
         elif self.visible() or word in _STRUCTURAL:
             if word in _CHARS:
                 self.emit(_CHARS[word])
@@ -1113,6 +1136,15 @@ class _Parser:
                 else:
                     self.sink.end_row()
 
+        if word in {'plain', 'pard', 's', 'cs', 'v', 'deleted'}:
+            # An explicit reset can reveal a real but empty note. Observe the
+            # visibility transition without routing through sink/at_depth,
+            # which would create or close table structure. Skipped destinations
+            # and Unicode fallback controls never reach this point.
+            root = self.sinks[s.target]
+            if root.is_note and self.visible():
+                root.note_observed = True
+
     def _enter_group(self):
         self.fallback = 0
         if len(self.stack) >= self.limits.max_depth:
@@ -1139,14 +1171,30 @@ class _Parser:
 
     def _finalize_auxiliary_stories(self):
         extras: dict[str, list[str]] = {}
-        structured = {sink.story for sink in self.sinks[1:]
-                      if any(isinstance(block, Table) or block.heading_level is not None
-                             for block in sink.blocks)}
-        for sink in self.sinks[1:]:
-            # Preserve all blocks of a structured story, including paragraphs
-            # from its other sinks. Legacy strings keep their existing projection.
+        sinks = [sink for sink in self.sinks[1:]
+                 if not sink.is_note or sink.note_observed]
+        structured = {sink.story for sink in sinks
+                      if sink.is_note or any(isinstance(block, Table)
+                                             or block.heading_level is not None
+                                             for block in sink.blocks)}
+        ordinals = {'footnotes': 0, 'endnotes': 0}
+        for sink in sinks:
+            if sink.is_note and len(self.document.notes) >= self.limits.max_records:
+                raise LimitExceededError('RTF note metadata limit exceeded')
+            if sink.is_note and not sink.blocks:
+                sink.blocks.append(Paragraph(''))
+            # Preserve all blocks of each note, including empty bodies, in
+            # encounter order. Ranges are in this story's block array, not CPs.
             if sink.story in structured:
-                self.document.story_blocks.setdefault(sink.story, []).extend(sink.blocks)
+                blocks = self.document.story_blocks.setdefault(sink.story, [])
+                start = len(blocks)
+                blocks.extend(sink.blocks)
+                if sink.is_note:
+                    ordinals[sink.story] += 1
+                    self.document.notes.append(Note(
+                        kind='footnote' if sink.story == 'footnotes' else 'endnote',
+                        ordinal=ordinals[sink.story],
+                        body=NoteBodyRange(sink.story, start, len(blocks))))
             self.charge(max(0, len(sink.blocks) - 1))
             parts = []
             for block in sink.blocks:

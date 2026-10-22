@@ -124,6 +124,7 @@ Warning messages are not source locations or severity classifications. No code i
 - `rtf_nested_cell_terminator_missing_text_retained`: Nested cell terminator missing; text retained.
 - `rtf_nested_row_properties_missing_cells_retained`: Nested row properties missing; cells retained.
 - `rtf_nested_table_row_incomplete_recovered_if_self_level_1`: 'Nested table row incomplete; recovered.' if self.level > 1 else 'Incomplete table row recovered.'
+- `rtf_note_destination_in_an_auxiliary_story_omitted`: RTF note destination in an auxiliary story omitted.
 - `rtf_pictures_objects_shapes_or_equations_omitted`: Pictures, objects, shapes or equations omitted.
 - `rtf_shape_drawing_and_layout_omitted`: Shape drawing and layout omitted.
 - `rtf_style_base_missing_or_wrong_kind_only_available`: RTF style base missing or wrong kind; only available visibility properties used.
