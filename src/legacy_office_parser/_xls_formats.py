@@ -370,6 +370,10 @@ def render_number(value: int | float, code: str) -> str | None:
             value = abs(value)
     prefix, core, suffix = parsed[selected]
     if core == 'General':
+        # Width-independent whole-number subset. Larger General displays can
+        # switch to scientific notation; retain their existing raw projection.
+        if abs(value) < 100_000_000_000 and value == int(value):
+            return str(int(value))
         return str(value)
     fixed = _FIXED.fullmatch(core)
     scientific = _SCIENTIFIC.fullmatch(core)
