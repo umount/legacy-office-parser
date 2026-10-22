@@ -149,3 +149,14 @@ middle paragraph and astral characters. Raw XLS values and DOC reference anchors
 remain available separately from display text and selected ranges.
 The full local suite passed 4,172 tests, 7,100 mutations and 12 resource checks;
 these findings extend measured coverage without implying arbitrary-file parity.
+
+## Version 0.20 relationship and display evidence
+
+Thirteen literal-display XLS cells match LibreOffice CSV output while the parser
+retains the original strings separately. A directly authored AtrdExtra probe
+preserves its explicit three-comment ancestry in parser output; LibreOffice
+7.4.7.2 retains the bodies but exports three roots. This is observed conversion
+loss for that metadata probe, not a claim about arbitrary Word-authored replies.
+The full local suite passed 4,483 tests, 7,400 mutations and 12 resource checks.
+Fraction display remains an open research item; no inferred rounding rule was
+introduced to improve apparent parity.

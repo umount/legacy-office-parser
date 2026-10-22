@@ -118,3 +118,10 @@ stories.
 
 The parser is synchronous. The calling process sets timeouts, forced termination
 and system memory limits. The package does not create its own process pool.
+
+DOC comment reply metadata is optional. A retained parent is identified by its
+original ordinal, with a validated preorder depth; missing ancestry clears the
+relationship without losing the body. Relationships never recursively render
+text. Public validation uses a bounded ancestry stack, and unknown metadata does
+not invent branch boundaries. Literal XLS displays preserve raw strings and
+charge distinct replacement text separately under the shared output budget.

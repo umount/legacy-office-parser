@@ -45,6 +45,12 @@ def main():
     labels = parse(args.fixtures / 'xls_text_sections/preserved.xls')
     assert any(c.value == 'retained' and c.text == 'Name: retained'
                for c in labels.sheets[0].cells)
+    replies = parse(args.fixtures / 'doc_comment_replies/authored.doc')
+    assert [(c.reply_depth, c.parent_ordinal) for c in replies.comments] == [(0, None), (1, 1), (2, 2)]
+    assert replies.text.count('Shared comment.') == 2
+    literals = parse(args.fixtures / 'xls_text_literals/preserved.xls')
+    assert any(c.value == 'retained' and c.text != c.value
+               for c in literals.sheets[0].cells)
     print('Installed wheel: seven formats and DOC/XLS/RTF feature regressions passed')
 
 

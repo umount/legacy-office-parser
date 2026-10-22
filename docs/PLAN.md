@@ -296,3 +296,11 @@ DOC comment selections across proven ordinary paragraphs/source cells. Both
 changes have original reference fixtures, independent boundary/limit reviews,
 public API/CLI regressions and installed-wheel checks. Whole-table selections,
 conditional text formats and literal-only replacements remain deferred.
+
+### Reply ancestry and literal display (0.20)
+
+Exposed validated DOC comment relationships without duplicating text or inventing
+ancestry after filtering. Added literal-only XLS text sections with distinct
+raw/display budget accounting. Both changes passed independent review and public
+API/CLI checks. The fixed-denominator fraction investigation remains open because
+the consulted evidence did not settle tie-breaking and exact spacing semantics.

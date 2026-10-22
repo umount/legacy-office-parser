@@ -30,8 +30,8 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.19 adds quoted/escaped text affixes in ordinary XLS display sections
-and source-linked DOC comment selections across verified paragraph boundaries. Full compatibility with arbitrary documents has not
+Version 0.20 adds explicit DOC comment reply relationships and literal-only
+XLS text displays, retaining original comment bodies and spreadsheet values. Full compatibility with arbitrary documents has not
 yet been established; [coverage and limitations](docs/TESTING.md) are documented
 separately.
 
@@ -60,8 +60,8 @@ construct in the document was extracted. See [support and limitations](docs/TEST
 
 On verified extraction cases, the parser matches the content and structure
 checked against LibreOffice. In specific documented cases, it preserves tables
-or repeated content lost during LibreOffice conversion. Version 0.19 passed
-4,172 tests, 7,100 deterministic mutations and local LibreOffice reference checks.
+or repeated content lost during LibreOffice conversion. Version 0.20 passed
+4,483 tests, 7,400 deterministic mutations and local LibreOffice reference checks.
 This is measured coverage, not a claim of complete office-suite compatibility.
 Apache OpenOffice has not been tested separately.
 
@@ -108,11 +108,15 @@ Each `Comment.body` references a block range in `story_blocks['comment_text']`;
 `Document.comment_text` is the combined projection, included once in
 `Document.text`. `source_cp` locates the reference in source UTF-16 units;
 `anchor_path` identifies its final main-story paragraph or cell. Selection bounds
-are half-open source CP ranges when verified, otherwise `None`. Reply trees,
-ink and page placement are not reconstructed. Empty comment fields are omitted
+are half-open source CP ranges when verified, otherwise `None`.
+`reply_depth` and `parent_ordinal` expose verified reply ancestry without
+recursively repeating text. Known roots have depth zero; absent or unavailable
+ancestry omits both fields from JSON and is never guessed from authors or text.
+Ink and page placement are not reconstructed. Empty comment lists are omitted
 from JSON.
 
-Supported empty XLS format sections produce an empty `SpreadsheetCell.text`,
+Supported literal-only fourth XLS sections can replace displayed text while
+retaining the original value. Empty sections produce an empty `SpreadsheetCell.text`,
 while `value`, `value_type` and `is_formula` remain available in structured data.
 An empty display is omitted from `Document.text`; it does not mean the cell's
 stored value is absent. General conditional hiding and arbitrary text masks are

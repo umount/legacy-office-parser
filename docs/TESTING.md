@@ -1,6 +1,6 @@
 # Testing
 
-For current 0.19 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
+For current 0.20 coverage and limitations, see [Extraction gaps](EXTRACTION_GAPS.md).
 For achievements and comparisons with other libraries and LibreOffice, see
 [Comparison](COMPARISON.md). Version-specific results below are historical snapshots.
 
@@ -553,3 +553,24 @@ See [XLS text affixes](research-xls-text-sections.md) and
 [DOC selection ranges](research-doc-comment-selections.md) for exact supported
 subsets and reproducible evidence. Older formats, arbitrary text masks and
 unproven structural crossings are not covered by these results.
+
+## DOC replies and literal XLS displays (0.20)
+
+The full local suite passed **4,483 tests**, with **64 optional skips**; Ruff
+passed. **7,400** deterministic mutations of 74 public fixtures produced no
+unexpected exceptions, and all **12** bounded resource checks passed.
+
+Independent XLS review passed 1,758 tests (9 optional skips), including 133 new
+review cases. All 13 literal-display fixture cells match the same preserved XLS
+converted to CSV. Independent DOC review passed 1,214 tests (6 optional skips),
+including 15 review regressions and the fixed public preorder validation.
+The DOC-reply and XLS-oracle modules together passed 37 tests with live
+LibreOffice checks enabled. The DOC conversion records loss of reply links,
+not proof of full Word conformance or LibreOffice reply support.
+
+All 71 previous fixture results remain unchanged after removing only the new
+reply metadata keys for comparison. Five existing comments in two DOC fixtures
+now explicitly identify their stored root depth. The installed-wheel checks
+include both new fixture families and unchanged text projection.
+See [DOC replies](research-doc-comment-replies.md) and
+[XLS literal displays](research-xls-text-literals.md) for scope and evidence.

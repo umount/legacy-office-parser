@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register after 0.19. Each item requires a verified example, independent
+Working register after 0.20. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -92,15 +92,25 @@ does not establish completeness.
   UTF-16 source coordinates and reference anchors remain distinct. Original
   DOC/readback evidence and independent boundary tests cover the new subset.
 
+## Completed in 0.20
+
+- DOC: explicit reply depth and retained-parent ordinal from validated AtrdExtra
+  preorder metadata. Missing ancestry does not drop bodies or invent roots.
+  An authored binary metadata probe establishes source relationships; LibreOffice
+  preserves its bodies but flattens the tree on resave, which is recorded as loss.
+- XLS: quoted/escaped literal-only fourth text sections, including empty display,
+  with raw typed values retained. Thirteen preserved-XLS cells match the
+  independent LibreOffice CSV oracle. Fraction formatting remains deferred.
+
 ## Next areas to verify
 
-- DOC: header/footer and frame identities; comment reply trees, ink and complex
+- DOC: header/footer and frame identities; ink and complex
   source selections crossing cells, rows, sections or other unproven boundaries.
 - DOC: remaining conditional table styles and explicit geometry that does not
   require page layout.
 - PPT: text in extensions and embedded passive documents; agreement with a
   converted presentation does not substitute for understanding unknown constructs.
-- XLS: general localization, fraction formats, conditional hiding, literal-only text replacements and wider
+- XLS: general localization, fraction formats, conditional hiding and wider
   text-section formats. Hidden values must remain available in typed data.
 - RTF: legacy shape text without primary shptxt; safe selection between primary
   and fallback representations without duplication.
