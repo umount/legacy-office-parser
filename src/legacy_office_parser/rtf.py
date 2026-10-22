@@ -893,9 +893,18 @@ class _Parser:
 
     def parse(self, data: bytes, start: int) -> Document:
         closed = False
+        terminal_nul = False
         for kind, value, number in _tokens(data, start, self.limits):
             if closed:
                 if kind == 'bytes' and all(b in b' \t\r\n' for b in value):
+                    continue
+                # Compatibility for one literal NUL terminator at physical EOF.
+                # Keep tokenization (and its budgets/errors) over the full input.
+                if (not terminal_nul and kind == 'bytes' and value.endswith(b'\0')
+                        and all(b in b' \t\r\n' for b in value[:-1])
+                        and data.endswith(b'\0')):
+                    terminal_nul = True
+                    self.warn('A single terminal NUL after the RTF root was ignored.')
                     continue
                 raise InvalidDocumentError('Data after RTF root group')
             if self.wordart is not None:

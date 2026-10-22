@@ -61,6 +61,9 @@ def main():
     assert table.rows[0][0].blocks[0].heading_level == 2
     assert any(b.kind == 'paragraph' and b.heading_level == 2
                for b in headings.story_blocks['headers_footers'])
+    terminated = parse(br'{\rtf1 Original}' + b'\0')
+    assert terminated.text == 'Original'
+    assert terminated.warnings == ['A single terminal NUL after the RTF root was ignored.']
     print('Installed wheel: seven formats and DOC/XLS/RTF feature regressions passed')
 
 
