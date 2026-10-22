@@ -312,15 +312,15 @@ four validator bodies. Consolidated three duplicated preserved-XLS fixture
 oracles, keeping independent expected results and stable family entry points.
 No format support or output semantics changed.
 
-Next bounded refactoring candidates:
+### Parser state refactoring (0.20.2)
 
-- RTF: private group-entry/group-exit and auxiliary-story finalization helpers.
-  Preserve tokenizer order, Unicode fallback, decoder flushing, suppression and
-  sink lifetime under one parser state.
-- DOC: reference-observation helpers inside text cleaning, with explicit source
-  CP/property/context inputs. Keep note/comment failure policies separate and
-  preserve one source scan, shared budgets and final anchor resolution.
+Extracted RTF group entry/exit and auxiliary-story finalization into private
+helpers. Token ordering, Unicode fallback, decoder flushing, suppression and
+sink lifetime remain under the same parser state.
 
-Each change should remain independently reviewable with unchanged corpus output
-and existing negative tests. ODF story/repetition accounting should remain
-untouched until a concrete duplication or coupling problem justifies a change.
+Extracted DOC note and comment reference observation from text cleaning into
+separate helpers. Their distinct failure policies and source-CP semantics remain
+unchanged; observation still precedes field transitions and text filtering.
+
+Both changes are independently reviewable. ODF story/repetition accounting stays
+unchanged until a concrete duplication or coupling problem justifies a change.

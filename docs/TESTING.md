@@ -588,3 +588,19 @@ live LibreOffice suites pass. Literal expectations, hashes, FORMAT/XF checks,
 source-byte preservation, test names, and opt-in gates are unchanged. Installed
 wheel and source-archive checks cover the new internal validation module and
 shared test helper.
+
+## Parser state refactoring (0.20.2)
+
+The full suite remains **4,483 passed, 64 skipped**, and Ruff passes. All **74**
+public fixture JSON digests are unchanged. The selected DOC/RTF reference suites
+pass **441 tests** with their live LibreOffice checks enabled. All **12** bounded
+resource checks pass.
+
+Independent reviewers approved both extractions. A deterministic differential
+check covered **9,292 paired outcomes** from 46 public DOC/RTF fixtures, each
+original plus 100 mutations under two limit profiles. Full JSON results or
+exception types/messages matched, with no timeouts or worker failures.
+Additional focused reviews matched **2,496** RTF fixture/mutation/limit outcomes
+and **10,000** DOC reference-observation cases, including property-call ordering,
+field state, warnings, visibility and anchors. These are bounded samples, not
+proof of equivalence for every possible document.

@@ -139,3 +139,10 @@ mechanics in `tests/_xls_format_oracle.py`. Each family retains its own literal
 expected cases, fixture hash and live-test gate. The shared helper verifies
 exact FORMAT/XF mapping and unchanged source bytes; it never generates expected
 text from the production parser.
+
+RTF group transitions and auxiliary-story finalization use private helpers on
+the existing parser state. The token loop retains responsibility for flushing
+the decoder before group transitions and observing WordArt before dispatch.
+DOC text cleaning delegates note and comment reference observation separately,
+before field controls or visibility filtering. Neither extraction adds a second
+source scan or changes source-CP ownership and final anchor resolution.
