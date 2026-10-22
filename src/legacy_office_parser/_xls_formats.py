@@ -25,7 +25,7 @@ _COMPARE = {'<': operator.lt, '<=': operator.le, '>': operator.gt,
             '>=': operator.ge, '=': operator.eq, '<>': operator.ne}
 _MAX_THRESHOLD = Decimal('1.7976931348623157E+308')
 _MIN_THRESHOLD = Decimal('5E-324')
-_FIXED = re.compile(r'(0|#,##0)(?:\.(0{1,15}#{0,14}))?(,{0,63})(%)?')
+_FIXED = re.compile(r'(0|#,##0)(?:\.(0{1,15}#{0,14}|#{1,15}))?(,{0,63})(%)?')
 # Deliberate evidence-backed whitelist, not a general locale interpreter.
 _CURRENCY = {'[$$-409]': '$', '[$€-407]': '€', '[$USD-409]': 'USD'}
 # Fixed, unreduced fractions only; no best-fit denominator or layout placeholders.
@@ -115,6 +115,10 @@ def _numeric_parts(code: str, *, allow_literal: bool = False) -> tuple[str, str,
         return None
     if fixed is not None:
         _, fraction, commas, percent = fixed.groups()
+        # All-optional decimals are a separate bounded increment: no new
+        # scaling, percent or currency combinations. See optional-decimal research.
+        if fraction and fraction.startswith('#') and (commas or percent or currency):
+            return None
         if len(fraction or '') > 15 or (percent and (commas or '#' in (fraction or ''))):
             return None
     return ''.join(prefix), core, ''.join(suffix)
@@ -387,6 +391,10 @@ def render_number(value: int | float, code: str) -> str | None:
             if percent:
                 number *= 100
             number = number.quantize(Decimal(1).scaleb(-places))
+            # Without mandatory decimals, integral results have an unresolved
+            # decimal-point display. Keep fallback for zero and rounding carry.
+            if fraction and fraction.startswith('#') and number == number.to_integral_value():
+                return None
             if not number:
                 number = number.copy_abs()
             grouping = ',' if integer == '#,##0' else ''

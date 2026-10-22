@@ -44,7 +44,7 @@ def test_literal_oracles_and_raw_retention(kind, raw, section, prefix, suffix):
     _validate_result(doc, Limits())
 
 
-@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '[$-409]0', '0x', '0.##'])
+@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '[$-409]0', '0x', '0.#0'])
 @pytest.mark.parametrize('position', range(3))
 def test_unused_bad_numeric_branch_cannot_enable_text_expansion(branch, position):
     sections = ['0', '0', '0']

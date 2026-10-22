@@ -76,7 +76,7 @@ def test_full_source_and_distinct_display_budget(monkeypatch, kind, raw, section
     assert len(published) < repeats
 
 
-@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '0x', '0.##', '[$-409]0'])
+@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '0x', '0.#0', '[$-409]0'])
 @pytest.mark.parametrize('position', range(3))
 def test_literal_does_not_legitimize_bad_unused_numeric_branch(branch, position):
     sections = ['0', '0', '0']

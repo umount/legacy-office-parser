@@ -113,7 +113,7 @@ def test_sections_integer_records(kind, value, expected):
     '0;0;"unfinished', '0;0;\\', '0;0;"x"\\',
     '0;0;"x";"@', '0;0;0;@\\',
     '0;0+0', '0;0(0)', '0;0E+"x"00', '0;0.00E+00%',
-    '0;0.0000000000000000', '0;0E+0000', '0;0.##',
+    '0;0.0000000000000000', '0;0E+0000', '0;0.#0',
     '0;General"x"', '0;-General', '0;_(0)', '0;*0',
 ])
 def test_all_sections_validated_even_when_unused(code, value, kind):

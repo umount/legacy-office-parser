@@ -93,7 +93,7 @@ def test_literal_integer_records(code, expected, kind):
     '[$-409]0" kg"', '_("USD "0_)', '* "USD "0',
     '$0.00', 'USD 0.00', '0.00 kg', ' "USD "0', '0" kg" ',
     '"USD "$0',
-    '"USD "General', 'General" kg"', '"USD "0.##',
+    '"USD "General', 'General" kg"', '"USD "0.#0',
     '"USD "0.0000000000000000', '0E+0000" kg"', '0.00E+00%" kg"',
     '"USD "yyyy-mm-dd', 'yyyy"days"mm', '0"days"yyyy',
 ])

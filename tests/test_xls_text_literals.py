@@ -99,7 +99,7 @@ def test_former_empty_fourth_rejection_now_hides_strings():
     assert _parse_workbook(source(code, 'raw', 'label'), Limits()).sheets[0].cells[0].text == ''
 
 
-@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '[$-409]0', '0x', '0.##'])
+@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '[$-409]0', '0x', '0.#0'])
 @pytest.mark.parametrize('position', range(3))
 def test_unused_bad_numeric_branch_does_not_replace_text(branch, position):
     sections = ['0', '0', '0']

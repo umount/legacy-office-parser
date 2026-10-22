@@ -28,3 +28,5 @@ resource access and conversion to OOXML are outside this work.
 - Complete outer-row comment selections implemented with bounded source proof.
 - Row-only conditional visibility implemented for proven unequal/horizontally merged rows;
   malformed outer row terminators cannot establish condition context.
+- XLS bounded variable-denominator fractions and nonintegral optional-decimal
+  displays implemented with preserved-source reference comparisons.

@@ -67,7 +67,8 @@ results remain equivalent. Changes to defaults must be recorded explicitly.
 Recent output history:
 
 - **0.24.0:** DOC auxiliary-story identities, validated header inheritance,
-  complete-row comment selections and row-only conditional table visibility.
+  complete-row comment selections, row-only conditional table visibility,
+  bounded variable-denominator fractions and optional-decimal displays.
 
 - **0.23.0:** supported inherited/stored visibility filtering, optional
   display-text normalization, coded diagnostics, ODF templates and individual
@@ -703,6 +704,13 @@ alignment spaces, negative signs and integer padding remain in display text.
 Source numeric bits and cached-formula markers remain unchanged. Other masks,
 affixes and locale combinations retain fallback. See
 [fraction evidence](research-xls-variable-fractions.md).
+
+Fixed cores `0.#{1,15}` and `#,##0.#{1,15}` additionally retain a nonintegral
+rounded decimal result with trailing optional zeros removed. Integral results,
+zero and rounding carry keep fallback because decimal-point suppression is not
+established by the primary evidence used here. Scaling, percent and currency
+combinations for these new cores are excluded. See
+[optional-decimal evidence](research-xls-optional-decimals.md).
 
 ## XLS dates and times
 
