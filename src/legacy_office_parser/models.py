@@ -125,6 +125,10 @@ class Comment:
     visibility: list[Literal['hidden', 'deleted', 'field_hidden', 'field_instruction', 'unknown']] = field(
         default_factory=lambda: ['unknown'])
 
+    # Validated source tree depth; a missing retained parent is never guessed.
+    reply_depth: int | None = None
+    parent_ordinal: int | None = None
+
 
 @dataclass(slots=True)
 class Document:
@@ -174,6 +178,10 @@ class Document:
                     result.pop('blocks', None)
                 if not result.get('omitted'):
                     result.pop('omitted', None)
+            if 'reply_depth' in result and result['reply_depth'] is None:
+                result.pop('reply_depth')
+                if result.get('parent_ordinal') is None:
+                    result.pop('parent_ordinal', None)
             if 'comments' in result and not result['comments']:
                 result.pop('comments')
             if 'drawings' in result and not result['drawings']:

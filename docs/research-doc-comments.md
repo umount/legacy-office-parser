@@ -93,13 +93,14 @@ signals content that cannot be reconstructed as ordinary text.
 
 Preserve stored comment/reference/body ordinal alignment before any filtering.
 Do not deduplicate equal body strings or reorder by author, tag, timestamp, or
-bookmark start. The implementation retains a flat list in stored order with an
-explicit warning
-for unmodeled reply/ink semantics; it does not label every entry a root comment.
+bookmark start. The implementation retains a flat list in stored order.
+Version 0.17 warned for unmodeled reply/ink semantics; version 0.20 exposes
+[validated reply relationships](research-doc-comment-replies.md) while retaining
+warnings for ink and unavailable ancestry. Missing metadata never implies a root.
 Extra-array sizes and counts are checked before reading. A bounded ancestor stack
 validates preorder depths and relative parents, rejecting forward/cyclic or
-inconsistent references. Dates, reply-tree output, and ink rendering are not
-implemented. No dates are synthesized.
+inconsistent references. Dates and ink rendering are not implemented. Parent
+relationships do not trigger recursive text projection. No dates are synthesized.
 
 ## Public model and runtime integration
 

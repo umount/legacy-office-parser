@@ -22,6 +22,8 @@ class SourceComment:
     initials: str
     selection_start: int | None
     selection_end: int | None
+    reply_depth: int | None = None
+    parent_ordinal: int | None = None
 
 
 def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
@@ -173,13 +175,14 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
             if begin > end_cps[index]:
                 invalid('bookmark range is reversed')
 
+    reply_metadata = []
     extra = parts.get(112, b'')
     if extra:
         if len(extra) % 18 or (refs and len(extra) != n * 18):
             invalid('extra record count is invalid')
         charge(len(extra) // 18)
         ancestors = []
-        extended = False
+        ink = False
         for i in range(len(extra) // 18):
             depth, parent, flags = struct.unpack_from('<IiI', extra, i * 18 + 6)
             if depth > limits.max_depth:
@@ -190,9 +193,10 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
                 invalid('reply parent does not match preorder ancestry')
             del ancestors[depth:]
             ancestors.append(i)
-            extended |= bool(depth or flags & 2)
-        if extended:
-            warn('DOC comment replies or ink are not modeled; proven textual bodies retain stored order.')
+            reply_metadata.append((depth, i + parent + 1 if depth else None))
+            ink |= bool(flags & 2)
+        if ink:
+            warn('DOC comment ink is not rendered; proven textual bodies retain stored order.')
 
     descriptors = []
     previous = -1
@@ -236,5 +240,6 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
         warn('DOC comment story has an unassigned prefix; only PLC-owned bodies are considered.')
     charge(n)
     return [SourceComment(ordinal, cp, boundaries[i], boundaries[i + 1], author,
-                          initials, begin, end)
+                          initials, begin, end,
+                          *(reply_metadata[i] if extra else (None, None)))
             for i, (ordinal, cp, author, initials, begin, end) in enumerate(descriptors)]

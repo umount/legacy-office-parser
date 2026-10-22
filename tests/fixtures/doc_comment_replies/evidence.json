@@ -1,0 +1,48 @@
+{
+  "source": [
+    {
+      "ordinal": 1,
+      "depth": 0,
+      "relative_parent": 0,
+      "parent_ordinal": null,
+      "flags": 0
+    },
+    {
+      "ordinal": 2,
+      "depth": 1,
+      "relative_parent": -1,
+      "parent_ordinal": 1,
+      "flags": 0
+    },
+    {
+      "ordinal": 3,
+      "depth": 2,
+      "relative_parent": -1,
+      "parent_ordinal": 2,
+      "flags": 0
+    }
+  ],
+  "libreoffice_readback": [
+    {
+      "ordinal": 1,
+      "depth": 0,
+      "relative_parent": 0,
+      "parent_ordinal": null,
+      "flags": 0
+    },
+    {
+      "ordinal": 2,
+      "depth": 0,
+      "relative_parent": 0,
+      "parent_ordinal": null,
+      "flags": 0
+    },
+    {
+      "ordinal": 3,
+      "depth": 0,
+      "relative_parent": 0,
+      "parent_ordinal": null,
+      "flags": 0
+    }
+  ]
+}

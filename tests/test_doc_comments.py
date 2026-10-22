@@ -177,10 +177,9 @@ def extra(depth=0, parent=0, flags=0):
     return b'\0' * 6 + struct.pack('<IiI', depth, parent, flags)
 
 
-@pytest.mark.parametrize('last', [extra(1, -1), extra(0, 0, 2)])
-def test_reply_or_ink_warns_without_reordering(last):
-    parts = base_parts() | {112: extra() + last}
-    with pytest.warns(UserWarning, match='replies or ink'):
+def test_ink_warns_without_reordering():
+    parts = base_parts() | {112: extra() + extra(0, 0, 2)}
+    with pytest.warns(UserWarning, match='ink is not rendered'):
         assert [s.ordinal for s in decoded(parts)] == [1, 2]
 
 

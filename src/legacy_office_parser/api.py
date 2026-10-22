@@ -183,11 +183,35 @@ def _validate_comments(doc: Document, limits: Limits) -> None:
         raise LimitExceededError('document comment record limit exceeded')
     previous_ordinal = previous_end = 0
     previous_cp = -1
+    reply_ancestors = []
     for comment in doc.comments:
         if not isinstance(comment, Comment):
             raise InvalidDocumentError('invalid document comment')
         if not index(comment.ordinal) or comment.ordinal <= previous_ordinal:
             raise InvalidDocumentError('unordered or invalid document comment ordinal')
+        # Charge this metadata entry before growing the reply ancestry index.
+        metadata += 1
+        if metadata > limits.max_records:
+            raise LimitExceededError('document comment metadata limit exceeded')
+        depth, parent = comment.reply_depth, comment.parent_ordinal
+        if depth is None:
+            if parent is not None:
+                raise InvalidDocumentError('document comment parent requires reply depth')
+        else:
+            if not index(depth):
+                raise InvalidDocumentError('invalid document comment reply depth')
+            if depth > limits.max_depth:
+                raise LimitExceededError('document comment reply depth limit exceeded')
+            if depth > 0 and parent is None:
+                raise InvalidDocumentError('document comment reply requires a retained parent')
+            if parent is not None:
+                if (not index(parent) or depth == 0 or depth > len(reply_ancestors)
+                        or reply_ancestors[depth - 1] != parent):
+                    raise InvalidDocumentError('invalid document comment reply parent')
+            # Unknown entries do not prove a branch closure. Known entries
+            # must still follow preorder among the retained known ancestry.
+            del reply_ancestors[depth:]
+            reply_ancestors.append(comment.ordinal)
         if any(value is not None and not isinstance(value, str)
                for value in (comment.author, comment.initials)):
             raise InvalidDocumentError('invalid document comment author metadata')
@@ -219,9 +243,6 @@ def _validate_comments(doc: Document, limits: Limits) -> None:
                 len(doc.story_blocks.get('comment_text', []))):
             raise InvalidDocumentError('invalid document comment body range')
         previous_ordinal, previous_end = comment.ordinal, body.block_end
-        metadata += 1
-        if metadata > limits.max_records:
-            raise LimitExceededError('document comment metadata limit exceeded')
         path = comment.anchor_path
         if path is None:
             continue

@@ -921,6 +921,7 @@ class _Doc:
 
     def _parse_comments(self, start):
         blocks = []
+        retained = {}
         for source in self.comment_ranges:
             block_start = len(blocks)
             assembler = _Tables(self, blocks)
@@ -937,10 +938,16 @@ class _Doc:
             self.budget.record()
             self.budget.text(len(source.author or '') + len(source.initials))
             begin, end = self.comment_selections.get(source.source_cp, (None, None))
+            depth, parent = source.reply_depth, source.parent_ordinal
+            if parent is not None and retained.get(parent) is None:
+                depth = parent = None
+                self.warn('DOC comment reply ancestry is unavailable; relationship metadata is omitted without dropping the body.')
+            retained[source.ordinal] = depth
             self.document.comments.append(Comment(
                 ordinal=source.ordinal, body=CommentBodyRange('comment_text', block_start, len(blocks)),
                 author=source.author, initials=source.initials, source_cp=source.source_cp,
                 selection_start=begin, selection_end=end,
+                reply_depth=depth, parent_ordinal=parent,
                 visibility=list(self.note_visibility.get(source.source_cp, ['unknown']))))
         if self.document.comments:
             self.budget.text(_projection_size(blocks))
