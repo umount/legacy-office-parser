@@ -1110,6 +1110,16 @@ class _Parser:
                                  q('draw:a'), q('presentation:notes')} | BLOCK_WRAPPERS:
                     self.unsupported(e)
                     return
+                if e.tag == q('draw:frame'):
+                    # ODF 1.3 §10.4.1: frame content is alternative representations
+                    # in preference order. Select by supported type, not output:
+                    # empty or hidden content must not expose a later alternative.
+                    for child in e:
+                        if child.tag in {q('draw:text-box'), q('table:table')}:
+                            walk(child, destination)
+                            return
+                        self.unsupported(child)
+                    return
                 for child in e:
                     walk(child, destination)
             walk(page)
