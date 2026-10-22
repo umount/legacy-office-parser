@@ -28,6 +28,8 @@ class Styles:
         self.cache = {}
         self.frame_overrides = {}
         self.frame_cache = {}
+        self.outline_overrides = {}
+        self.outline_cache = {}
         self.conditions = {}
         self.condition_cache = {}
         data = doc.table_part(1)  # fcStshf, NOT the original stylesheet fcStshfOrig.
@@ -98,8 +100,10 @@ class Styles:
                     for op, arg in doc._sprms(groups[0][2:]):
                         if (op >> 10) & 7 != 1 or op in (
                                 0x2416, 0x2417, 0x6649, 0x664A, 0x244B, 0x244C,
-                                0x4600, 0xC601, 0x6646, 0x6645, 0x646B):
+                                0x4600, 0xC601, 0x2602, 0x6646, 0x6645, 0x646B):
                             raise InvalidDocumentError('forbidden DOC paragraph style property')
+                        if op == 0x2640:
+                            self.outline_overrides[index] = outline_level(arg)
                         change = frame_change(op, arg)
                         if change is not None:
                             frame[change[0]] = change[1]
@@ -216,10 +220,22 @@ class Styles:
             path.append(current)
             current = entry[1]
         value = FrameIdentity()
+        outline = 9
         for current in reversed(path):
             value = replace(value, **self.frame_overrides.get(current, {}))
+            # Inherit stored Prls, not the fixed-index rule of an ancestor.
+            # That rule applies only to the selected paragraph style below.
+            outline = self.outline_overrides.get(current, outline)
+        self.outline_cache[index] = outline
         self.frame_cache[index] = value
         return value
+
+    def outline(self, index):
+        """MS-DOC 2.6.2: fixed istd 1..9, otherwise inherited POutLvl."""
+        self.frame(index)  # Shares the bounded, strictly validated style walk.
+        if 1 <= index <= 9:
+            return index - 1
+        return self.outline_cache.get(index, 9)
 
     def hidden(self, index, kind, initial=False):
         """Resolve CFVanish against the parent style; no recursion or CP-sized cache."""
@@ -279,3 +295,10 @@ def character_ops(doc, group):
         elif op == 0xCA31:
             raise UnsupportedFormatError('DOC character style permutation is unsupported')
     return tuple(result)
+
+
+def outline_level(arg):
+    value = arg[0]
+    if value > 9:
+        raise InvalidDocumentError('invalid DOC paragraph outline level')
+    return value

@@ -58,7 +58,8 @@ def test_paragraph_style_inherits_hidden(monkeypatch, compressed):
 @pytest.mark.parametrize('value,expected', [(0, 'TEXT'), (1, ''), (128, ''), (129, 'TEXT')])
 def test_direct_toggle_uses_style_not_previous_direct_value(monkeypatch, value, expected):
     streams = styled_text(SHOW + sprm(0x083C, value))
-    assert parse(monkeypatch, streams).blocks == [Paragraph(expected)]
+    # This fixture selects fixed heading style 1; filtered text has no title.
+    assert parse(monkeypatch, streams).blocks == [Paragraph(expected, 1 if expected else None)]
 
 
 def test_child_explicit_false_overrides_parent(monkeypatch):

@@ -19,7 +19,7 @@ from ._doc_notes import decode_note_ranges
 from ._doc_comments import decode_comments
 from ._doc_table import FrameIdentity, TableIdentity, apply_table, frame_change
 from ._doc_conditions import apply_conditions, row_boundary
-from ._doc_styles import Styles, character_ops, toggle
+from ._doc_styles import Styles, character_ops, outline_level, toggle
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
@@ -91,6 +91,7 @@ class _Piece:
 @dataclass(slots=True)
 class _Props:
     style: int = 0
+    outline: int = 9
     applied_table_style: int | None = None
     table_look: int = 0x600
     table_header: bool = False
@@ -378,6 +379,11 @@ class _Doc:
                 elif op == 0x4600:
                     props.style = _u16(arg)
                     props.frame = self.styles.frame(props.style)
+                    props.outline = self.styles.outline(props.style)
+                elif op == 0x2640:
+                    value = outline_level(arg)
+                    if not 1 <= props.style <= 9:
+                        props.outline = value
                 elif op in (0xC601, 0x2602):
                     raise UnsupportedFormatError('DOC paragraph style permutation/increment is unsupported')
                 elif op == 0x563A:
@@ -474,7 +480,7 @@ class _Doc:
             return self.paragraph_cache[1]
         piece = self.pieces[bisect_right(self.cps, cp) - 1]
         style, group = self._papx(piece.fc + (cp - piece.cp) * piece.width)
-        props = _Props(style=style, frame=self.styles.frame(style))
+        props = _Props(style=style, frame=self.styles.frame(style), outline=self.styles.outline(style))
         self._apply(props, group)
         if piece.prm & 1:
             self._apply(props, self.prcs[piece.prm >> 1])
@@ -485,7 +491,7 @@ class _Doc:
             if isprm == 0x04:
                 raise UnsupportedFormatError('DOC paragraph style increment is unsupported')
             op = {0x18: 0x2416, 0x19: 0x2417, 0x1D: 0x261B,
-                  0x25: 0x2423, 0x32: 0x2430}.get(isprm)
+                  0x25: 0x2423, 0x32: 0x2430, 0x78: 0x2640}.get(isprm)
             if op is not None:
                 self._apply(props, struct.pack('<HB', op, piece.prm >> 8))
             elif isprm not in (0x41, 0x43, 0x53, 0x5C, 0x75):
@@ -1087,7 +1093,8 @@ class _Doc:
                 self._end_fields()
             start += count
         for attr, blocks in stories.items():
-            structured = attr in note_stories or any(isinstance(block, Table) for block in blocks)
+            structured = attr in note_stories or any(
+                isinstance(block, Table) or block.heading_level is not None for block in blocks)
             size = _projection_size(blocks)
             # Note bodies reference retained blocks; no additional text copy.
             self.budget.text(size if structured else max(0, len(blocks) - 1))
@@ -1140,7 +1147,8 @@ class _Tables:
             if mark == 7:
                 self.doc.warn('Cell mark without table membership was retained as a paragraph boundary.')
             self.doc.budget.text(len(text))
-            paragraph = Paragraph(text)
+            paragraph = Paragraph(text, heading_level=props.outline + 1
+                                  if props.outline < 9 and text.strip() else None)
             self.destination.append(paragraph)
             self.doc._bind_note_anchors(anchors, paragraph)
             return
@@ -1178,7 +1186,8 @@ class _TableLevel:
 
     def cell(self):
         self.doc.budget.cell()
-        complex_cell = any(isinstance(block, Table) for block in self.paras)
+        complex_cell = any(isinstance(block, Table) or block.heading_level is not None
+                           for block in self.paras)
         # Check the retained projection before allocating separators or copies.
         size = _projection_size(self.paras)
         retained_paragraphs = (sum(len(b.text) for b in self.paras if isinstance(b, Paragraph))
@@ -1268,7 +1277,8 @@ class _TableLevel:
             self.first_frame = props.frame
         if self.depth > 1 and (props.row_end or mark == 7):
             self.doc.warn('Outer table markers at nested depth were retained as paragraph boundaries.')
-        paragraph = Paragraph(text)
+        paragraph = Paragraph(text, heading_level=props.outline + 1
+                                  if props.outline < 9 and text.strip() else None)
         self.doc._bind_note_anchors(anchors, paragraph)
         if row_end:
             # TTP is a separate empty paragraph, not an additional cell.

@@ -51,6 +51,16 @@ def main():
     literals = parse(args.fixtures / 'xls_text_literals/preserved.xls')
     assert any(c.value == 'retained' and c.text != c.value
                for c in literals.sheets[0].cells)
+    headings = parse(args.fixtures / 'doc_headings/authored.doc')
+    main = {b.text: b.heading_level for b in headings.blocks if b.kind == 'paragraph'}
+    assert main['Heading one specimen'] == 1 and main['Heading two specimen'] == 2
+    assert main['Inherited heading specimen'] == 1
+    assert main['Direct outline three specimen'] == 3
+    assert main['Direct body override specimen'] is None
+    table = next(b for b in headings.blocks if b.kind == 'table')
+    assert table.rows[0][0].blocks[0].heading_level == 2
+    assert any(b.kind == 'paragraph' and b.heading_level == 2
+               for b in headings.story_blocks['headers_footers'])
     print('Installed wheel: seven formats and DOC/XLS/RTF feature regressions passed')
 
 

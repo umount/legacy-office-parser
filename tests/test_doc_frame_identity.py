@@ -29,6 +29,10 @@ WIDTH = sprm(0x841A, u16(400))
 SPLIT = [Table([[Cell('A')]]), Table([[Cell('B')]])]
 JOINED = [Table([[Cell('A')], [Cell('B')]])]
 
+# Styles 1..9 are fixed heading indices even in these frame-focused fixtures.
+SPLIT_HEADING_B = [Table([[Cell('A')]]), Table([[Cell('B', blocks=[Paragraph('B', 2)])]])]
+JOINED_HEADING_B = [Table([[Cell('A')], [Cell('B', blocks=[Paragraph('B', 2)])]])]
+
 
 def rows(first=b'', second=b'', row_props=b'', **kwargs):
     return table_fixture('A\7\7B\7\7', [
@@ -92,11 +96,11 @@ def test_style_inheritance_and_direct_default_override(monkeypatch):
     source = rows()
     stylesheet(source, records)
     pap_style(source, 2, paragraph=2)
-    assert parse(monkeypatch, source).blocks == SPLIT
+    assert parse(monkeypatch, source).blocks == SPLIT_HEADING_B
     source = rows(b'', sprm(0x841A, u16(0)))
     stylesheet(source, records)
     pap_style(source, 2, paragraph=2)
-    assert parse(monkeypatch, source).blocks == JOINED
+    assert parse(monkeypatch, source).blocks == JOINED_HEADING_B
 
 
 def test_child_style_override_and_distinct_styles_same_effect(monkeypatch):
@@ -105,7 +109,9 @@ def test_child_style_override_and_distinct_styles_same_effect(monkeypatch):
                         style(2, base=1, papx=sprm(0x841A, u16(0))), style(3)])
     pap_style(source, 2, paragraph=0)
     pap_style(source, 3, paragraph=2)
-    assert parse(monkeypatch, source).blocks == JOINED
+    assert parse(monkeypatch, source).blocks == [Table([
+        [Cell('A', blocks=[Paragraph('A', 2)])],
+        [Cell('B', blocks=[Paragraph('B', 3)])]])]
 
 
 @pytest.mark.parametrize('before,after,split', [
@@ -120,7 +126,7 @@ def test_direct_pistd_resets_frame_then_later_direct_overrides(monkeypatch, befo
 def test_direct_style_selection_uses_inherited_frame(monkeypatch):
     source = rows(b'', sprm(0x4600, u16(2)))
     stylesheet(source, [style(0), style(1, papx=WIDTH), style(2, base=1)])
-    assert parse(monkeypatch, source).blocks == SPLIT
+    assert parse(monkeypatch, source).blocks == SPLIT_HEADING_B
 
 
 def test_complex_piece_override_wins_after_styles_and_papx(monkeypatch):
@@ -239,11 +245,11 @@ def test_all_frame_properties_inherit_and_directly_reset(monkeypatch, op, value,
     source = rows(common, common)
     stylesheet(source, [style(0), style(1, papx=sprm(op, value)), style(2, base=1)])
     pap_style(source, 2, paragraph=2)
-    assert parse(monkeypatch, source).blocks == SPLIT
+    assert parse(monkeypatch, source).blocks == SPLIT_HEADING_B
     source = rows(common, common + sprm(op, default))
     stylesheet(source, [style(0), style(1, papx=sprm(op, value)), style(2, base=1)])
     pap_style(source, 2, paragraph=2)
-    assert parse(monkeypatch, source).blocks == JOINED
+    assert parse(monkeypatch, source).blocks == JOINED_HEADING_B
 
 
 def test_unknown_first_frame_does_not_invent_boundary(monkeypatch):
@@ -271,7 +277,9 @@ def test_nested_style_inheritance_uses_first_paragraph_only(monkeypatch):
     stylesheet(source, [style(0), style(1, papx=WIDTH), style(2, base=1)])
     pap_style(source, 2, paragraph=2)
     assert parse(monkeypatch, source).blocks == [Table([[Cell('A\nB\nC\nTail', blocks=[
-        Table([[Cell('A')]]), Table([[Cell('B\nC')]]), Paragraph('Tail')])]])]
+        Table([[Cell('A')]]),
+        Table([[Cell('B\nC', blocks=[Paragraph('B', 2), Paragraph('C')])]]),
+        Paragraph('Tail')])]])]
 
 
 def test_malformed_style_frame_is_structured_error(monkeypatch):
