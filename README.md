@@ -30,13 +30,13 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.20 adds explicit DOC comment reply relationships and literal-only
-XLS text displays, retaining original comment bodies and spreadsheet values. Full compatibility with arbitrary documents has not
+Version 0.21 adds explicit DOC paragraph heading levels for structured chunking,
+including inherited styles and headings inside cells and auxiliary stories. Full compatibility with arbitrary documents has not
 yet been established; [coverage and limitations](docs/TESTING.md) are documented
 separately.
 
 - DOC 97–2003: paragraphs, nested tables and merges; separate text stories and
-  inherited style visibility; comments with authors and source references.
+  inherited style visibility and heading levels; comments with authors and source references.
 - XLS BIFF8: sheets, sparse typed cells, merges and stored formula results;
   percentages, decimals, digit grouping and scientific notation; explicit text
   labels before/after numbers and strings, and sign-based sections. Older BIFF versions are
@@ -147,6 +147,12 @@ CLI exit codes: 0 means a result was produced; 2 means an error; 3 with `--stric
 means the result contains warnings. Structure and text limits are enforced
 inside the parsers; the calling process sets the system memory limit and timeout.
 
+For adapters that build labeled spreadsheet rows or DOC heading paths, see the
+[structured integration guide](docs/INTEGRATION.md). It covers sparse cells,
+repeated column labels, retained values, and story-local heading context. The
+new optional DOC heading metadata is currently in progress; the guide describes
+its integration contract without claiming completed validation.
+
 ## Development
 
 ```sh
@@ -163,6 +169,7 @@ remain in their original languages.
 
 ## Documentation
 
+- [Structured integration guide](docs/INTEGRATION.md)
 - [Achievements and alternatives](docs/COMPARISON.md)
 - [Plan and status](docs/PLAN.md)
 - [Principles and architecture](docs/ARCHITECTURE.md)

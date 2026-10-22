@@ -324,3 +324,14 @@ unchanged; observation still precedes field transitions and text filtering.
 
 Both changes are independently reviewable. ODF story/repetition accounting stays
 unchanged until a concrete duplication or coupling problem justifies a change.
+
+### Structured adapter contract (0.21)
+
+Expose DOC heading levels without requiring conversion to an intermediate
+format. Retain inherited/direct outline semantics, source ownership and bounded
+metadata in paragraphs, cells and auxiliary stories. Validate with independent
+binary evidence, authored source/readback documents and public API/CLI checks.
+
+Document XLS adapters over sparse cells, explicit merges and retained raw/display
+values. Header selection, repeated column labels and DOC heading-path stacks are
+consumer policies, with isolated context for cells and auxiliary stories.

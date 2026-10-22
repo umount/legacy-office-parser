@@ -146,3 +146,11 @@ the decoder before group transitions and observing WordArt before dispatch.
 DOC text cleaning delegates note and comment reference observation separately,
 before field controls or visibility filtering. Neither extraction adds a second
 source scan or changes source-CP ownership and final anchor resolution.
+
+`Paragraph.heading_level` optionally carries an explicit DOC outline level 1–9.
+The default `None` is omitted from JSON; plain text projection is unchanged.
+DOC resolves inherited outline operands in the bounded paragraph-style walk and
+applies fixed heading precedence to the selected paragraph style. Heading-bearing
+cells and auxiliary stories retain their paragraph blocks and charge retained
+projections. Consumers construct heading paths in the relevant story scope.
+See [integration guidance](INTEGRATION.md) and [heading evidence](research-doc-headings.md).

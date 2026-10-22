@@ -604,3 +604,26 @@ Additional focused reviews matched **2,496** RTF fixture/mutation/limit outcomes
 and **10,000** DOC reference-observation cases, including property-call ordering,
 field state, warnings, visibility and anchors. These are bounded samples, not
 proof of equivalence for every possible document.
+
+## DOC heading levels and adapter guidance (0.21)
+
+The full suite passes **4,839 tests**, with **65 optional skips**; Ruff passes.
+The original **74** public fixture JSON results remain unchanged. The new
+heading fixture has independent literal expectations, a deterministic source,
+raw STSH/CLX/PAPX evidence and saved LibreOffice readback. Its text projection
+matches the pre-heading parser exactly; metadata remains in its source cells
+and stories. The heading/parser/API suites pass **111 tests** with live
+LibreOffice enabled.
+
+Independent review corrected ancestor-versus-selected-style precedence and
+rechecked inherited body/outline operands. Model validation rejects invalid
+levels, including booleans. Additional retention checks cover exact text limits,
+comment anchor paths and bounded style caches. **7,500** deterministic mutations
+of 75 public fixtures produced no unexpected exceptions; all **12** bounded
+resource checks passed. Sampling does not establish correctness for every input.
+
+LibreOffice 7.4 loses one custom style's inherited heading on resave; this is
+recorded explicitly and does not replace the binary source's independent
+expectation. See [DOC heading evidence](research-doc-headings.md) and
+[adapter guidance](INTEGRATION.md). Heading-path construction and XLS header
+selection belong to consumers; they are not inferred by the library.

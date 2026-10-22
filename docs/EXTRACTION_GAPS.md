@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register after 0.20. Each item requires a verified example, independent
+Working register after 0.21. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -101,6 +101,15 @@ does not establish completeness.
 - XLS: quoted/escaped literal-only fourth text sections, including empty display,
   with raw typed values retained. Thirteen preserved-XLS cells match the
   independent LibreOffice CSV oracle. Fraction formatting remains deferred.
+
+## Completed in 0.21
+
+- DOC: explicit paragraph heading levels 1–9 from fixed styles and stored outline
+  properties, including bounded style inheritance, direct and compact overrides.
+  Headings remain in their source cells/stories; ordinary paragraphs keep the
+  previous JSON shape. Style increment/permutation remains explicitly unsupported.
+- Documented structured XLS row assembly and consumer-owned DOC heading paths.
+  These adapter policies do not change the library's flat-text projection.
 
 ## Next areas to verify
 
