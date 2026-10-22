@@ -1,6 +1,7 @@
 """Independent XML evidence for these small ORIGINAL fixtures; no production imports."""
 from pathlib import Path
 import xml.etree.ElementTree as ET
+import re
 from zipfile import ZipFile
 
 ROOT = Path(__file__).parent
@@ -35,8 +36,8 @@ RTF_EXPORT = {
 }
 
 
-def docx_levels(path):
-    """Only OOXML explicit outline and basedOn inheritance; no name heuristics."""
+def docx_evidence(path):
+    """Fixture-only OOXML outlines and relationship-validated header variants."""
     with ZipFile(path) as archive:
         styles = {s.get(f'{{{W}}}styleId'): s
                   for s in ET.fromstring(archive.read('word/styles.xml'))}
@@ -55,25 +56,89 @@ def docx_levels(path):
             base = style.find('w:basedOn', NS)
             return inherited(None if base is None else base.get(f'{{{W}}}val'), (*seen, ident))
 
+        def paragraph(p):
+            text = ''.join(t.text or '' for t in p.iter(f'{{{W}}}t'))
+            props = p.find('w:pPr', NS)
+            own = outline(props)
+            ref = None if props is None else props.find('w:pStyle', NS)
+            value = (int(own.get(f'{{{W}}}val')) if own is not None else
+                     inherited(None if ref is None else ref.get(f'{{{W}}}val')))
+            assert value is None or 0 <= value <= 9
+            return text, value + 1 if value is not None and value < 9 else None
+
+        assert len(archive.namelist()) == len(set(archive.namelist())), 'duplicate ZIP part'
+        document = ET.fromstring(archive.read('word/document.xml'))
+        parents = {child: parent for parent in document.iter() for child in parent}
+        body = document.find('w:body', NS)
         result = {}
-        for name in archive.namelist():
-            if name != 'word/document.xml' and not (
-                name.startswith('word/header') and name.endswith('.xml')
-            ):
+        for p in document.iter(f'{{{W}}}p'):
+            text, level = paragraph(p)
+            if not text:
                 continue
-            for p in ET.fromstring(archive.read(name)).iter(f'{{{W}}}p'):
-                text = ''.join(t.text or '' for t in p.iter(f'{{{W}}}t'))
-                if not text:
-                    continue
-                props = p.find('w:pPr', NS)
-                own = outline(props)
-                ref = None if props is None else props.find('w:pStyle', NS)
-                value = (int(own.get(f'{{{W}}}val')) if own is not None else
-                         inherited(None if ref is None else ref.get(f'{{{W}}}val')))
-                assert text not in result
-                assert value is None or 0 <= value <= 9
-                result[text] = value + 1 if value is not None and value < 9 else None
-        return result
+            assert text not in result, f'duplicate body/table paragraph: {text}'
+            assert text != 'Header heading specimen', 'header text in body/table'
+            if text == 'Cell heading specimen':
+                assert parents[p].tag == f'{{{W}}}tc', 'cell heading outside table cell'
+            else:
+                assert parents[p] is body, f'body paragraph outside main body: {text}'
+            result[text] = level
+
+        # These authored specimens have one section. Validate references before
+        # collapsing repeated header text; filenames alone do not prove ownership.
+        sections = document.findall('.//w:sectPr', NS)
+        assert len(sections) == 1, 'unexpected fixture section count'
+        relns = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+        relations = ET.fromstring(archive.read('word/_rels/document.xml.rels'))
+        rels = {r.get('Id'): r for r in relations}
+        assert len(rels) == len(relations), 'duplicate relationship ID'
+        header_parts = {n for n in archive.namelist()
+                        if re.fullmatch(r'word/header[^/]*\.xml', n)}
+        used_parts, used_variants, headers = set(), set(), []
+        canonical = None
+        for ref in sections[0].findall('w:headerReference', NS):
+            variant = ref.get(f'{{{W}}}type')
+            assert variant in ('default', 'first', 'even'), 'invalid header variant'
+            assert variant not in used_variants, 'duplicate header variant'
+            used_variants.add(variant)
+            rel = rels[ref.get(f'{{{relns}}}id')]
+            assert rel.get('Type') == relns + '/header', 'wrong header relationship type'
+            assert rel.get('TargetMode', 'Internal') == 'Internal', 'external header'
+            target = rel.get('Target', '')
+            assert re.fullmatch(r'header[^/]*\.xml', target), 'unexpected header target'
+            name = 'word/' + target
+            assert name in header_parts, 'missing header part'
+            assert name not in used_parts, 'shared header target not in observed fixture profile'
+            used_parts.add(name)
+            header = ET.fromstring(archive.read(name))
+            assert header.tag == f'{{{W}}}hdr', 'wrong header part root'
+            header_parents = {c: parent for parent in header.iter() for c in parent}
+            entries = []
+            for p in header.iter(f'{{{W}}}p'):
+                text, level = paragraph(p)
+                if text:
+                    assert header_parents[p] is header, 'header paragraph in nested container'
+                    entries.append((text, level))
+            if entries:
+                assert len(entries) == 1, 'duplicate or extra paragraph within header part'
+                assert entries[0][0] == 'Header heading specimen', 'unexpected header text'
+                assert variant in ('default', 'first'), 'unobserved nonempty even header'
+                if canonical is None:
+                    canonical = entries
+                assert entries == canonical, 'header copies disagree in text/heading'
+            else:
+                assert variant == 'even', 'non-even header unexpectedly empty'
+            headers.append({'part': name, 'variant': variant, 'paragraphs': entries})
+        assert used_parts == header_parts, 'unreferenced header part'
+        assert any(h['variant'] == 'default' and h['paragraphs'] for h in headers), (
+            'missing nonempty default header')
+        assert canonical is not None
+        result.update(canonical)
+        return {'levels': result, 'headers': headers}
+
+
+def docx_levels(path):
+    """Independent levels, collapsing only validated copies of this fixture's header."""
+    return docx_evidence(path)['levels']
 
 
 def odt_evidence(path):

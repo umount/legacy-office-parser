@@ -29,6 +29,37 @@
     "tests/fixtures/paragraph_headings/readback/rtf/authored.docx": {
       "sha256": "cc4a6b36253a91e90a997f3c280c3090a8bb3504f9bd53b4e05b196a02262b86",
       "bytes": 5153
+    },
+    "tests/fixtures/paragraph_headings/readback/lo25/authored-odt.docx": {
+      "sha256": "c6a20ea890d8ac96964671aa7a5fca0552116292acc5f48a0c15886f98a8175a",
+      "bytes": 6702,
+      "converter": "LibreOffice 25.2.3.2 520(Build:2)"
+    },
+    "tests/fixtures/paragraph_headings/readback/lo25/authored-rtf.docx": {
+      "sha256": "13d5f9ffe4a27826b0393ef33a3b5d3dac43e4ffaa02e803322396ae6b3f4cda",
+      "bytes": 7051,
+      "converter": "LibreOffice 25.2.3.2 520(Build:2)"
+    },
+    "tests/fixtures/paragraph_headings/readback/lo25/explicit-rtf.docx": {
+      "sha256": "bea4c8eb26653f85b0c133d416c4aa780578340ea8244c354919b5406407583b",
+      "bytes": 7077,
+      "converter": "LibreOffice 25.2.3.2 520(Build:2)"
     }
+  },
+  "modern_readback_provenance": {
+    "network": "none",
+    "container_root": "read-only",
+    "fixture_mount": "read-only; original synthetic paragraph_headings only",
+    "memory": "1g",
+    "cpus": 1,
+    "converter_wall_seconds": 60,
+    "docker_client_wall_seconds": 75,
+    "cleanup_wall_seconds": 10,
+    "output_filter": "docx:Office Open XML Text",
+    "inputs": [
+      "explicit.rtf",
+      "authored.rtf",
+      "authored.odt"
+    ]
   }
 }

@@ -176,3 +176,53 @@ A new export must be reinspected before changing any literal expectation.
 The manifest records the saved artifact hashes and the reused source hash.
 Fixtures do not establish Word compatibility, malformed-input handling, every
 story type, arbitrary style cycles, or resource-limit behavior of the parser.
+
+## CI duplicate headers: reproduced with LibreOffice 25.2.3.2
+
+The duplicate-text assertion reported for CI run 39743572741 was reproduced
+locally for both RTF inputs using LibreOffice **25.2.3.2 520(Build:2)** in an
+isolated container. This reproduces the failure mechanism without assuming that
+the CI runner used that exact build. Artifact hashes and resource bounds are
+recorded in `manifest.json`.
+
+The old probe failed on both modern RTF readbacks and passed on ODT. Direct ZIP/XML
+inspection established that each RTF readback contains three section-linked header
+parts: `header1.xml` is an empty `even` header; `header2.xml` is the `default`
+header; `header3.xml` is a `first` header with the same single nonempty paragraph.
+The default/first copies have exactly “Header heading specimen”, level 2 for
+`explicit.rtf` and body for `authored.rtf`. Their explicit `w:headerReference`
+entries resolve through `word/_rels/document.xml.rels` to internal relationships
+of type header. The ODT readback has one nonempty default header. The first-page
+reference is verified as a package variant; the oracle does not infer that the
+first-page variant is enabled for display.
+
+The real converter outputs are retained as `readback/lo25/explicit-rtf.docx`,
+`readback/lo25/authored-rtf.docx`, and `readback/lo25/authored-odt.docx`.
+They are additional evidence; the old saved readbacks and all independent literal
+level mappings are unchanged. All source content is original synthetic test data. Containers were disposable, network-disabled, limited to 1 GiB/1 CPU,
+with read-only roots and synthetic fixture mounts. Only scratch output and an
+isolated `/tmp` profile were writable. Each converter had a 60-second wall limit,
+the client a 75-second timeout, and forced cleanup a 10-second timeout.
+
+`docx_evidence` now validates ownership before pooling header variants. It requires
+one section, unique variant references and relationship IDs, internal header
+relationships, correct part roots, no orphan header parts, and a nonempty default
+header. Only the observed nonempty default/first variants may repeat, each with
+exactly one matching text/heading pair. An empty even header is permitted.
+Duplicate paragraphs within a single header are rejected. So are duplicate
+body/table paragraphs, a header label in the main body/table, a cell heading
+outside its cell, and header text placed in a nested container. This intentionally
+narrow fixture oracle does not silently generalize to arbitrary multi-section
+DOCX documents or shared header targets.
+
+The modern saved-reference tests assert the exact part/variant/content/heading
+records, not merely the pooled result. Twelve corruption tests independently
+exercise duplicate body/cell/header paragraphs, disagreeing levels/text, moved
+body/header/cell content, wrong relationship types, orphan parts, duplicate
+variant references, and an unexpectedly empty default header.
+
+Validation after this change: **29 passed, 3 skipped** in the default heading
+suite, including all three actual modern readbacks; Ruff passed. The three
+opt-in host LibreOffice 7.4.7.2 conversions also pass. Parser behavior is unchanged;
+the oracle now recognizes verified header variants while preserving its
+independent heading expectations.

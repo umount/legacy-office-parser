@@ -660,7 +660,7 @@ The final CP domain boundary is covered explicitly. Sampling is not exhaustive.
 
 ## RTF and ODT heading metadata (0.22.0)
 
-The full suite passes **5,048 tests**, with **68 optional skips**; Ruff passes.
+The full suite passes **5,063 tests**, with **68 optional skips**; Ruff passes.
 All **75** pre-existing public fixture JSON results remain unchanged. The three
 new original heading fixtures have separate independent source/readback and
 parser-policy expectations; all three live LibreOffice 7.4 readbacks pass. See
@@ -682,3 +682,14 @@ heading or downstream chunk count. Private content remains outside the repositor
 The [output format reference](OUTPUT_FORMAT.md) documents all seven families and
 serialization omissions. Its four synthetic JSON examples match model validation
 and serialization.
+
+The header reference oracle also passes against saved LibreOffice 25.2.3.2
+readbacks. It validates first/default header copies through their OOXML
+relationships; duplicate body/cell content and inconsistent header copies remain
+failures. Twelve malformed synthetic variants exercise this boundary.
+
+Reproducibility sampling covered all 78 public inputs with 1,404 parses in 160
+processes under CPython 3.12.14/olefile 0.47, including hash seeds 1 and 271,
+fresh/repeated parsing, and reversed corpus order. Unsorted JSON bytes and warning
+order matched within that fixed environment. This is evidence for the corpus, not
+a guarantee across releases, runtimes, arbitrary inputs or caller mutations.

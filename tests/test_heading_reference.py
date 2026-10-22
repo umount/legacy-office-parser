@@ -245,3 +245,97 @@ def test_live_libreoffice_readback_is_strict(tmp_path, filename, readback, expec
     # No blanket missing-heading allowance: authored.rtf has already lost outlines
     # on export; explicit.rtf and authored.odt must retain every intended heading.
     assert reference.docx_levels(converted) == expected
+
+
+@pytest.mark.parametrize('name,expected,header_level', [
+    ('explicit-rtf', reference.EXPLICIT, 2),
+    ('authored-rtf', reference.RTF_EXPORT, None),
+    ('authored-odt', reference.EXPECTED, 2),
+])
+def test_saved_lo25_readbacks_preserve_levels_and_prove_header_ownership(
+        name, expected, header_level):
+    evidence = reference.docx_evidence(ROOT / 'readback/lo25' / (name + '.docx'))
+    assert evidence['levels'] == expected
+    if name.endswith('rtf'):
+        assert evidence['headers'] == [
+            {'part': 'word/header1.xml', 'variant': 'even', 'paragraphs': []},
+            {'part': 'word/header2.xml', 'variant': 'default',
+             'paragraphs': [('Header heading specimen', header_level)]},
+            {'part': 'word/header3.xml', 'variant': 'first',
+             'paragraphs': [('Header heading specimen', header_level)]},
+        ]
+    else:
+        assert evidence['headers'] == [
+            {'part': 'word/header1.xml', 'variant': 'default',
+             'paragraphs': [('Header heading specimen', 2)]},
+        ]
+
+
+@pytest.mark.parametrize('mutation,message', [
+    ('body_duplicate', 'duplicate body/table paragraph'),
+    ('cell_duplicate', 'duplicate body/table paragraph'),
+    ('header_duplicate', 'duplicate or extra paragraph within header part'),
+    ('header_level', 'header copies disagree'),
+    ('header_text', 'unexpected header text'),
+    ('header_in_body', 'header text in body/table'),
+    ('cell_in_body', 'cell heading outside table cell'),
+    ('header_in_table', 'header paragraph in nested container'),
+    ('wrong_relationship', 'wrong header relationship type'),
+    ('unreferenced_header', 'unreferenced header part'),
+    ('duplicate_variant', 'duplicate header variant'),
+    ('empty_default', 'non-even header unexpectedly empty'),
+])
+def test_header_copy_policy_rejects_corruption(tmp_path, mutation, message):
+    from copy import deepcopy
+
+    with ZipFile(ROOT / 'readback/lo25/explicit-rtf.docx') as archive:
+        parts = {name: archive.read(name) for name in archive.namelist()}
+    w = '{' + reference.W + '}'
+    ns = reference.NS
+    document = ET.fromstring(parts['word/document.xml'])
+    body = document.find('w:body', ns)
+    header = ET.fromstring(parts['word/header3.xml'])
+    rels = ET.fromstring(parts['word/_rels/document.xml.rels'])
+    if mutation == 'body_duplicate':
+        body.insert(1, deepcopy(body.find('w:p', ns)))
+    elif mutation == 'cell_duplicate':
+        cell = body.find('.//w:tc', ns)
+        cell.append(deepcopy(cell.find('w:p', ns)))
+    elif mutation == 'header_duplicate':
+        header.append(deepcopy(header.find('w:p', ns)))
+    elif mutation == 'header_level':
+        ET.SubElement(header.find('w:p/w:pPr', ns), w + 'outlineLvl', {w + 'val': '9'})
+    elif mutation == 'header_text':
+        header.find('.//w:t', ns).text = 'Altered header specimen'
+    elif mutation == 'header_in_body':
+        body.insert(0, deepcopy(header.find('w:p', ns)))
+    elif mutation == 'cell_in_body':
+        cell = body.find('.//w:tc', ns)
+        paragraph = cell.find('w:p', ns)
+        cell.remove(paragraph)
+        body.insert(0, paragraph)
+    elif mutation == 'header_in_table':
+        paragraph = header.find('w:p', ns)
+        header.remove(paragraph)
+        cell = ET.SubElement(ET.SubElement(ET.SubElement(header, w + 'tbl'), w + 'tr'),
+                             w + 'tc')
+        cell.append(paragraph)
+    elif mutation == 'wrong_relationship':
+        next(r for r in rels if r.get('Target') == 'header3.xml').set('Type', 'wrong')
+    elif mutation == 'unreferenced_header':
+        parts['word/header4.xml'] = parts['word/header3.xml']
+    elif mutation == 'duplicate_variant':
+        document.find('.//w:headerReference[@w:type="first"]', ns).set(w + 'type', 'default')
+    elif mutation == 'empty_default':
+        default = ET.fromstring(parts['word/header2.xml'])
+        default.find('.//w:t', ns).text = ''
+        parts['word/header2.xml'] = ET.tostring(default)
+    parts['word/document.xml'] = ET.tostring(document)
+    parts['word/header3.xml'] = ET.tostring(header)
+    parts['word/_rels/document.xml.rels'] = ET.tostring(rels)
+    target = tmp_path / 'corrupt.docx'
+    with ZipFile(target, 'w') as archive:
+        for name, data in parts.items():
+            archive.writestr(name, data)
+    with pytest.raises(AssertionError, match=message):
+        reference.docx_levels(target)
