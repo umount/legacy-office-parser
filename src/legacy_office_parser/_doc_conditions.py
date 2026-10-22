@@ -1,4 +1,5 @@
 """Narrow, bounded conditional visibility on proven structural table partitions."""
+from .diagnostics import diagnostic_warning
 from ._doc_styles import toggle
 
 
@@ -60,7 +61,7 @@ def apply_conditions(doc, paragraphs):
                      and len(p.flags) == len(cells))
         # A style on an adjacent row can alter the boundary even if it has no CCnf.
         if not safe:
-            doc.warn('Conditional table visibility has no proven stable rectangular context; unconditional visibility is retained.')
+            doc.warn(diagnostic_warning('doc_conditional_table_visibility_has_no_proven_stable_rectangular_context', 'Conditional table visibility has no proven stable rectangular context; unconditional visibility is retained.'))
             for entries, _, _ in rows:
                 for item in entries:
                     item[6] = False

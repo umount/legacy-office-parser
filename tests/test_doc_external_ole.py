@@ -20,6 +20,9 @@ FIXTURE = ROOT / 'tests/fixtures/doc_external/ordinary_external.doc'
 def test_real_ole_external_table_matches_authored_expectation():
     expected = json.loads((ROOT / 'tests/fixtures/ordinary_table.expected.json').read_text())
     actual = parse_doc(FIXTURE).to_dict()
+    diagnostics = actual.pop('diagnostics', [])
+    assert [d['message'] for d in diagnostics] == actual['warnings']
+    assert all(d['code'] for d in diagnostics)
     actual['blocks'] = [b for b in actual['blocks']
                         if b['kind'] != 'paragraph' or b['text']]
     # Width preferences are separate from the explicit geometry tested here.

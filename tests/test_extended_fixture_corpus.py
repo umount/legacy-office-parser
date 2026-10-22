@@ -35,6 +35,9 @@ def expected_document(name, fmt):
 
 def semantic_document(document):
     actual = document.to_dict()
+    diagnostics = actual.pop('diagnostics', [])
+    assert [d['message'] for d in diagnostics] == actual['warnings']
+    assert all(d['code'] for d in diagnostics)
     assert all(isinstance(w, str) for w in actual.pop('warnings'))
     # Writer/RTF may carry empty layout paragraphs, but never discard table cells.
     actual['blocks'] = [b for b in actual['blocks'] if b['kind'] != 'paragraph' or b['text'] != '']

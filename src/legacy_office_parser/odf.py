@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import re
 
+from .diagnostics import diagnostic_warning
 from ._odf_package import Budget, cap, q, read_package
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
@@ -165,18 +166,18 @@ class _Parser:
         while name:
             marker = id(index), name
             if marker in visited:
-                self.warn('ODF cyclic text visibility style; available properties used.')
+                self.warn(diagnostic_warning('odf_cyclic_text_visibility_style_available_properties_used', 'ODF cyclic text visibility style; available properties used.'))
                 break
             if len(visited) >= min(self.limits.max_depth, 256):
                 raise LimitExceededError('ODF style inheritance depth limit exceeded')
             visited.add(marker)
             lookup = family, name
             if lookup not in index:
-                self.warn('ODF text visibility style missing; available inherited properties used.')
+                self.warn(diagnostic_warning('odf_text_visibility_style_missing_available_inherited_properties_used', 'ODF text visibility style missing; available inherited properties used.'))
                 break
             style = index[lookup]
             if style is None:
-                self.warn('ODF duplicate text visibility style; ambiguous properties ignored.')
+                self.warn(diagnostic_warning('odf_duplicate_text_visibility_style_ambiguous_properties_ignored', 'ODF duplicate text visibility style; ambiguous properties ignored.'))
                 break
             chain.append(style)
             name = style.get(q('style:parent-style-name'))
@@ -184,18 +185,18 @@ class _Parser:
         # Text spans inherit enclosing text before family defaults (16.2).
         if include_default and family in defaults:
             if defaults[family] is None:
-                self.warn('ODF duplicate default text visibility style ignored.')
+                self.warn(diagnostic_warning('odf_duplicate_default_text_visibility_style_ignored', 'ODF duplicate default text visibility style ignored.'))
             else:
                 chain.append(defaults[family])
         result = None
         for style in chain:
             if style.find(q('style:map')) is not None:
-                self.warn('ODF conditional text styles are not evaluated; base style used.')
+                self.warn(diagnostic_warning('odf_conditional_text_styles_are_not_evaluated_base_style', 'ODF conditional text styles are not evaluated; base style used.'))
             prop = style.find(q('style:text-properties'))
             if result is None and prop is not None and q('text:display') in prop.attrib:
                 raw = prop.get(q('text:display'))
                 if raw not in {'none', 'true'}:
-                    self.warn('ODF conditional or invalid text visibility is not evaluated.')
+                    self.warn(diagnostic_warning('odf_conditional_or_invalid_text_visibility_is_not_evaluated', 'ODF conditional or invalid text visibility is not evaluated.'))
                     # An explicit unsupported property still overrides ancestors.
                     result = 'unknown'
                 else:
@@ -224,25 +225,25 @@ class _Parser:
                 elif state in {'false', '0'}:
                     states.add(False)
                 else:
-                    self.warn('ODF hidden paragraph has no supported stored visibility; '
-                              'condition not evaluated.')
+                    self.warn(diagnostic_warning('odf_hidden_paragraph_has_no_supported_stored_visibility_condition', 'ODF hidden paragraph has no supported stored visibility; '
+                              'condition not evaluated.'))
             elif child.tag in INLINE or child.tag == q('text:ruby'):
                 pending.extend(child)
         hidden = True in states and False not in states
         if hidden:
-            self.warn('ODF hidden paragraph omitted using stored visibility.')
+            self.warn(diagnostic_warning('odf_hidden_paragraph_omitted_using_stored_visibility', 'ODF hidden paragraph omitted using stored visibility.'))
             self.visibility_omissions += 1
         self.paragraph_visibility[element] = hidden
         return hidden
 
     def section_hidden(self, element):
         if hidden_section(element):
-            self.warn('ODF hidden section omitted.')
+            self.warn(diagnostic_warning('odf_hidden_section_omitted', 'ODF hidden section omitted.'))
             self.visibility_omissions += 1
             return True
         if (element.tag == q('text:section') and
                 element.get(q('text:display')) == 'condition'):
-            self.warn('ODF conditional section visibility is not evaluated; content retained.')
+            self.warn(diagnostic_warning('odf_conditional_section_visibility_is_not_evaluated_content_retained', 'ODF conditional section visibility is not evaluated; content retained.'))
         return False
 
     def warn(self, text):
@@ -256,19 +257,19 @@ class _Parser:
         if element.tag == q('text:h') and level is None:
             # Diagnose only extracted headings, not the cell structure probe.
             # Never echo source attributes or text in diagnostics.
-            self.warn('ODF heading level invalid or outside supported range 1-9; '
-                      'text retained without heading metadata.')
+            self.warn(diagnostic_warning('odf_heading_level_invalid_or_outside_supported_range_1', 'ODF heading level invalid or outside supported range 1-9; '
+                      'text retained without heading metadata.'))
         return level
 
     def unsupported(self, e):
         if e.tag == q('text:note'):
-            self.warn('Unsupported or malformed ODF note omitted.')
+            self.warn(diagnostic_warning('odf_unsupported_or_malformed_odf_note_omitted', 'Unsupported or malformed ODF note omitted.'))
             return
         # Element names are intentionally not echoed: extensions may contain secrets.
         if e.tag in {q('text:soft-page-break'), q('text:bookmark'), q('text:bookmark-start'),
                      q('text:bookmark-end'), q('text:change-start'), q('text:change-end')}:
             return
-        self.warn('Unsupported ODF content omitted (annotations, revisions, objects, or extensions).')
+        self.warn(diagnostic_warning('odf_unsupported_odf_content_omitted_annotations_revisions_objects_or_extensions', 'Unsupported ODF content omitted (annotations, revisions, objects, or extensions).'))
 
     def inline(self, element):
         tokens = []
@@ -288,7 +289,7 @@ class _Parser:
                 if display in {'none', 'true'}:
                     hidden = display == 'none'
                 if hidden:
-                    self.warn('ODF hidden styled text omitted.')
+                    self.warn(diagnostic_warning('odf_hidden_styled_text_omitted', 'ODF hidden styled text omitted.'))
                     self.visibility_omissions += 1
             if e.text and not hidden:
                 add(e.text)
@@ -308,7 +309,7 @@ class _Parser:
                     for base in child:
                         if base.tag == q('text:ruby-base'):
                             walk(base, hidden)
-                    self.warn('ODF ruby annotations omitted; base text retained.')
+                    self.warn(diagnostic_warning('odf_ruby_annotations_omitted_base_text_retained', 'ODF ruby annotations omitted; base text retained.'))
                 elif not hidden and child.tag == q('text:s'):
                     n = positive(child, 'text:c', cap(self.limits, 'max_text_chars', 10_000_000))
                     if count + n > cap(self.limits, 'max_text_chars', 10_000_000):
@@ -441,7 +442,7 @@ class _Parser:
                     content.append(child)
                 else:
                     self.unsupported(child)
-            self.warn('ODF shape text pooled with text boxes without anchor or layout identities.')
+            self.warn(diagnostic_warning('odf_shape_text_pooled_with_text_boxes_without_anchor', 'ODF shape text pooled with text boxes without anchor or layout identities.'))
             self.story(content, self.stories['textboxes'])
             return
         if element.tag == q('draw:frame'):
@@ -454,8 +455,8 @@ class _Parser:
                 if child.tag == q('draw:object'):
                     body = self.inline_object_body(child)
                     if body is not None:
-                        self.warn('ODF inline text objects pooled with text boxes; '
-                                  'object identity, anchors and embedded page layout are not retained.')
+                        self.warn(diagnostic_warning('odf_inline_text_objects_pooled_with_text_boxes_object', 'ODF inline text objects pooled with text boxes; '
+                                  'object identity, anchors and embedded page layout are not retained.'))
                         in_note = self.in_note
                         # Notes in the embedded document are not nested notes
                         # in the host. Restore the host guard on every exit.
@@ -469,7 +470,7 @@ class _Parser:
                     self.unsupported(child)
             return
         if element.tag == q('draw:text-box'):
-            self.warn('ODF text boxes pooled without anchor, chain, or layout identities.')
+            self.warn(diagnostic_warning('odf_text_boxes_pooled_without_anchor_chain_or_layout', 'ODF text boxes pooled without anchor, chain, or layout identities.'))
             self.story(element, self.stories['textboxes'])
             return
         for child in element:
@@ -519,8 +520,8 @@ class _Parser:
                 marker = (id(index), name)
                 e = index.get(lookup)
                 if e is None or marker in visited or e.find(q('style:map')) is not None:
-                    self.warn('ODF master selection is ambiguous (missing, duplicate, cyclic, '
-                              'or conditional style); affected page stories omitted.')
+                    self.warn(diagnostic_warning('odf_master_selection_is_ambiguous_missing_duplicate_cyclic_or', 'ODF master selection is ambiguous (missing, duplicate, cyclic, '
+                              'or conditional style); affected page stories omitted.'))
                     cache[key] = None
                     return None
                 if len(visited) >= min(self.limits.max_depth, 256):
@@ -538,7 +539,7 @@ class _Parser:
             if family in defaults:
                 default = defaults[family]
                 if default is None:
-                    self.warn('ODF default style is ambiguous; affected page stories omitted.')
+                    self.warn(diagnostic_warning('odf_default_style_is_ambiguous_affected_page_stories_omitted', 'ODF default style is ambiguous; affected page stories omitted.'))
                     cache[key] = None
                     return None
                 prop = default.find(q('style:' + family + '-properties'))
@@ -557,21 +558,21 @@ class _Parser:
             current = name
             e = masters.get(name)
             if not name or e is None:
-                self.warn('ODF master reference is missing or ambiguous; '
-                          'affected page stories omitted.')
+                self.warn(diagnostic_warning('odf_master_reference_is_missing_or_ambiguous_affected_page', 'ODF master reference is missing or ambiguous; '
+                          'affected page stories omitted.'))
                 current = None
                 return
             selected.setdefault(name, e)
             next_name = e.get(q('style:next-style-name'))
             if next_name and next_name != name:
-                self.warn('ODF automatic pagination is not computed; next master pages '
-                          'are selected only at recorded or explicit page breaks.')
+                self.warn(diagnostic_warning('odf_automatic_pagination_is_not_computed_next_master_pages', 'ODF automatic pagination is not computed; next master pages '
+                          'are selected only at recorded or explicit page breaks.'))
 
         sequences = body.findall(q('text:page-sequence'))
         pages = sequences[0].findall(q('text:page')) if len(sequences) == 1 else []
         if sequences:
-            self.warn('ODF page-sequence selection uses its initial master and recorded '
-                      'page transitions; automatic pagination is not computed.')
+            self.warn(diagnostic_warning('odf_page_sequence_selection_uses_its_initial_master_and', 'ODF page-sequence selection uses its initial master and recorded '
+                      'page transitions; automatic pagination is not computed.'))
         page_index = 0
 
         def advance():
@@ -616,12 +617,12 @@ class _Parser:
 
         def initial():
             if len(sequences) > 1:
-                self.warn('ODF initial page sequence is ambiguous; page stories omitted.')
+                self.warn(diagnostic_warning('odf_initial_page_sequence_is_ambiguous_page_stories_omitted', 'ODF initial page sequence is ambiguous; page stories omitted.'))
             elif pages:
                 select(pages[0].get(q('text:master-page-name')))
             else:
-                self.warn('ODF initial master is unspecified; using the first stored '
-                          'master as an implementation-defined fallback.')
+                self.warn(diagnostic_warning('odf_initial_master_is_unspecified_using_the_first_stored', 'ODF initial master is unspecified; using the first stored '
+                          'master as an implementation-defined fallback.'))
                 select(next(iter(masters)))
 
         started, pending_break = False, False
@@ -643,8 +644,8 @@ class _Parser:
                 advance()
             started = True
             for _ in soft_breaks(e):
-                self.warn('ODF cached soft page breaks used for master selection; '
-                          'pagination is not recomputed.')
+                self.warn(diagnostic_warning('odf_cached_soft_page_breaks_used_for_master_selection', 'ODF cached soft page breaks used for master selection; '
+                          'pagination is not recomputed.'))
                 advance()
             pending_break = props.get('break-after') == 'page'
         if not started:
@@ -656,10 +657,10 @@ class _Parser:
             for child in master:
                 if child.tag in HEADER_FOOTER:
                     if child.get(q('style:display')) in {'false', '0'}:
-                        self.warn('ODF disabled header/footer omitted.')
+                        self.warn(diagnostic_warning('odf_disabled_header_footer_omitted', 'ODF disabled header/footer omitted.'))
                         continue
-                    self.warn('ODF headers/footers pooled from selected master-page variants; '
-                              'page anchors and variant identities are not retained.')
+                    self.warn(diagnostic_warning('odf_headers_footers_pooled_from_selected_master_page_variants', 'ODF headers/footers pooled from selected master-page variants; '
+                              'page anchors and variant identities are not retained.'))
                     self.story(child, self.stories['headers_footers'])
                 else:
                     self.unsupported(child)
@@ -901,11 +902,11 @@ class _Parser:
         elif kind == 'string':
             value = e.get(q('office:string-value'), text)
         elif kind != 'empty':
-            self.warn('Unsupported ODF spreadsheet value type; display text retained.')
+            self.warn(diagnostic_warning('odf_unsupported_odf_spreadsheet_value_type_display_text_retained', 'Unsupported ODF spreadsheet value type; display text retained.'))
         if formula is not None:
-            self.warn('ODF formulas are not evaluated; only cached values and formula text are retained.')
+            self.warn(diagnostic_warning('odf_formulas_are_not_evaluated_only_cached_values_and', 'ODF formulas are not evaluated; only cached values and formula text are retained.'))
         if kind != 'empty' and value is None:
-            self.warn('ODF cell has no supported cached value; display text retained.')
+            self.warn(diagnostic_warning('odf_cell_has_no_supported_cached_value_display_text', 'ODF cell has no supported cached value; display text retained.'))
         # Preserve raw cached values, but do not resurrect suppressed display
         # content from office:string-value (or another value attribute).
         if not text and value is not None and e not in self.suppressed_cell_displays:
@@ -1049,7 +1050,7 @@ class _Parser:
                 elif e.get(q('presentation:class')) in {'title', 'subtitle'} and destination != 'notes':
                     destination = 'title'
                 elif e.get(q('presentation:class')) in {'header', 'footer', 'date-time', 'page-number'}:
-                    self.warn('ODF slide headers, footers, dates and page numbers omitted.')
+                    self.warn(diagnostic_warning('odf_slide_headers_footers_dates_and_page_numbers_omitted', 'ODF slide headers, footers, dates and page numbers omitted.'))
                     return
                 if e.tag in PARAS:
                     if self.paragraph_hidden(e):
@@ -1124,14 +1125,14 @@ def parse_odf_bytes(data: bytes, limits: Limits, expected_format: str | None = N
     doc = Document(format=fmt)
     parser = _Parser(doc, budget, (styles, root))
     if no_manifest:
-        parser.warn('ODF manifest missing; package encryption declarations could not be checked.')
+        parser.warn(diagnostic_warning('odf_manifest_missing_package_encryption_declarations_could_not_be', 'ODF manifest missing; package encryption declarations could not be checked.'))
     for style_root in (styles, root):
         if style_root is not None:
             if fmt == 'odt':
                 continue
             for master in style_root.iter(q('style:master-page')):
                 if len(master):
-                    parser.warn('ODF master-page content is not rendered.')
+                    parser.warn(diagnostic_warning('odf_master_page_content_is_not_rendered', 'ODF master-page content is not rendered.'))
                     break
     {'odt': parser.blocks, 'ods': parser.sheets, 'odp': parser.slides}[fmt](body)
     if fmt == 'odt':

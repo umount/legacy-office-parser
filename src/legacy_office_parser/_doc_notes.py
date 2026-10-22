@@ -20,6 +20,7 @@ import struct
 from typing import Literal
 import warnings
 
+from .diagnostics import diagnostic_warning
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
 
@@ -89,7 +90,7 @@ def decode_note_ranges(
         previous = cp
     if not texts:
         if story_count or refs:
-            warn('Note text PLC is absent; the whole story is retained without note relationships.')
+            warn(diagnostic_warning('doc_note_text_plc_is_absent_the_whole_story_is', 'Note text PLC is absent; the whole story is retained without note relationships.'))
             return None
         return []
     boundaries = []
@@ -106,13 +107,13 @@ def decode_note_ranges(
         if bytes(story_utf16[(end - 1) * 2:end * 2]) != b'\r\0':
             raise InvalidDocumentError('DOC note body has no final paragraph mark')
     if boundaries[0] != 0:
-        warn('Note text PLC leaves an unassigned prefix; the whole story is retained without note relationships.')
+        warn(diagnostic_warning('doc_note_text_plc_leaves_an_unassigned_prefix_the_whole', 'Note text PLC leaves an unassigned prefix; the whole story is retained without note relationships.'))
         return None
     linked = bool(references) and ref_count == body_count
     if not linked and body_count:
-        warn('Note reference PLC is absent or its count differs from the bodies; note bodies are unlinked.')
+        warn(diagnostic_warning('doc_note_reference_plc_is_absent_or_its_count_differs', 'Note reference PLC is absent or its count differs from the bodies; note bodies are unlinked.'))
     if refs and not body_count:
-        warn('Note references have no corresponding bodies; no note relationships are emitted.')
+        warn(diagnostic_warning('doc_note_references_have_no_corresponding_bodies_no_note_relationships', 'Note references have no corresponding bodies; no note relationships are emitted.'))
     return [SourceNote(i + 1, refs[i][0] if linked else None,
                        refs[i][1] if linked else 'unknown', begin, end)
             for i, (begin, end) in enumerate(zip(boundaries, boundaries[1:]))]

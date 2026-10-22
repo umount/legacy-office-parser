@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, replace
 from itertools import chain
 import struct
 
+from .diagnostics import diagnostic_warning
 from ._ole import open_ole, read_stream
 from ._doc_textboxes import live_textbox_ranges
 from ._doc_notes import decode_note_ranges
@@ -192,7 +193,7 @@ class _Doc:
         self.table_name = '1Table' if flags & 0x0200 else '0Table'
         # MS-DOC FibBase: bit 12 is fExtChar; fFarEast is bit 14.
         if flags & 0x4000:
-            self.warn('Far East DOC flag is set; language-specific legacy encoding is not interpreted.')
+            self.warn(diagnostic_warning('doc_far_east_doc_flag_is_set_language_specific_legacy', 'Far East DOC flag is set; language-specific legacy encoding is not interpreted.'))
 
     def pair(self, index):
         return _u32(self.pairs, index * 8), _u32(self.pairs, index * 8 + 4)
@@ -229,7 +230,7 @@ class _Doc:
         if cps[-1] > self.limits.max_text_chars:
             raise LimitExceededError('DOC piece CP limit exceeded')
         if cps[-1] > self.total + 1:
-            self.warn('Piece table contains CPs outside the declared stories; these are excluded.')
+            self.warn(diagnostic_warning('doc_piece_table_contains_cps_outside_the_declared_stories_these', 'Piece table contains CPs outside the declared stories; these are excluded.'))
         self.pieces = []
         # UTF-16 bytes preserve CP indexing even for astral characters and split pairs.
         self.text = bytearray(self.total * 2)
@@ -290,7 +291,7 @@ class _Doc:
         plc = self.table_part(13)
         self.bin_fcs, self.bin_pages = [], []
         if not plc:
-            self.warn('Paragraph formatting is absent; table structure cannot be established.')
+            self.warn(diagnostic_warning('doc_paragraph_formatting_is_absent_table_structure_cannot_be_established', 'Paragraph formatting is absent; table structure cannot be established.'))
             return
         if len(plc) < 4 or (len(plc) - 4) % 8:
             raise InvalidDocumentError('invalid DOC paragraph bin table')
@@ -304,7 +305,7 @@ class _Doc:
         i = bisect_right(self.bin_fcs, fc) - 1
         if i < 0 or i >= len(self.bin_pages):
             if self.bin_pages:
-                self.warn('Some paragraphs have no PAPX coverage; their table membership is unknown.')
+                self.warn(diagnostic_warning('doc_some_paragraphs_have_no_papx_coverage_their_table_membership', 'Some paragraphs have no PAPX coverage; their table membership is unknown.'))
             return 0, memoryview(b'')
         pn = self.bin_pages[i]
         if pn not in self.pages:
@@ -395,7 +396,7 @@ class _Doc:
                             or styles[table_style][0] != 3):
                         table_style = 11
                     props.identity = replace(props.identity, style=table_style)
-                    self.warn('Table styles: hidden text is evaluated only for supported contexts; other table-style formatting is not modeled.')
+                    self.warn(diagnostic_warning('doc_table_styles_hidden_text_is_evaluated_only_for_supported', 'Table styles: hidden text is evaluated only for supported contexts; other table-style formatting is not modeled.'))
                 elif op == 0x2416:
                     props.in_table = bool(arg[0])
                 elif op == 0x2417:
@@ -441,7 +442,7 @@ class _Doc:
                     trail.append(offset)
                     break
                 elif op == 0x6645:
-                    self.warn('Legacy external PAPX properties are unsupported; available inline properties are used.')
+                    self.warn(diagnostic_warning('doc_legacy_external_papx_properties_are_unsupported_available_inline_properties', 'Legacy external PAPX properties are unsupported; available inline properties are used.'))
                 elif op == 0xD608:
                     n = _span(arg, 2, 1)[0]
                     if n > 63:
@@ -460,9 +461,9 @@ class _Doc:
                 elif apply_table(props, op, arg, self.warn):
                     pass
                 elif op == 0xD606:
-                    self.warn('Legacy table geometry is unsupported; explicit cell marks are retained.')
+                    self.warn(diagnostic_warning('doc_legacy_table_geometry_is_unsupported_explicit_cell_marks_are', 'Legacy table geometry is unsupported; explicit cell marks are retained.'))
                 elif op in (0xF614, 0xF617, 0xF618, 0xD635, 0xF661) or (op == 0x3615 and arg[0]):
-                    self.warn('Preferred table widths and automatic table layout are not evaluated; explicit cell geometry is used.')
+                    self.warn(diagnostic_warning('doc_preferred_table_widths_and_automatic_table_layout_are_not', 'Preferred table widths and automatic table layout are not evaluated; explicit cell geometry is used.'))
             else:
                 if not props.flags and fallbacks:
                     saved, group, external_group, first_index, restore_depth = fallbacks.pop()
@@ -471,7 +472,7 @@ class _Doc:
                     del trail[restore_depth:]
                     for name in props.__dataclass_fields__:
                         setattr(props, name, getattr(saved, name))
-                    self.warn('External table properties supplied no supported cell geometry; inline fallback properties are used.')
+                    self.warn(diagnostic_warning('doc_external_table_properties_supplied_no_supported_cell_geometry_inline', 'External table properties supplied no supported cell geometry; inline fallback properties are used.'))
                     continue
                 return
 
@@ -495,7 +496,7 @@ class _Doc:
             if op is not None:
                 self._apply(props, struct.pack('<HB', op, piece.prm >> 8))
             elif isprm not in (0x41, 0x43, 0x53, 0x5C, 0x75):
-                self.warn('This compact piece formatting (Prm0) property is not evaluated.')
+                self.warn(diagnostic_warning('doc_this_compact_piece_formatting_prm0_property_is_not_evaluated', 'This compact piece formatting (Prm0) property is not evaluated.'))
         self.paragraph_cache = cp, props
         return props
 
@@ -520,7 +521,7 @@ class _Doc:
         self.character_coverage_known = 0 <= i < len(pages)
         if i < 0 or i >= len(pages):
             if pages:
-                self.warn('Some characters have no CHPX coverage; symbol and visibility properties may be missing.')
+                self.warn(diagnostic_warning('doc_some_characters_have_no_chpx_coverage_symbol_and_visibility', 'Some characters have no CHPX coverage; symbol and visibility properties may be missing.'))
             return ()
         pn = pages[i]
         if pn not in self.chpx_pages:
@@ -584,7 +585,7 @@ class _Doc:
                 if pos != len(data):
                     raise InvalidDocumentError('unexpected trailing DOC font table bytes')
             else:
-                self.warn('Symbol font table is absent; symbol codes are retained without font interpretation.')
+                self.warn(diagnostic_warning('doc_symbol_font_table_is_absent_symbol_codes_are_retained', 'Symbol font table is absent; symbol codes are retained without font interpretation.'))
             self.symbol_fonts = fonts
         if not self.symbol_fonts and not self.pair(15)[1]:
             return None
@@ -635,7 +636,7 @@ class _Doc:
                         0x0802: 'field_hidden', 0x0855: 'special'}[op]
                 if op == 0x0855 and arg in (128, 129) and not self.styles.present:
                     props[name] = None
-                    self.warn('Style-relative CFSpec is not resolved without a stylesheet; available symbol codes are retained.')
+                    self.warn(diagnostic_warning('doc_style_relative_cfspec_is_not_resolved_without_a_stylesheet', 'Style-relative CFSpec is not resolved without a stylesheet; available symbol codes are retained.'))
                 else:
                     props[name] = toggle(arg, style_hidden if op == 0x083C else False)
         self.character_cache = key, props
@@ -651,12 +652,12 @@ class _Doc:
         if (0xE000 <= code <= 0xF8FF or
                 (font and (font[0] == 2 or font[1] in
                  ('symbol', 'wingdings', 'wingdings 2', 'wingdings 3', 'webdings')))):
-            self.warn('Font-dependent symbol codes are retained verbatim; no font-specific Unicode glyph mapping is applied.')
+            self.warn(diagnostic_warning('doc_font_dependent_symbol_codes_are_retained_verbatim_no_font', 'Font-dependent symbol codes are retained verbatim; no font-specific Unicode glyph mapping is applied.'))
         if 0xD800 <= code <= 0xDFFF:
-            self.warn('Invalid symbol Unicode surrogate was replaced with U+FFFD.')
+            self.warn(diagnostic_warning('doc_invalid_symbol_unicode_surrogate_was_replaced_with_u_fffd', 'Invalid symbol Unicode surrogate was replaced with U+FFFD.'))
             return '\ufffd'
         if code < 32:
-            self.warn('Symbol control code is retained literally, not interpreted as a DOC delimiter.')
+            self.warn(diagnostic_warning('doc_symbol_control_code_is_retained_literally_not_interpreted_as', 'Symbol control code is retained literally, not interpreted as a DOC delimiter.'))
         return chr(code)
 
     def _observe_note_reference(self, cp, ch, props, *, fields, coverage_known,
@@ -675,7 +676,7 @@ class _Doc:
         if automatic and props.get('special') is not True:
             if 'unknown' not in flags:
                 flags.append('unknown')
-            self.warn('Note reference CFSpec is not established; its output anchor is unresolved.')
+            self.warn(diagnostic_warning('doc_note_reference_cfspec_is_not_established_its_output_anchor', 'Note reference CFSpec is not established; its output anchor is unresolved.'))
         else:
             self.paragraph_anchors.append(cp)
         self.note_visibility[cp] = flags
@@ -689,7 +690,7 @@ class _Doc:
         known = special is True
         self.comment_marker_known[cp] = known
         if not known:
-            self.warn('DOC comment marker CFSpec is unknown; its unproven body is omitted.')
+            self.warn(diagnostic_warning('doc_comment_marker_cfspec_is_unknown_its_unproven_body', 'DOC comment marker CFSpec is unknown; its unproven body is omitted.'))
         if cp in self.comment_references:
             flags = [name for name in ('hidden', 'deleted', 'field_hidden') if props.get(name)]
             if fields and not all(fields):
@@ -708,13 +709,13 @@ class _Doc:
         if mark_cp is None:
             mark_props = self._character_props(end, paragraph_style, table_hidden)
             if any(mark_props.get(name) for name in ('hidden', 'deleted', 'field_hidden')):
-                self.warn('Hidden or deleted paragraph/cell marks retain their structural boundaries; revision merging is not modeled.')
+                self.warn(diagnostic_warning('doc_hidden_or_deleted_paragraph_cell_marks_retain_their_structural', 'Hidden or deleted paragraph/cell marks retain their structural boundaries; revision merging is not modeled.'))
         self.paragraph_anchors = []
         raw = bytes(self.text[start * 2:end * 2])
         try:
             value = raw.decode('utf-16le')
         except UnicodeDecodeError:
-            self.warn('Invalid UTF-16 was replaced with U+FFFD.')
+            self.warn(diagnostic_warning('doc_invalid_utf_16_was_replaced_with_u_fffd', 'Invalid UTF-16 was replaced with U+FFFD.'))
             value = raw.decode('utf-16le', errors='replace')
         out = []
         next_cp = start
@@ -739,19 +740,19 @@ class _Doc:
                 if len(self.fields) >= self.limits.max_depth:
                     raise LimitExceededError('DOC field nesting limit exceeded')
                 self.fields.append(False)
-                self.warn('Fields use stored results; field instructions are not evaluated.')
+                self.warn(diagnostic_warning('doc_fields_use_stored_results_field_instructions_are_not_evaluated', 'Fields use stored results; field instructions are not evaluated.'))
                 continue
             if ch == '\x14':
                 if self.fields:
                     self.fields[-1] = True
                 else:
-                    self.warn('Unbalanced DOC field delimiters were encountered.')
+                    self.warn(diagnostic_warning('doc_unbalanced_doc_field_delimiters_were_encountered', 'Unbalanced DOC field delimiters were encountered.'))
                 continue
             if ch == '\x15':
                 if self.fields:
                     self.fields.pop()
                 else:
-                    self.warn('Unbalanced DOC field delimiters were encountered.')
+                    self.warn(diagnostic_warning('doc_unbalanced_doc_field_delimiters_were_encountered', 'Unbalanced DOC field delimiters were encountered.'))
                 continue
             if self.fields and not all(self.fields):
                 continue
@@ -764,10 +765,10 @@ class _Doc:
                     out.append(symbol)
                     continue
             if ch in ('\x01', '\x08'):
-                self.warn('Embedded objects and drawings are omitted; textbox stories are extracted separately.')
+                self.warn(diagnostic_warning('doc_embedded_objects_and_drawings_are_omitted_textbox_stories_are', 'Embedded objects and drawings are omitted; textbox stories are extracted separately.'))
             elif ch in ('\x02', '\x05'):
                 if ch == '\x02':
-                    self.warn('Note/comment reference marks are omitted; note stories are extracted separately.')
+                    self.warn(diagnostic_warning('doc_note_comment_reference_marks_are_omitted_note_stories_are', 'Note/comment reference marks are omitted; note stories are extracted separately.'))
             elif ch in ('\x0b', '\x0c', '\x0e', '\r'):
                 out.append('\n')
             elif ch == '\x07':
@@ -779,7 +780,7 @@ class _Doc:
             elif ord(ch) >= 32 or ch in ('\t', '\n'):
                 out.append(ch)
             else:
-                self.warn('Unsupported control characters were omitted from extracted text.')
+                self.warn(diagnostic_warning('doc_unsupported_control_characters_were_omitted_from_extracted_text', 'Unsupported control characters were omitted from extracted text.'))
         return ''.join(out)
 
     def paragraphs(self, start, count):
@@ -792,7 +793,7 @@ class _Doc:
         def close_incomplete():
             row = pending.pop()
             if row:
-                self.warn('Incomplete table row has no proven table-style context; available text is retained.')
+                self.warn(diagnostic_warning('doc_incomplete_table_row_has_no_proven_table_style_context', 'Incomplete table row has no proven table-style context; available text is retained.'))
 
         def add(begin, end, mark, mark_cp):
             props = self.properties(mark_cp)
@@ -826,7 +827,7 @@ class _Doc:
                 add(begin, cp, unit, cp)
                 begin = cp + 1
         if begin < start + count:
-            self.warn('A DOC story has no final paragraph mark; trailing text is retained.')
+            self.warn(diagnostic_warning('doc_a_doc_story_has_no_final_paragraph_mark_trailing', 'A DOC story has no final paragraph mark; trailing text is retained.'))
             add(begin, start + count, 0, start + count - 1)
         while pending:
             close_incomplete()
@@ -881,7 +882,7 @@ class _Doc:
             known = self._comment_paragraph_known(end_cp)
             self.comment_structure_known[comment.ordinal] = known
             if not known:
-                self.warn('DOC comment final paragraph has unknown table membership; its body is omitted.')
+                self.warn(diagnostic_warning('doc_comment_final_paragraph_has_unknown_table_membership_its', 'DOC comment final paragraph has unknown table membership; its body is omitted.'))
             end_props = self.properties(end_cp)
             if end_props.in_table or end_props.depth or end_props.inner:
                 raise InvalidDocumentError('DOC comment body final paragraph is inside a table')
@@ -941,7 +942,7 @@ class _Doc:
             if proven:
                 self.comment_selections[source.source_cp] = (begin, end)
             else:
-                self.warn('DOC comment selection validity is unproven; source selection bounds are omitted.')
+                self.warn(diagnostic_warning('doc_comment_selection_validity_is_unproven_source_selection_bounds', 'DOC comment selection validity is unproven; source selection bounds are omitted.'))
 
     def _parse_comments(self, start):
         blocks = []
@@ -965,7 +966,7 @@ class _Doc:
             depth, parent = source.reply_depth, source.parent_ordinal
             if parent is not None and retained.get(parent) is None:
                 depth = parent = None
-                self.warn('DOC comment reply ancestry is unavailable; relationship metadata is omitted without dropping the body.')
+                self.warn(diagnostic_warning('doc_comment_reply_ancestry_is_unavailable_relationship_metadata_is', 'DOC comment reply ancestry is unavailable; relationship metadata is omitted without dropping the body.'))
             retained[source.ordinal] = depth
             self.document.comments.append(Comment(
                 ordinal=source.ordinal, body=CommentBodyRange('comment_text', block_start, len(blocks)),
@@ -996,7 +997,7 @@ class _Doc:
                 wanted.setdefault(id(target), []).append(note)
         if not wanted:
             if self.document.notes or self.document.comments:
-                self.warn('Note/comment output anchors are unresolved; source CPs are not output offsets.')
+                self.warn(diagnostic_warning('doc_note_comment_output_anchors_are_unresolved_source_cps_are', 'Note/comment output anchors are unresolved; source CPs are not output offsets.'))
             return
         def children(node):
             if isinstance(node, Table):
@@ -1033,7 +1034,7 @@ class _Doc:
             if note.anchor_path is None and note.source_cp is not None:
                 if 'unknown' not in note.visibility:
                     note.visibility.append('unknown')
-                self.warn('Some note/comment references could not be linked to an output paragraph or cell.')
+                self.warn(diagnostic_warning('doc_some_note_comment_references_could_not_be_linked_to', 'Some note/comment references could not be linked to an output paragraph or cell.'))
 
     def parse(self):
         self._prepare_notes()
@@ -1089,7 +1090,7 @@ class _Doc:
                             ))
                             note_stories.add(attr)
                     if index in (2, 5, 6):
-                        self.warn('Header variants and textbox placement are not modeled.')
+                        self.warn(diagnostic_warning('doc_header_variants_and_textbox_placement_are_not_modeled', 'Header variants and textbox placement are not modeled.'))
                 self._end_fields()
             start += count
         for attr, blocks in stories.items():
@@ -1106,7 +1107,7 @@ class _Doc:
 
     def _end_fields(self):
         if self.fields:
-            self.warn('Unbalanced DOC field delimiters were encountered.')
+            self.warn(diagnostic_warning('doc_unbalanced_doc_field_delimiters_were_encountered', 'Unbalanced DOC field delimiters were encountered.'))
             self.fields.clear()
 
 
@@ -1145,7 +1146,7 @@ class _Tables:
             self.levels.pop().finish()
         if not depth:
             if mark == 7:
-                self.doc.warn('Cell mark without table membership was retained as a paragraph boundary.')
+                self.doc.warn(diagnostic_warning('doc_cell_mark_without_table_membership_was_retained_as_a', 'Cell mark without table membership was retained as a paragraph boundary.'))
             self.doc.budget.text(len(text))
             paragraph = Paragraph(text, heading_level=props.outline + 1
                                   if props.outline < 9 and text.strip() else None)
@@ -1215,7 +1216,7 @@ class _TableLevel:
         self.previous_frame = self.first_frame
         self.first_frame = None
         if props.edges and len(props.edges) - 1 != len(self.cells):
-            self.doc.warn('Table definition and cell marks disagree; observed cells are retained without inferred cells.')
+            self.doc.warn(diagnostic_warning('doc_table_definition_and_cell_marks_disagree_observed_cells_are', 'Table definition and cell marks disagree; observed cells are retained without inferred cells.'))
         self._merge(props)
         self.table.rows.append(self.cells)
         self.row_edges.append(props.edges)
@@ -1233,10 +1234,10 @@ class _TableLevel:
                 anchor.col_span += 1
                 cell.covered = True
                 if cell.text:
-                    self.doc.warn('Covered merged cells contain text; their text is retained at its original coordinate.')
+                    self.doc.warn(diagnostic_warning('doc_covered_merged_cells_contain_text_their_text_is_retained', 'Covered merged cells contain text; their text is retained at its original coordinate.'))
             else:
                 if hm == 1:
-                    self.doc.warn('Orphan horizontal merge continuation was retained as a normal cell.')
+                    self.doc.warn(diagnostic_warning('doc_orphan_horizontal_merge_continuation_was_retained_as_a_normal', 'Orphan horizontal merge continuation was retained as a normal cell.'))
                 anchor = None
         current = {}
         for i, cell in enumerate(cells):
@@ -1257,9 +1258,9 @@ class _TableLevel:
                 current[key] = previous
                 cell.covered = True
                 if cell.text:
-                    self.doc.warn('Covered merged cells contain text; their text is retained at its original coordinate.')
+                    self.doc.warn(diagnostic_warning('doc_covered_merged_cells_contain_text_their_text_is_retained', 'Covered merged cells contain text; their text is retained at its original coordinate.'))
             elif vm:
-                self.doc.warn('Vertical merge without a matching explicit grid was not applied.')
+                self.doc.warn(diagnostic_warning('doc_vertical_merge_without_a_matching_explicit_grid_was_not', 'Vertical merge without a matching explicit grid was not applied.'))
         self.vertical = current
 
     def ensure_table(self):
@@ -1276,7 +1277,7 @@ class _TableLevel:
         if not row_end and not self.cells and self.first_frame is None:
             self.first_frame = props.frame
         if self.depth > 1 and (props.row_end or mark == 7):
-            self.doc.warn('Outer table markers at nested depth were retained as paragraph boundaries.')
+            self.doc.warn(diagnostic_warning('doc_outer_table_markers_at_nested_depth_were_retained_as', 'Outer table markers at nested depth were retained as paragraph boundaries.'))
         paragraph = Paragraph(text, heading_level=props.outline + 1
                                   if props.outline < 9 and text.strip() else None)
         self.doc._bind_note_anchors(anchors, paragraph)
@@ -1286,7 +1287,7 @@ class _TableLevel:
                 if text or anchors:
                     self.paras.append(paragraph)
                 self.cell()
-                self.doc.warn('Row terminator contains content; content is retained as a cell.')
+                self.doc.warn(diagnostic_warning('doc_row_terminator_contains_content_content_is_retained_as_a', 'Row terminator contains content; content is retained as a cell.'))
             if not self.cells:
                 self.cell()
             self.row(props)
@@ -1300,7 +1301,7 @@ class _TableLevel:
         if self.table is None:
             return
         if self.paras or self.cells:
-            self.doc.warn('Table ends without a row terminator; the incomplete row is retained.')
+            self.doc.warn(diagnostic_warning('doc_table_ends_without_a_row_terminator_the_incomplete_row', 'Table ends without a row terminator; the incomplete row is retained.'))
             if self.paras:
                 self.cell()
             self.row(_Props(bidi=self.direction, identity=self.identity), complete=False)
@@ -1321,7 +1322,7 @@ class _TableLevel:
                  and all(a < b for a, b in zip(edges, edges[1:]))]
         if len(valid) != len(self.table.rows):
             if any(self.row_edges):
-                self.doc.warn('Incomplete or zero-width table grids cannot be normalized; physical cell coordinates are retained.')
+                self.doc.warn(diagnostic_warning('doc_incomplete_or_zero_width_table_grids_cannot_be_normalized', 'Incomplete or zero-width table grids cannot be normalized; physical cell coordinates are retained.'))
             return
         if not valid:
             return

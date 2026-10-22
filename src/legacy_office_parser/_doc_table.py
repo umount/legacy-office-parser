@@ -2,6 +2,7 @@
 from dataclasses import dataclass, replace
 import struct
 
+from .diagnostics import diagnostic_warning
 from .errors import InvalidDocumentError
 
 
@@ -141,7 +142,7 @@ def apply_table(props, op, arg, warn):
         if len(arg) != 3 or arg[0] != 2 or arg[2] not in (0, 1, 3):
             raise InvalidDocumentError('invalid DOC vertical merge operand')
         if arg[1] >= n:
-            warn('Vertical merge without a defined cell was ignored.')
+            warn(diagnostic_warning('doc_vertical_merge_without_a_defined_cell_was_ignored', 'Vertical merge without a defined cell was ignored.'))
         else:
             i = arg[1]
             props.flags[i] = (props.flags[i] & ~0x60) | (arg[2] << 5)
@@ -164,7 +165,7 @@ def apply_table(props, op, arg, warn):
         return True
     if not 0 <= first < n or not first <= stop <= n:
         if op in (0x5624, 0x5625):
-            warn('Invalid horizontal merge range was ignored.')
+            warn(diagnostic_warning('doc_invalid_horizontal_merge_range_was_ignored', 'Invalid horizontal merge range was ignored.'))
             return True
         raise InvalidDocumentError('invalid DOC table cell range')
     if op == 0x5622:

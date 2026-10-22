@@ -6,9 +6,10 @@ from .limits import Limits
 from .models import Document, Paragraph, Table, Cell, Slide, SlideComment, SpreadsheetCell, CellRange, Sheet, Note, NoteBodyRange, Comment, CommentBodyRange
 
 __version__ = '0.23.0.dev0'
-__all__ = ['normalize_text', 'parse_xls', 'parse_rtf', 'parse_odt', 'parse_ods', 'parse_odp',
+__all__ = ['Diagnostic', 'normalize_text', 'parse_xls', 'parse_rtf', 'parse_odt', 'parse_ods', 'parse_odp',
            'SpreadsheetCell', 'CellRange', 'Sheet', 'parse', 'parse_doc', 'parse_ppt', 'Limits', 'Document', 'Paragraph',
            'Table', 'Cell', 'Slide', 'SlideComment', 'Note', 'NoteBodyRange', 'Comment', 'CommentBodyRange', 'ParseError', 'InvalidDocumentError',
            'UnsupportedFormatError', 'EncryptedDocumentError', 'LimitExceededError']
 
 from .normalization import normalize_text
+from .diagnostics import Diagnostic

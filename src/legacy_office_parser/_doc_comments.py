@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import struct
 import warnings
 
+from .diagnostics import diagnostic_warning
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
 
@@ -196,7 +197,7 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
             reply_metadata.append((depth, i + parent + 1 if depth else None))
             ink |= bool(flags & 2)
         if ink:
-            warn('DOC comment ink is not rendered; proven textual bodies retain stored order.')
+            warn(diagnostic_warning('doc_comment_ink_is_not_rendered_proven_textual_bodies', 'DOC comment ink is not rendered; proven textual bodies retain stored order.'))
 
     descriptors = []
     previous = -1
@@ -216,7 +217,7 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
             invalid('author index is invalid')
         author = owners[owner] if owners_raw else None
         if not owners_raw:
-            warn('DOC comment authors are absent; initials are retained without inferring names.')
+            warn(diagnostic_warning('doc_comment_authors_are_absent_initials_are_retained_without', 'DOC comment authors are absent; initials are retained without inferring names.'))
         tag = u32(refs, at + 26)
         begin = end = None
         if tag == 0xffffffff:
@@ -227,17 +228,17 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
             if begin == end:
                 invalid('non-point comment bookmark has an empty range')
         else:
-            warn('DOC comment selection bookmark is unresolved; reference ownership is retained.')
+            warn(diagnostic_warning('doc_comment_selection_bookmark_is_unresolved_reference_ownership_is', 'DOC comment selection bookmark is unresolved; reference ownership is retained.'))
         charge()
         descriptors.append((i + 1, cp, author, initials, begin, end))
     if refs and texts and n != body_count:
         invalid('reference and body counts differ')
     if not refs or not texts:
         if story_count or refs or texts or extra:
-            warn('DOC comment ownership PLC is absent; unproven comment story text is omitted.')
+            warn(diagnostic_warning('doc_comment_ownership_plc_is_absent_unproven_comment_story', 'DOC comment ownership PLC is absent; unproven comment story text is omitted.'))
         return []
     if boundaries[0] != 0:
-        warn('DOC comment story has an unassigned prefix; only PLC-owned bodies are considered.')
+        warn(diagnostic_warning('doc_comment_story_has_an_unassigned_prefix_only_plc', 'DOC comment story has an unassigned prefix; only PLC-owned bodies are considered.'))
     charge(n)
     return [SourceComment(ordinal, cp, boundaries[i], boundaries[i + 1], author,
                           initials, begin, end,

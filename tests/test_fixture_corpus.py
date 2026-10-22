@@ -37,6 +37,9 @@ def test_public_parser_matches_original_fixture(name, extension, source_extensio
     assert is_dataclass(result)
     expected = json.loads((FIXTURES / f'{name}.expected.json').read_text(encoding='utf-8'))
     actual = result.to_dict()
+    diagnostics = actual.pop('diagnostics', [])
+    assert [d['message'] for d in diagnostics] == actual['warnings']
+    assert all(d['code'] for d in diagnostics)
     # Empty layout paragraphs added by Writer carry no semantic content. Retain all
     # table cells and slides: filtering those would hide the target regressions.
     actual['blocks'] = [block for block in actual['blocks']

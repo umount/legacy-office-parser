@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from struct import unpack_from
 from typing import Iterator
 
+from .diagnostics import diagnostic_warning
 from ._ole import open_ole, read_stream
 from ._ppt_extensions import _timing_metadata
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
@@ -253,7 +254,7 @@ class _Parser:
                         self.inline_footer_done = True
                         return
             if markers:
-                self.warn('PPT text field markers are not evaluated; stored text may contain placeholders.')
+                self.warn(diagnostic_warning('ppt_text_field_markers_are_not_evaluated_stored_text', 'PPT text field markers are not evaluated; stored text may contain placeholders.'))
             blocks.append((kind, original))
 
         for rec in records:
@@ -337,7 +338,7 @@ class _Parser:
                 value = self.decode(_Record(4000, 0, 0, offset, offset + size, rec.depth),
                                     terminated=True)
             elif pid == 0x3a9 and size:
-                self.warn('PPT alternate OfficeArt XML is not extracted; extension-only content may be omitted.')
+                self.warn(diagnostic_warning('ppt_alternate_officeart_xml_is_not_extracted_extension_only', 'PPT alternate OfficeArt XML is not extracted; extension-only content may be omitted.'))
             offset += size
         if offset != rec.end:
             raise InvalidDocumentError('unclaimed OfficeArt complex property bytes')
@@ -503,7 +504,7 @@ class _Parser:
                             raise InvalidDocumentError('duplicate PPT master header/footer container')
                         self.master_hf[master_id] = child
                     elif child.type == 5000:
-                        self.warn('PPT master extension records are not extracted; extension-only content may be omitted.')
+                        self.warn(diagnostic_warning('ppt_master_extension_records_are_not_extracted_extension_only', 'PPT master extension records are not extracted; extension-only content may be omitted.'))
                 if parent is None:
                     raise InvalidDocumentError('missing PPT master slide atom')
                 # Inherited title-kind text is still ordinary master artwork,
@@ -573,7 +574,7 @@ class _Parser:
             for rec in master_sources:
                 flags, _ = self.header_footer_settings(rec)
                 if flags & 0x29:
-                    self.warn('PPT active master header/footer settings are not resolved for slides.')
+                    self.warn(diagnostic_warning('ppt_active_master_header_footer_settings_are_not_resolved', 'PPT active master header/footer settings are not resolved for slides.'))
             return []
         flags, strings = settings
         blocks = []
@@ -586,13 +587,13 @@ class _Parser:
             if placement == 9 and self.inline_footer_done:
                 continue
             if placement in local_fields or 0 in local_fields:
-                self.warn('PPT slide-local field shapes are retained as stored text; legacy field text is not merged.')
+                self.warn(diagnostic_warning('ppt_slide_local_field_shapes_are_retained_as_stored', 'PPT slide-local field shapes are retained as stored text; legacy field text is not merged.'))
                 continue
             if placement not in fields:
-                self.warn('PPT active header/footer fields have unresolved placement or visibility; field text is omitted.')
+                self.warn(diagnostic_warning('ppt_active_header_footer_fields_have_unresolved_placement_or', 'PPT active header/footer fields have unresolved placement or visibility; field text is omitted.'))
                 continue
             if placement == 8 or (placement == 7 and (not flags & 4 or flags & 2)):
-                self.warn(f'PPT active {name} field is not evaluated; no generated value is extracted.')
+                self.warn(diagnostic_warning('ppt_f_ppt_active_name_field_is_not_evaluated_no', f'PPT active {name} field is not evaluated; no generated value is extracted.'))
                 continue
             atom = strings.get(instance)
             if atom is None:
@@ -628,7 +629,7 @@ class _Parser:
                     raise InvalidDocumentError('invalid or duplicate PPT comment settings')
                 settings = True
             else:
-                self.warn('PPT unknown comment metadata is not extracted.')
+                self.warn(diagnostic_warning('ppt_unknown_comment_metadata_is_not_extracted', 'PPT unknown comment metadata is not extracted.'))
         if not settings:
             raise InvalidDocumentError('missing PPT comment settings')
         return SlideComment(strings.get(1, ''), strings.get(0, ''), strings.get(2, ''))
@@ -718,7 +719,7 @@ class _Parser:
                 hidden = bool(self.data[child.start + 10] & 4)
             elif child.type == 5000:
                 if typ != 1006 or not self.slide_comments(child, comments, seen_extensions):
-                    self.warn('PPT extension records are not extracted; extension-only content may be omitted.')
+                    self.warn(diagnostic_warning('ppt_extension_records_are_not_extracted_extension_only_content', 'PPT extension records are not extracted; extension-only content may be omitted.'))
         if link is None:
             raise InvalidDocumentError('missing PPT slide/notes atom')
         local_fields = self.local_fields or set()

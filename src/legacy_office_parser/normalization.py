@@ -7,6 +7,7 @@ import unicodedata
 from ._serialization import clone_model
 from ._validation import _validate_result
 from .limits import Limits
+from .diagnostics import diagnostic_warning
 from .models import Cell, Document, Paragraph, Sheet, Slide, SlideComment, SpreadsheetCell
 
 # CRLF is handled before this translation so one source break stays one break.
@@ -96,7 +97,8 @@ def normalize_text(document: Document, *, unicode_form: str | None = None,
                 setattr(owner, field, value)
                 break
     if changed:
-        warning = 'Display text normalized; source values and positions retained.'
+        warning = diagnostic_warning('text_normalized',
+                                     'Display text normalized; source values and positions retained.')
         if warning not in result.warnings:
             result.warnings.append(warning)
     return _validate_result(result, limits)

@@ -171,9 +171,18 @@ class Document:
         parts.extend(p for p in (self.footnotes, self.endnotes, self.headers_footers, self.textboxes, self.comment_text) if p)
         return '\n\n'.join(p for p in parts if p)
 
+    @property
+    def diagnostics(self):
+        from .diagnostics import diagnostics_for
+        return diagnostics_for(self.warnings)
+
     def to_dict(self) -> dict:
         from ._serialization import model_to_dict
-        return model_to_dict(self)
+        result = model_to_dict(self)
+        if self.warnings:
+            result['diagnostics'] = [{'code': d.code, 'message': d.message}
+                                     for d in self.diagnostics]
+        return result
 
 
 def _clone_cell(source: Cell) -> Cell:

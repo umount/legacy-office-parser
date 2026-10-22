@@ -9,6 +9,7 @@ import re
 import struct
 from datetime import datetime, timedelta
 
+from .diagnostics import diagnostic_warning
 from ._ole import open_ole, read_stream
 from ._xls_formats import BUILTIN_NUMERIC, hides_text, text_affixes, text_literal, render_number, simple_date_format
 from ._xls_strings import Segments, shared_strings
@@ -103,7 +104,7 @@ class _Parser:
         if not math.isfinite(value):
             raise InvalidDocumentError('non-finite XLS numeric value')
         if xf >= len(self.xfs):
-            self.warn('Missing XF: numeric values retained without date interpretation.')
+            self.warn(diagnostic_warning('xls_missing_xf_numeric_values_retained_without_date_interpretation', 'Missing XF: numeric values retained without date interpretation.'))
             return value, 'number', str(value)
         fmt = self.xfs[xf]
         custom = self.formats.get(fmt)
@@ -115,7 +116,7 @@ class _Parser:
         # Reject unsupported custom syntax before the legacy date heuristic can
         # mistake literal letters, locale tags or mixed number/date codes for dates.
         if custom is not None and not simple_date_format(custom):
-            self.warn('Unsupported or ambiguous date/number format: raw numeric value retained.')
+            self.warn(diagnostic_warning('xls_unsupported_or_ambiguous_date_number_format_raw_numeric_value', 'Unsupported or ambiguous date/number format: raw numeric value retained.'))
             return value, 'number', str(value)
         date = 14 <= fmt <= 22 or 45 <= fmt <= 47
         time_only = fmt in (18, 19, 20, 21, 45, 47)
@@ -144,10 +145,10 @@ class _Parser:
         elif not date:
             uncertain = True
         if uncertain:
-            self.warn('Unsupported or ambiguous date/number format: raw numeric value retained.')
+            self.warn(diagnostic_warning('xls_unsupported_or_ambiguous_date_number_format_raw_numeric_value', 'Unsupported or ambiguous date/number format: raw numeric value retained.'))
         elif date:
             if value < 0 or (not self.datemode and not time_only and 60 <= value < 61):
-                self.warn('Unrepresentable Excel date (including serial 60): raw numeric value retained.')
+                self.warn(diagnostic_warning('xls_unrepresentable_excel_date_including_serial_60_raw_numeric_value', 'Unrepresentable Excel date (including serial 60): raw numeric value retained.'))
             else:
                 try:
                     base = datetime(1904, 1, 1) if self.datemode else datetime(1899, 12, 31)
@@ -161,7 +162,7 @@ class _Parser:
                             text = dt.date().isoformat()
                     return text, 'date', text
                 except (ValueError, OverflowError):
-                    self.warn('Excel date outside supported range: raw numeric value retained.')
+                    self.warn(diagnostic_warning('xls_excel_date_outside_supported_range_raw_numeric_value_retained', 'Excel date outside supported range: raw numeric value retained.'))
         return value, 'number', str(value)
 
     def add(self, sheet, seen, row, col, xf, value=None, kind='empty', formula=False,
@@ -262,7 +263,7 @@ class _Parser:
             _, start = self.bof(offset, ends[offset], expected)
             sheet = Sheet(name=name, hidden=bool(hidden)) if kind == 0 else None
             if sheet is None:
-                self.warn('Non-worksheet sheets omitted (charts/macros/VB modules).')
+                self.warn(diagnostic_warning('xls_non_worksheet_sheets_omitted_charts_macros_vb_modules', 'Non-worksheet sheets omitted (charts/macros/VB modules).'))
             self.sheet(sheet, start, ends[offset])
             if sheet is not None:
                 sheets.append(sheet)
@@ -370,7 +371,7 @@ class _Parser:
                 elif code == 0x0006:
                     _need(data, 22)
                     _need(data, 22 + struct.unpack_from('<H', data, 20)[0])
-                    self.warn('Formula expressions are not decoded or executed; cached results may be stale.')
+                    self.warn(diagnostic_warning('xls_formula_expressions_are_not_decoded_or_executed_cached_results', 'Formula expressions are not decoded or executed; cached results may be stale.'))
                     if data[12:14] == b'\xff\xff':
                         tag = data[6]
                         if tag == 0:

@@ -8,6 +8,7 @@ from __future__ import annotations
 import codecs
 from dataclasses import dataclass, replace
 
+from .diagnostics import diagnostic_warning
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
 from .models import Cell, Document, Paragraph, Table
@@ -588,7 +589,7 @@ class _Sink:
     def check_definitions(self):
         if ((self.level > 1 or self.nested) and self.previous_definitions is not None and
                 self.previous_definitions != (self.left, self.definitions)):
-            self.parser.warn('Conflicting RTF row properties; final properties used, text retained.')
+            self.parser.warn(diagnostic_warning('rtf_conflicting_rtf_row_properties_final_properties_used_text_retained', 'Conflicting RTF row properties; final properties used, text retained.'))
 
     def start_row(self):
         # Writers may repeat row properties after cell content, before \row.
@@ -622,7 +623,7 @@ class _Sink:
         def unsupported():
             if marked:
                 self.parser.warn(
-                    'Merged table cells retained as separate cells; spans not reconstructed.')
+                    diagnostic_warning('rtf_merged_table_cells_retained_as_separate_cells_spans_not', 'Merged table cells retained as separate cells; spans not reconstructed.'))
 
         if not complete or self.nested:
             unsupported()
@@ -678,12 +679,12 @@ class _Sink:
                     self.vertical_anchors[key] = top
                 else:
                     self.parser.warn(
-                        'Vertical merge continuation ambiguous or nonempty; cells retained.')
+                        diagnostic_warning('rtf_vertical_merge_continuation_ambiguous_or_nonempty_cells_retained', 'Vertical merge continuation ambiguous or nonempty; cells retained.'))
 
     def cell(self):
         if self.row is None:
             if self.level == 1:
-                self.parser.warn('Table cell without row definition recovered.')
+                self.parser.warn(diagnostic_warning('rtf_table_cell_without_row_definition_recovered', 'Table cell without row definition recovered.'))
             self.row = []
         self.parser.cells += 1
         if self.parser.cells > self.parser.limits.max_cells:
@@ -703,9 +704,9 @@ class _Sink:
         self.close_child()
         if self.level > 1:
             if self.parts or self.cell_blocks:
-                self.parser.warn('Nested cell terminator missing; text retained.')
+                self.parser.warn(diagnostic_warning('rtf_nested_cell_terminator_missing_text_retained', 'Nested cell terminator missing; text retained.'))
             if not self.expected:
-                self.parser.warn('Nested row properties missing; cells retained.')
+                self.parser.warn(diagnostic_warning('rtf_nested_row_properties_missing_cells_retained', 'Nested row properties missing; cells retained.'))
         if self.parts or self.cell_blocks or not self.row:
             self.cell()
         self.check_definitions()
@@ -713,7 +714,7 @@ class _Sink:
         while len(self.row) < self.expected:
             self.cell()
         if self.expected and len(self.row) != self.expected:
-            self.parser.warn('Table cell count differs from row definition.')
+            self.parser.warn(diagnostic_warning('rtf_table_cell_count_differs_from_row_definition', 'Table cell count differs from row definition.'))
         if self.table is None:
             self.table = Table()
             self.blocks.append(self.table)
@@ -728,8 +729,8 @@ class _Sink:
 
     def finish(self):
         if self.row is not None:
-            self.parser.warn('Nested table row incomplete; recovered.' if self.level > 1 else
-                             'Incomplete table row recovered.')
+            self.parser.warn(diagnostic_warning('rtf_nested_table_row_incomplete_recovered_if_self_level_1', 'Nested table row incomplete; recovered.' if self.level > 1 else
+                             'Incomplete table row recovered.'))
             self.end_row(recovered=True)
         if self.level == 1:
             self.paragraph()
@@ -809,14 +810,14 @@ class _Parser:
                 or self.state.legacy_container):
             return False
         if any(self.visibility()):
-            self.warn('Hidden or deleted text omitted.')
+            self.warn(diagnostic_warning('hidden_text_omitted', 'Hidden or deleted text omitted.'))
             return False
         return True
 
     def high_end(self):
         if self.pending_high is not None:
             self.pending_high = None
-            self.warn('Unpaired Unicode surrogate replaced.')
+            self.warn(diagnostic_warning('rtf_unpaired_unicode_surrogate_replaced', 'Unpaired Unicode surrogate replaced.'))
             self.sink.text('\ufffd')
 
     def emit(self, text: str):
@@ -832,7 +833,7 @@ class _Parser:
             codecs.lookup(name)
         except LookupError:
             self.uncertain_encoding = True
-            self.warn('Unsupported code page replaced with Windows-1252.')
+            self.warn(diagnostic_warning('rtf_unsupported_code_page_replaced_with_windows_1252', 'Unsupported code page replaced with Windows-1252.'))
             return 'cp1252'
         return name
 
@@ -847,7 +848,7 @@ class _Parser:
                 self.decoder = codecs.getincrementaldecoder(self.encoding())(errors='replace')
             text = self.decoder.decode(self.buffer, final=final)
             if '\ufffd' in text:
-                self.warn('Invalid encoded text replaced.')
+                self.warn(diagnostic_warning('invalid_encoded_text_replaced', 'Invalid encoded text replaced.'))
             self.buffer.clear()
             self.emit(text)
             if final:
@@ -881,7 +882,7 @@ class _Parser:
                 if 0xd800 <= unit <= 0xdbff:
                     self.pending_high = unit
                 elif 0xdc00 <= unit <= 0xdfff:
-                    self.warn('Unpaired Unicode surrogate replaced.')
+                    self.warn(diagnostic_warning('rtf_unpaired_unicode_surrogate_replaced', 'Unpaired Unicode surrogate replaced.'))
                     self.sink.text('\ufffd')
                 else:
                     self.sink.text(chr(unit))
@@ -906,9 +907,9 @@ class _Parser:
         elif word in _SKIP:
             s.skip = True
             if word in {'pict', 'object', 'mmath', 'moMath', 'moMathPara'}:
-                self.warn('Pictures, objects, shapes or equations omitted.')
+                self.warn(diagnostic_warning('rtf_pictures_objects_shapes_or_equations_omitted', 'Pictures, objects, shapes or equations omitted.'))
             elif word == 'annotation':
-                self.warn('Annotations omitted.')
+                self.warn(diagnostic_warning('rtf_annotations_omitted', 'Annotations omitted.'))
         elif word == 'nesttableprops':
             if s.depth < 2:
                 raise InvalidDocumentError('RTF nested properties outside a nested table')
@@ -923,7 +924,7 @@ class _Parser:
             self.high_end()
             s.legacy_container = True
             s.legacy_ancestor = True
-            self.warn('Legacy drawing and layout omitted.')
+            self.warn(diagnostic_warning('rtf_legacy_drawing_and_layout_omitted', 'Legacy drawing and layout omitted.'))
         elif word == 'dptxbxtext' and not s.legacy_container:
             s.skip = True
         elif word in _SHAPE_CONTAINERS:
@@ -938,7 +939,7 @@ class _Parser:
             self.high_end()
             s.shape_container = True
             s.shape_ancestor = True
-            self.warn('Shape drawing and layout omitted.')
+            self.warn(diagnostic_warning('rtf_shape_drawing_and_layout_omitted', 'Shape drawing and layout omitted.'))
         elif word in _HEADERS or word in {'footnote', 'shptxt', 'dptxbxtext'}:
             self.high_end()
             story = 'headers_footers' if word in _HEADERS else (
@@ -955,7 +956,7 @@ class _Parser:
             # visible. Explicit run/style resets inside the story still apply.
         elif s.starred and word not in {'fldrslt', 'ud'}:
             s.skip = True
-            self.warn('Unknown optional destinations omitted.')
+            self.warn(diagnostic_warning('rtf_unknown_optional_destinations_omitted', 'Unknown optional destinations omitted.'))
 
     def word(self, word: str, number: int | None):
         s = self.state
@@ -978,7 +979,7 @@ class _Parser:
                     charset = _CHARSETS.get(number)
                     if number not in {0, 1} and charset is None:
                         self.uncertain_encoding = True
-                        self.warn('Unsupported font charset or symbol font; using document code page.')
+                        self.warn(diagnostic_warning('rtf_unsupported_font_charset_or_symbol_font_using_document_code', 'Unsupported font charset or symbol font; using document code page.'))
                 self.fonts[s.font] = charset, explicit
             return
         if word in _SKIP or word in _SHAPE_CONTAINERS or word in {'fonttbl', 'nesttableprops', 'do'}:
@@ -989,7 +990,7 @@ class _Parser:
         elif word == 'upr':
             s.upr = True
             s.children = 0
-            self.warn('Unicode alternate selected; ANSI alternate omitted.')
+            self.warn(diagnostic_warning('rtf_unicode_alternate_selected_ansi_alternate_omitted', 'Unicode alternate selected; ANSI alternate omitted.'))
         elif word == 'uc':
             if number is None or number < 0:
                 raise InvalidDocumentError('Invalid RTF Unicode fallback count')
@@ -1036,7 +1037,7 @@ class _Parser:
                 s.hidden = number != 0
             else:
                 s.deleted = number != 0
-            self.warn('Hidden or deleted text omitted.')
+            self.warn(diagnostic_warning('hidden_text_omitted', 'Hidden or deleted text omitted.'))
         elif word == 'ftnalt' and self.sink.story == 'footnotes':
             self.sink.story = 'endnotes'
         elif self.visible() or word in _STRUCTURAL:
@@ -1064,7 +1065,7 @@ class _Parser:
                     raise InvalidDocumentError('Conflicting depth inside RTF nested properties')
                 self.high_end()
                 if number == 0 and self.sinks[s.target].row is not None:
-                    self.warn('RTF depth zero inside unfinished table; parent cell retained.')
+                    self.warn(diagnostic_warning('rtf_depth_zero_inside_unfinished_table_parent_cell_retained', 'RTF depth zero inside unfinished table; parent cell retained.'))
                 s.depth = max(1, number)
                 if s.depth > 1:
                     self.sinks[s.target].at_depth(s.depth)
@@ -1097,11 +1098,11 @@ class _Parser:
             elif word in {'clmgf', 'clmrg', 'clvmgf', 'clvmrg'}:
                 if word in {'clmgf', 'clmrg'}:
                     if self.sink.level > 1 and self.sink.horizontal not in {'', word}:
-                        self.warn('Conflicting nested cell merge properties; final flag used.')
+                        self.warn(diagnostic_warning('rtf_conflicting_nested_cell_merge_properties_final_flag_used', 'Conflicting nested cell merge properties; final flag used.'))
                     self.sink.horizontal = word
                 else:
                     if self.sink.level > 1 and self.sink.vertical not in {'', word}:
-                        self.warn('Conflicting nested cell merge properties; final flag used.')
+                        self.warn(diagnostic_warning('rtf_conflicting_nested_cell_merge_properties_final_flag_used', 'Conflicting nested cell merge properties; final flag used.'))
                     self.sink.vertical = word
             elif word in {'nestcell', 'nestrow'}:
                 self.high_end()
@@ -1180,7 +1181,7 @@ class _Parser:
                         and all(b in b' \t\r\n' for b in value[:-1])
                         and data.endswith(b'\0')):
                     terminal_nul = True
-                    self.warn('A single terminal NUL after the RTF root was ignored.')
+                    self.warn(diagnostic_warning('rtf_a_single_terminal_nul_after_the_rtf_root_was', 'A single terminal NUL after the RTF root was ignored.'))
                     continue
                 raise InvalidDocumentError('Data after RTF root group')
             if self.stylesheet is not None:
@@ -1190,11 +1191,11 @@ class _Parser:
                     self.style_outlines.update(sheet.resolve())
                     self.style_visibility.update(sheet.resolve_visibility())
                     if sheet.visibility_cycle:
-                        self.warn('Cyclic RTF style inheritance; only available visibility properties used.')
+                        self.warn(diagnostic_warning('rtf_cyclic_rtf_style_inheritance_only_available_visibility_properties_used', 'Cyclic RTF style inheritance; only available visibility properties used.'))
                     if sheet.visibility_missing:
-                        self.warn('RTF style base missing or wrong kind; only available visibility properties used.')
+                        self.warn(diagnostic_warning('rtf_style_base_missing_or_wrong_kind_only_available', 'RTF style base missing or wrong kind; only available visibility properties used.'))
                     if sheet.named:
-                        self.warn('RTF heading levels inferred from built-in style names.')
+                        self.warn(diagnostic_warning('heading_name_fallback', 'RTF heading levels inferred from built-in style names.'))
                     self.stylesheet = None
             if self.wordart is not None:
                 candidate = self.wordart
@@ -1209,7 +1210,7 @@ class _Parser:
                         sink.finish()
                         self.sinks.append(sink)
                     elif text is None and candidate.attempted:
-                        self.warn('Unsupported or disabled WordArt property text omitted.')
+                        self.warn(diagnostic_warning('rtf_unsupported_or_disabled_wordart_property_text_omitted', 'Unsupported or disabled WordArt property text omitted.'))
             if kind == 'bytes':
                 self.state.first = False
                 self.byte_text(value)
@@ -1225,7 +1226,7 @@ class _Parser:
                 self.fallback -= 1
             elif kind == 'binary':
                 if self.visible():
-                    self.warn('Binary payload omitted.')
+                    self.warn(diagnostic_warning('rtf_binary_payload_omitted', 'Binary payload omitted.'))
             elif kind == 'symbol':
                 if value == '*':
                     self.state.starred = True
@@ -1305,7 +1306,7 @@ class _PropertyText(_Parser):
         if not self.valid:
             return
         if any(ord(c) < 32 or 0x7f <= ord(c) < 0xa0 for c in text):
-            self.warn('Control character in WordArt property.')
+            self.warn(diagnostic_warning('rtf_control_character_in_wordart_property', 'Control character in WordArt property.'))
         elif not self.overflow:
             if len(text) > min(65536, self.limits.max_text_chars) - self.size:
                 self.overflow = True

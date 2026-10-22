@@ -17,6 +17,7 @@ from collections.abc import Callable
 import struct
 import warnings
 
+from .diagnostics import diagnostic_warning
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
 
@@ -49,8 +50,8 @@ def live_textbox_ranges(
         raise LimitExceededError('DOC textbox PLC size limit exceeded')
     if not plc:
         if story_count:
-            warn('Textbox PLC is absent; active ranges cannot be verified. '
-                 'The full textbox story is retained and may include reserved text.')
+            warn(diagnostic_warning('doc_textbox_plc_is_absent_active_ranges_cannot_be_verified', 'Textbox PLC is absent; active ranges cannot be verified. '
+                 'The full textbox story is retained and may include reserved text.'))
             return [(0, story_count)]
         return []
     if len(plc) < 4 or (len(plc) - 4) % 26:
