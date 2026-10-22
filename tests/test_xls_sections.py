@@ -103,7 +103,7 @@ def test_sections_integer_records(kind, value, expected):
 @pytest.mark.parametrize('value', [12.5, -12.5, 0.0])
 @pytest.mark.parametrize('code', [
     '0;0;0;@;0',
-    '0;0;0; @', '0;0;0;"@"', r'0;0;0;\@', '0;0;0;[Red]@',
+    '0;0;0; @', '0;0;0;[Red]@',
     '0;@', '@;0', '0;0;@',
     '0;[Orange]0', '0;[Color3]0', '0;[Red][Blue]0', '0;0[Red]',
     '0;[>0]0', '0;0;[=0]0', '0;[$-409]0',

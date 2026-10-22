@@ -10,7 +10,7 @@ import struct
 from datetime import datetime, timedelta
 
 from ._ole import open_ole, read_stream
-from ._xls_formats import BUILTIN_NUMERIC, hides_text, text_affixes, render_number, simple_date_format
+from ._xls_formats import BUILTIN_NUMERIC, hides_text, text_affixes, text_literal, render_number, simple_date_format
 from ._xls_strings import Segments, shared_strings
 from .errors import EncryptedDocumentError, InvalidDocumentError, LimitExceededError, UnsupportedFormatError
 from .limits import Limits
@@ -196,6 +196,13 @@ class _Parser:
                         # Both raw and distinct display strings are retained.
                         self.text_budget(len(text) + len(prefix) + len(suffix))
                         text = prefix + text + suffix
+                else:
+                    literal = text_literal(custom)
+                    if literal is not None and literal != text:
+                        # Raw text remains charged; distinct literal display
+                        # has its own charge (including every SST occurrence).
+                        self.text_budget(len(literal))
+                        text = literal
         sheet.cells.append(SpreadsheetCell(row=row + 1, column=col + 1, value=value,
                                            value_type=kind, text=text, formula=None,
                                            is_formula=formula))

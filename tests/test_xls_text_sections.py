@@ -39,7 +39,7 @@ def test_string_affixes(code, expected, kind):
         _parse_workbook(string_workbook(code, kind), replace(Limits(), max_text_chars=budget - 1))
 
 
-@pytest.mark.parametrize('code', ['0;0;0;@@', '0;0;0;"literal"', '0;0;0;""',
+@pytest.mark.parametrize('code', ['0;0;0;@@',
     '0;0;0;@x', '0;0;0;[Red]@', '0;0;0;*x@', '0;0;0;_x@',
     '0;0;0;@\\', '0;0;0;"bad@', '0;0;0;@;0', '0;yyyy;0;"x"@',
     '0;[$-409]0;0;"x"@', '[>0]0;0;0;"x"@', '0;0;0;"'+'x'*64+'"@'])

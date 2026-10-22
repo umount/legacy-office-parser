@@ -141,15 +141,15 @@ def _split_sections(code: str) -> list[str] | None:
     return sections
 
 
-def _text_parts(section: str) -> tuple[str, str] | None:
-    """One @ surrounded only by quoted or escaped literals; no evaluation."""
+def _text_parts(section: str, *, literal_only: bool = False) -> tuple[str, str] | None:
+    """Quoted/escaped literals with one @, or no @ in literal-only mode."""
     prefix, suffix = [], []
     placeholder = False
     pos = 0
     while pos < len(section):
         char = section[pos]
         if char == '@':
-            if placeholder:
+            if placeholder or literal_only:
                 return None
             placeholder = True
             pos += 1
@@ -166,7 +166,7 @@ def _text_parts(section: str) -> tuple[str, str] | None:
         else:
             return None
         (suffix if placeholder else prefix).append(literal)
-    return (''.join(prefix), ''.join(suffix)) if placeholder else None
+    return (''.join(prefix), ''.join(suffix)) if placeholder or literal_only else None
 
 
 def _with_affixes(text: str, prefix: str, suffix: str) -> str:
@@ -190,7 +190,8 @@ def render_number(value: int | float, code: str) -> str | None:
     text_section = ''
     if len(sections) == 4:
         text_section = sections.pop()
-        if text_section != '' and _text_parts(text_section) is None:
+        if (_text_parts(text_section) is None
+                and _text_parts(text_section, literal_only=True) is None):
             return None
     has_empty = '' in sections
     parsed = []
@@ -351,3 +352,15 @@ def text_affixes(code: str) -> tuple[str, str] | None:
                                 for value in (-1, 0, 1)):
         return None
     return parts
+
+
+def text_literal(code: str) -> str | None:
+    """A bounded literal-only fourth section in a validated ordinary format."""
+    sections = _split_sections(code)
+    if sections is None or len(sections) != 4:
+        return None
+    parts = _text_parts(sections[-1], literal_only=True)
+    if parts is None or not all(render_number(value, code) is not None
+                                for value in (-1, 0, 1)):
+        return None
+    return parts[0]

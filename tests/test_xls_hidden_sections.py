@@ -35,7 +35,7 @@ def test_empty_numeric_sections(code, expected, kind):
 
 @pytest.mark.parametrize('code', ['', ';;;;', '0;0;0;@;0', '[>0]0;', ';[<0]0',
     '0;;yyyy', '0;;[Red]', '0;;""', '0;;\\', '0;;"bad', '0;;[$-409]0',
-    '0;;0;""', '[>0]0;0;', '0;[Orange]0;', '0' * 65 + ';;;'])
+    '[>0]0;0;', '0;[Orange]0;', '0' * 65 + ';;;'])
 def test_unsupported_empty_combinations(code):
     assert not hides_text(code)
     for value in (-12, 0, 12):

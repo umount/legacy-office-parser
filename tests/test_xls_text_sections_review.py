@@ -55,7 +55,7 @@ def test_unused_bad_numeric_branch_cannot_enable_text_expansion(branch, position
     assert _parse_workbook(source(code, 'raw', 'sst'), Limits()).sheets[0].cells[0].text == 'raw'
 
 
-@pytest.mark.parametrize('section', ['@@', '"@"', r'\@', '@x', 'x@', '[Red]@',
+@pytest.mark.parametrize('section', ['@@', '@x', 'x@', '[Red]@',
                                    '@\\', '"unfinished@', '@;@', '_x@', '*x@'])
 def test_invalid_fourth_section_never_changes_strings_or_validates_numbers(section):
     code = '0;0;0;' + section

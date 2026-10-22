@@ -16,9 +16,9 @@ split remain in force. All numeric sections must validate before a string is
 formatted; the format must have exactly four sections and ordinary sign routing.
 Numeric cells use their numeric sections without acquiring the text affixes.
 
-Literal-only text replacement, multiple placeholders, bare affixes, colors in the
-text section, fill/alignment operators, locale/date interpretation, and malformed
-syntax remain unsupported. They retain the existing raw-string behavior. Empty
+Version 0.20 adds [literal-only text replacement](research-xls-text-literals.md).
+Multiple placeholders, bare affixes, colors in the text section, fill/alignment
+operators, locale/date interpretation, and malformed syntax remain unsupported. They retain the existing raw-string behavior. Empty
 fourth sections still hide strings; absent sections and plain `@` preserve them.
 Negative conditional numeric values retain their prior raw-value fallback, and
 conditional formats do not gain string-affix interpretation. Boolean and error
