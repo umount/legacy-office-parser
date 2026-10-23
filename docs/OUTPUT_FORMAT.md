@@ -781,6 +781,13 @@ string-helper acceptance is unchanged. See
 [optional-decimal evidence](research-xls-optional-decimals.md) and
 [scaling evidence](research-xls-optional-decimal-scaling.md).
 
+General uses a deterministic extraction projection rather than cell-width-driven
+rendering. Beyond the supported whole-number suffix cleanup, values retain their
+raw numeric spelling (including Python exponent spelling); this path currently
+emits no unsupported-format diagnostic. It does not silently round near-integers
+or cached values to fit a display width. See
+[General boundaries](research-xls-general-display-boundaries.md).
+
 ## XLS dates and times
 
 XLS interpretation depends on the cell XF/number format and the workbook date
