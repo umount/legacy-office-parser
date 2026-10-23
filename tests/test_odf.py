@@ -380,3 +380,22 @@ def test_hidden_fields_do_not_leak_stored_value():
     d = parse('<text:p>A<text:variable-set text:display="none">SECRET</text:variable-set>'
               '<text:hidden-text text:is-hidden="true">PRIVATE</text:hidden-text>B</text:p>')
     assert d.text == 'AB'
+
+
+def test_cached_indexes_keep_title_entries_and_skip_generation_metadata():
+    for kind in ('bibliography', 'table-of-content', 'alphabetical-index', 'user-index',
+                 'table-index', 'illustration-index', 'object-index'):
+        body = ('<text:' + kind + '><text:' + kind + '-source><text:p>instructions</text:p>'
+                '</text:' + kind + '-source><text:index-body><text:index-title>'
+                '<text:h text:outline-level="2">References</text:h></text:index-title>'
+                '<text:p>Stored entry</text:p></text:index-body></text:' + kind + '>')
+        result = parse(body)
+        assert result.text == 'References\n\nStored entry'
+        assert result.blocks[0].heading_level == 2
+
+
+def test_caption_text_is_extracted_as_a_drawing_story():
+    result = parse('<text:p>Body<draw:caption><text:p>Critical callout</text:p>'
+                   '</draw:caption></text:p>')
+    assert result.blocks[0].text == 'Body'
+    assert result.textboxes == 'Critical callout'

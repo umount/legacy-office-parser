@@ -15,8 +15,10 @@ PARAS = {q('text:p'), q('text:h')}
 ROW_WRAPPERS = {q('table:table-header-rows'), q('table:table-rows'), q('table:table-row-group')}
 BLOCK_WRAPPERS = {q('text:section'), q('text:list'), q('text:list-item'),
                   q('text:list-header'), q('text:numbered-paragraph'),
-                  q('text:index-body'), q('text:table-of-content')}
-TEXT_SHAPES = {q('draw:rect'), q('draw:ellipse'), q('draw:custom-shape')}
+                  q('text:index-body'), q('text:index-title'), q('text:table-of-content'),
+                  q('text:bibliography'), q('text:alphabetical-index'), q('text:user-index'),
+                  q('text:table-index'), q('text:illustration-index'), q('text:object-index')}
+TEXT_SHAPES = {q('draw:rect'), q('draw:ellipse'), q('draw:custom-shape'), q('draw:caption')}
 DRAW_STORIES = {q('draw:frame'), q('draw:text-box'), q('draw:g'), q('draw:a')} | TEXT_SHAPES
 HEADER_FOOTER = {q('style:' + name) for name in (
     'header', 'footer', 'header-left', 'footer-left', 'header-first', 'footer-first')}

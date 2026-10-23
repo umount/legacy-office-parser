@@ -8,7 +8,8 @@
   filtered. Missing optional styles/metadata do not block body text.
 - Selected header/footer masters from evidenced main-flow styles/transitions;
   no inferred pagination. Embedded documents have isolated style scopes.
-- Textboxes and supported ordinary shapes. A frame selects its first supported
+- Cached index/bibliography entries and index titles; generation instructions are ignored.
+- Textboxes and supported ordinary shapes, including captions. A frame selects its first supported
   representation even when empty or hidden.
 - Direct inline ODF text documents contribute to textbox stories. Recognition
   requires exact document/body ownership and no `xlink:href`; notes share budgets.
