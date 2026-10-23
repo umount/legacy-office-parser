@@ -47,9 +47,9 @@ def test_explicit_decimal_format_and_missing_format_are_not_general():
     assert parse_number(1.0, 164, 'unsupported').sheets[0].cells[0].text == '1.0'
 
 
-def test_section_routing_and_unsupported_negative_conditions_stay_unchanged():
+def test_general_section_routing_includes_negative_conditions():
     assert render_number(1.0, '[>0]General;General') == '1'
-    assert render_number(-1.0, '[>0]General;General') is None
+    assert render_number(-1.0, '[>0]General;General') == '1'
     assert render_number(-1.0, 'General;General') == '1'
     assert render_number(0.0, 'General;General;General') == '0'
 

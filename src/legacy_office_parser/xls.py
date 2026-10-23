@@ -117,15 +117,15 @@ class _Parser:
         outcome = interpret_date(value, custom if custom is not None else fmt, self.datemode)
         if outcome.status == 'ok':
             return outcome.result
-        diagnostics = {
-            'unsupported': ('xls_unsupported_or_ambiguous_date_number_format_raw_numeric_value',
-                            'Unsupported or ambiguous date/number format: raw numeric value retained.'),
-            'unrepresentable': ('xls_unrepresentable_excel_date_including_serial_60_raw_numeric_value',
-                                'Unrepresentable Excel date (including serial 60): raw numeric value retained.'),
-            'out_of_range': ('xls_excel_date_outside_supported_range_raw_numeric_value_retained',
-                             'Excel date outside supported range: raw numeric value retained.'),
-        }
-        self.warn(diagnostic_warning(*diagnostics[outcome.status]))
+        if outcome.status == 'unsupported':
+            self.warn(diagnostic_warning('xls_unsupported_or_ambiguous_date_number_format_raw_numeric_value',
+                                         'Unsupported or ambiguous date/number format: raw numeric value retained.'))
+        elif outcome.status == 'unrepresentable':
+            self.warn(diagnostic_warning('xls_unrepresentable_excel_date_including_serial_60_raw_numeric_value',
+                                         'Unrepresentable Excel date (including serial 60): raw numeric value retained.'))
+        else:
+            self.warn(diagnostic_warning('xls_excel_date_outside_supported_range_raw_numeric_value_retained',
+                                         'Excel date outside supported range: raw numeric value retained.'))
         return outcome.result
 
     def add(self, sheet, seen, row, col, xf, value=None, kind='empty', formula=False,
