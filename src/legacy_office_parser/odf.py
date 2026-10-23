@@ -302,6 +302,8 @@ class _Parser:
                         walk(child, hidden)
                     else:
                         self.visibility_omissions += 1
+                elif not hidden and self.doc.format == 'ods' and child.tag in DRAW_STORIES:
+                    pass  # Extracted separately as a sheet-owned drawing.
                 elif not hidden and self.doc.format == 'odt' and child.tag in DRAW_STORIES:
                     self.drawing(child)
                 elif not hidden and child.tag == q('text:note'):
@@ -688,6 +690,8 @@ class _Parser:
                     continue
                 self.read_heading_level(child)
                 yield self.inline(child)
+            elif self.doc.format == 'ods' and child.tag in DRAW_STORIES:
+                pass  # Never use drawing labels as a cell's display value.
             elif self.doc.format == 'odt' and child.tag in DRAW_STORIES:
                 self.drawing(child)
             elif child.tag in BLOCK_WRAPPERS or child.tag in {
@@ -979,6 +983,9 @@ class _Parser:
     def sheet_drawings(self, container, sheet):
         """Only ordinary direct sheet shapes; no objects, links or geometry."""
         for shape in container:
+            if shape.tag == q('draw:g'):
+                self.sheet_drawings(shape, sheet)
+                continue
             if shape.tag == q('draw:frame'):
                 selected = None
                 for child in shape:
@@ -1024,6 +1031,23 @@ class _Parser:
             self.sheet_text(1)  # Separator after sheet name/cells/previous drawing.
             sheet.drawings.append('\n'.join(parts))
 
+    def cell_drawings(self, element, sheet, hidden=None):
+        """Read anchored shapes independently of cached cell values/coverage."""
+        if self.section_hidden(element) or (element.tag in PARAS and self.paragraph_hidden(element)):
+            return
+        if element.tag in PARAS | {q('text:span'), q('text:a')}:
+            display = self.text_display(element, 'paragraph' if element.tag in PARAS else 'text',
+                                        include_default=element.tag in PARAS or hidden is None)
+            if display in {'none', 'true'}:
+                hidden = display == 'none'
+        for child in element:
+            if child.tag in DRAW_STORIES:
+                if not hidden:
+                    self.sheet_drawings([child], sheet)
+            elif child.tag in PARAS | BLOCK_WRAPPERS | INLINE | CACHED_FIELDS:
+                if child.get(q('text:display')) != 'none' and child.get(q('text:is-hidden')) not in {'true', '1'}:
+                    self.cell_drawings(child, sheet, hidden)
+
     @staticmethod
     def cell_address_size(row, rows, column, columns):
         # Sum coordinate lengths by digit/letter bands, never by repeated cells.
@@ -1062,6 +1086,7 @@ class _Parser:
                         raise LimitExceededError('ODF row span limit exceeded')
                     sheet.columns = max(sheet.columns, column + cr + cs - 2)
                     sheet.rows = max(sheet.rows, row_index + rr + rs - 2)
+                    self.cell_drawings(cell, sheet)
                     if cell.tag == q('table:covered-table-cell'):
                         continue
                     value, kind, text, formula = self.value(cell, self.cell_text(cell))

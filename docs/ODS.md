@@ -4,6 +4,8 @@
 
 - Sparse typed cells, repeated rows/cells under shared limits, merges, stored
   formula text/results and sheet-owned ordinary drawing labels.
+- Grouped shapes, captions and cell-anchored drawings (including covered cells)
+  retain their labels in `sheet.drawings`, separately from cell display text.
 - Hidden sheets remain in the model and text with their flag. Styles resolve
   in their XML/document scope; embedded definitions cannot override host sheets.
 - Optional metadata/styles and empty sheets are accepted. Text is not obtained

@@ -176,17 +176,42 @@ def test_expanded_drawing_paragraph_limit():
         parse(sheet(shape(p('<text:s text:c="100000"/>'))), Limits(max_text_chars=2000))
 
 
-def test_cell_hosted_drawing_behavior_is_unchanged():
+def test_cell_hosted_drawing_is_separate_from_cell_value():
     row = '<table:table-row><table:table-cell>' + frame(box(p('cell-hosted'))) + '</table:table-cell></table:table-row>'
     doc = parse(sheet(shape(p('floating')), row))
-    assert doc.sheets[0].cells[0].text == 'cell-hosted'
-    assert doc.sheets[0].drawings == ['floating']
+    assert doc.sheets[0].cells == []
+    assert doc.sheets[0].drawings == ['floating', 'cell-hosted']
 
 
-def test_unproven_drawing_containers_and_table_content_are_not_scraped():
+def test_groups_are_read_but_links_and_drawing_tables_are_not_scraped():
     unsupported = '<draw:g>' + shape(p('group')) + '</draw:g>'
     unsupported += '<draw:a>' + shape(p('link')) + '</draw:a>'
     unsupported += frame(box('<table:table><table:table-row><table:table-cell>' + p('table') +
                              '</table:table-cell></table:table-row></table:table>'))
     doc = parse(sheet(unsupported + shape(p('allowed'))))
-    assert doc.sheets[0].drawings == ['allowed']
+    assert doc.sheets[0].drawings == ['group', 'allowed']
+
+
+def test_numeric_value_and_covered_cell_caption_remain_independent():
+    row = ('<table:table-row><table:table-cell office:value-type="float" office:value="125" '
+           'table:number-columns-spanned="2">' + shape(p('Review required')) +
+           '</table:table-cell><table:covered-table-cell>' + p('covered text') +
+           shape(p('Do not ship'), 'caption') + '</table:covered-table-cell></table:table-row>')
+    result = parse(sheet(cells=row)).sheets[0]
+    assert [(c.address, c.value, c.text) for c in result.cells] == [('A1', 125, '125')]
+    assert result.drawings == ['Review required', 'Do not ship']
+    assert len(result.merges) == 1
+
+
+def test_repeated_cells_do_not_duplicate_anchored_drawings():
+    cells = repeated(rows=2, columns=2, text='cell' + frame(box(p('label'))))
+    result = parse(sheet(cells=cells)).sheets[0]
+    assert [c.text for c in result.cells] == ['cell'] * 4
+    assert result.drawings == ['label']
+
+
+def test_hidden_cell_paragraph_does_not_leak_anchored_shape():
+    cells = '<table:table-row><table:table-cell>' + p(
+        '<text:hidden-paragraph text:is-hidden="true"/>' + frame(box(p('secret'))))
+    cells += '</table:table-cell></table:table-row>'
+    assert parse(sheet(cells=cells)).sheets[0].drawings == []
