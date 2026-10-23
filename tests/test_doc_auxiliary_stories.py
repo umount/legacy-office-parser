@@ -37,7 +37,10 @@ def test_textboxes_keep_source_subdocument_and_plc_ordinal(monkeypatch):
         ('header_textbox', 1, 2, 3, 0, 11)]
     assert all(a.kind == 'textbox' and a.section is None and a.variant is None
                and a.inherited_from is None for a in d.auxiliary_stories)
-    assert d.to_dict()['auxiliary_stories'] == [asdict(a) for a in d.auxiliary_stories]
+    assert d.to_dict()['auxiliary_stories'] == [
+        {k: v for k, v in asdict(a).items() if k not in (
+            'selection_role', 'active', 'different_first_page', 'different_even_odd')}
+        for a in d.auxiliary_stories]
     assert normalize_text(d).auxiliary_stories == d.auxiliary_stories
     assert d.text.count('One') == 1 and 'Reserved' not in d.text and 'Spare' not in d.text
 
@@ -72,7 +75,11 @@ def header_fixture(slots, *, sections=1, final=0xffffffff):
         cps.append(cps[-1] + len(slot))
     put(streams, 11, b''.join(u32(n) for n in [*cps, final]))
     # Each explicit section break begins the following section.
-    put(streams, 6, b''.join(u32(n) for n in [*range(sections), len(main)]) + b'\0' * (12 * sections))
+    sepx = len(streams['WordDocument'])
+    streams['WordDocument'] += b'\0\0'
+    mutate(streams, 'WordDocument', 64, u32(len(streams['WordDocument'])))
+    records = (b'\0\0' + u32(sepx) + b'\0' * 6) * sections
+    put(streams, 6, b''.join(u32(n) for n in [*range(sections), len(main)]) + records)
     return streams
 
 

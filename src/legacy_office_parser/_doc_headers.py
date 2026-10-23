@@ -1,6 +1,7 @@
 """Bounded source-slot identities for MS-DOC 2.3.3 and 2.8.22.
 
-No inheritance resolution, page selection, or pooled-text changes happen here.
+Source settings describe slot applicability; no pagination or pooled-text
+changes happen here.
 CPs address the unnormalized UTF-16 header subdocument, not Unicode scalars.
 """
 from collections.abc import Callable
@@ -155,3 +156,67 @@ def decode_header_ranges(
         result.append(SourceHeader(start, end - 1 if end > start else end,
                                    section, kind, variant, index + 1))
     return result
+
+
+
+def _header_settings(word, sections, count, read_dop, sprms, warn):
+    """Decode optional settings, retaining text when those settings are broken.
+
+    PlcfSed and stream/record limits are already validated by the reader.
+    Its budgeted SPRM iterator bounds traversal; limit errors propagate.
+    Missing DOP/SEPX stays unknown. An existing empty SEPX defaults to False,
+    independently for each section. A malformed SEPX invalidates only that
+    section's title flag, including any apparently valid prefix of its PRLs.
+    """
+    def unresolved():
+        warn(diagnostic_warning('doc_header_settings_unresolved',
+                                'Malformed optional DOC header settings; affected '
+                                'selection metadata is unknown, source text retained.'))
+
+    facing = None
+    try:
+        dop = read_dop()
+        if dop:
+            if len(dop) < 84:  # All DOP versions begin with DopBase.
+                raise InvalidDocumentError('truncated DOC header document settings')
+            facing = bool(dop[0] & 1)
+    except InvalidDocumentError:
+        unresolved()
+    titles = []
+    for index in range(count):
+        offset = struct.unpack_from('<i', sections, 4 * (count + 1) + 12 * index + 2)[0]
+        title = None
+        if offset != -1:
+            try:
+                if offset < 0 or offset + 2 > len(word):
+                    raise InvalidDocumentError('DOC header SEPX outside WordDocument')
+                size = struct.unpack_from('<h', word, offset)[0]
+                if size < 0 or offset + 2 + size > len(word):
+                    raise InvalidDocumentError('invalid DOC header SEPX length')
+                title = False
+                for op, operand in sprms(memoryview(word)[offset + 2:offset + 2 + size],
+                                         allow_padding=False):
+                    if op == 0x300A:
+                        if operand[0] not in (0, 1):
+                            raise InvalidDocumentError('invalid DOC header title-page flag')
+                        title = bool(operand[0])
+            except InvalidDocumentError:
+                title = None
+                unresolved()
+        titles.append(title)
+    return facing, titles
+
+
+def _header_applicability(variant, facing, title):
+    """Logical slot enablement, not evidence that any physical page uses it.
+
+    Enabled first overrides parity on the section's first page. Otherwise odd
+    is the default for both parities when facing is false. Unknown facing does
+    not justify calling an odd slot default. Empty enabled slots still inherit
+    only their own source variant (or remain blank).
+    """
+    if variant == 'first':
+        return 'first', title
+    if variant == 'even':
+        return 'even', facing
+    return ('default' if facing is False else 'odd' if facing is True else None), True

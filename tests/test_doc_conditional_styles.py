@@ -194,15 +194,11 @@ def test_later_cell_frame_does_not_split(monkeypatch):
     assert texts(result)[0][1] == ["10", "11", "12"]
 
 
-@pytest.mark.parametrize("kind", ["merge", "grid", "pcnf", "tcnf", "direction", "incomplete"])
+@pytest.mark.parametrize("kind", ["merge", "pcnf", "tcnf", "direction", "incomplete"])
 def test_unproven_context_retains_unconditional(monkeypatch, kind):
     kwargs = {}
     if kind == "merge":
         kwargs["flags"] = [2, 1, 0]
-    if kind == "grid":
-        kwargs["row_extra"] = lambda r: definition([0, 0, 0], [0, 110, 200, 300]) if r == 1 else b""
-        # Unequal grids now support row-only rules; column ownership remains unproven.
-        kwargs["chpx"] = cnf(1, 1) + cnf(4, 1)
     if kind == "pcnf":
         kwargs["papx"] = sprm(0xC666, b"\2\1\0")
     if kind == "tcnf":
@@ -304,8 +300,9 @@ def test_nested_tables_have_own_positions(monkeypatch):
     outer = doc.blocks[0].rows[0][0]
     inner = outer.blocks[0]
     assert [[c.text for c in r] for r in inner.rows] == [[""], ["inner1"]]
-    assert "outer" in outer.text
-    assert any("no proven stable rectangular" in w for w in doc.warnings)
+    assert "outer" not in outer.text
+    assert "inner1" in outer.text
+    assert not any("no proven stable rectangular" in w for w in doc.warnings)
 
 
 @pytest.mark.parametrize("reason", ["grid", "bookmark", "frame"])
@@ -317,7 +314,7 @@ def test_unknown_conditional_note_visibility(monkeypatch, reason):
     main, body = "\x02\7\7", "note\r\r"
     rowprops = (
         ROW
-        + definition([0], [0, 0] if reason == "grid" else [0, 100])
+        + definition([0, 0] if reason == "grid" else [0])
         + tistd(16)
         + struct.pack("<HhH", 0x740A, -1, 0x620)
     )
@@ -460,15 +457,15 @@ def test_auxiliary_story_does_not_extend_main_table(monkeypatch):
 
 
 @pytest.mark.parametrize('operand', [128, 129])
-def test_relative_conditional_toggle_is_explicitly_unproven(monkeypatch, operand):
+def test_relative_conditional_toggle_uses_default_parent(monkeypatch, operand):
     result = parse(monkeypatch, data(rows=1, cols=1, chpx=cnf(1, operand)))
-    assert texts(result) == [[['00']]]
-    assert any('no proven stable rectangular' in w for w in result.warnings)
+    assert texts(result) == [[['00' if operand == 128 else '']]]
+    assert not any('no proven stable rectangular' in w for w in result.warnings)
 
 
 @pytest.mark.parametrize("boundary", ["position", "direction", "frame"])
 @pytest.mark.parametrize("note_at", ["before", "after", "future"])
-def test_nested_row_uncertainty_survives_boundary_without_tainting_previous(
+def test_nested_row_context_and_notes_survive_partition_boundaries(
     monkeypatch, boundary, note_at
 ):
     from test_doc_nested import cell, paragraph, row
@@ -508,7 +505,7 @@ def test_nested_row_uncertainty_survives_boundary_without_tainting_previous(
     append_table_part(d, 3, text_plc([0, len(body) - 1]))
     result = parse(monkeypatch, d)
     assert texts(result) == [
-        [[""]], [["outer-before\ninner\nouter-after"], ["future"]], [[""]]
+        [[""]], [["\ninner\n"], [""]], [[""]]
     ]
-    assert result.notes[0].visibility == ["unknown"]
-    assert any("no proven stable rectangular" in w for w in result.warnings)
+    assert result.notes[0].visibility == ["hidden"]
+    assert not any("no proven stable rectangular" in w for w in result.warnings)

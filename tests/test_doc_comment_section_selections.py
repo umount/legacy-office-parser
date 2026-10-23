@@ -81,10 +81,10 @@ def test_unknown_boundary_or_following_paragraph_refuses(monkeypatch, missing_cp
 
 
 @pytest.mark.parametrize('main', ['A\fB\x05\r\x13CODE\x15\r', 'A\fB\x13CODE\x14X\x15\x05\r'])
-def test_fields_anywhere_remain_refused(monkeypatch, main):
+def test_fields_outside_section_selection_do_not_poison_it(monkeypatch, main):
     count = len(main.encode('utf-16le')) // 2
     d = parse(monkeypatch, streams(main, 0, 3, [0, 2, count]))
-    assert selection(d) == (None, None)
+    assert selection(d) == (0, 3)
     assert d.comment_text == 'Body'
 
 
@@ -93,9 +93,9 @@ def test_fields_anywhere_remain_refused(monkeypatch, main):
     ('A\7\7P\fQ\x05\r', [0, 5, 8], [IN, ROW + definition([0]), b'', b'', b'', b''], 6),
     ('A\fB\x05\7\7', [0, 2, 6], [IN, IN, ROW + definition([0]), b'', b''], 3),
 ])
-def test_cross_section_table_spans_stay_outside_subset(monkeypatch, main, sections, props, end):
+def test_cross_section_tables_require_non_table_section_marks(monkeypatch, main, sections, props, end):
     d = parse(monkeypatch, streams(main, 0, end, sections, props=props))
-    assert selection(d) == (None, None)
+    assert selection(d) == ((0, end) if end == 6 else (None, None))
     assert d.comment_text == 'Body'
 
 

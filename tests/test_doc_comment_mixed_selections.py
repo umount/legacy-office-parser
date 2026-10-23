@@ -4,7 +4,7 @@ import struct
 import pytest
 
 from legacy_office_parser import Limits, LimitExceededError
-from legacy_office_parser._doc_comments import whole_row_comment_selections
+from legacy_office_parser._doc_comments import comment_selection_index
 from legacy_office_parser.doc import _Budget
 from test_doc import IN, ROW, definition, parse
 from test_doc_comment_selections import ranged, selection
@@ -44,16 +44,16 @@ def test_literal_transport_and_raw_bookmark_endpoints(monkeypatch, begin, end, l
 
 @pytest.mark.parametrize('begin,end', [(0, 7), (0, 8), (0, 9), (0, 10),
                                       (7, 16), (8, 16), (9, 16), (10, 16)])
-def test_partial_row_is_not_widened(monkeypatch, begin, end):
+def test_partial_row_limits_are_validated_without_widening(monkeypatch, begin, end):
     d = parse(monkeypatch, ranged(MAIN, begin, end, props=PROPS))
-    assert selection(d) == (None, None)
+    assert selection(d) == ((begin, end) if end in (7, 8) else (None, None))
     assert d.comment_text == 'Body'
 
 
 def mixed(text, paragraphs, **kwargs):
-    return whole_row_comment_selections(text, paragraphs, kwargs.pop('sections', set()),
+    return comment_selection_index(text, paragraphs, kwargs.pop('sections', set()),
         kwargs.pop('known', lambda cp: True), kwargs.pop('limits', Limits()),
-        include_ordinary=True, **kwargs)
+        **kwargs)
 
 
 @pytest.mark.parametrize('fault', ['unknown-before', 'unknown-after', 'unsafe-before',
@@ -117,8 +117,8 @@ def test_surrogate_boundaries_are_source_utf16(begin, end, want):
 def test_metadata_precharge_and_no_query_rescanning():
     text, ps = source(('P', 0, 'para'), ('A', 1, 'cell'), ('', 1, 'row'), ('Q', 0, 'para'))
     charges = []
-    index = mixed(text, ps, record=charges.append, limits=Limits(max_records=41))
-    assert charges == [41]
+    index = mixed(text, ps, record=charges.append, limits=Limits(max_records=49))
+    assert charges == [49]
     ps.clear()  # Queries must not revisit source paragraph records.
     for _ in range(1000):
         assert index.contains(0, 7)
@@ -129,7 +129,7 @@ def test_metadata_precharge_and_no_query_rescanning():
         def __iter__(self):
             pytest.fail('must fail before traversal')
     with pytest.raises(LimitExceededError):
-        mixed(text, Unreadable(), limits=Limits(max_records=40))
+        mixed(text, Unreadable(), limits=Limits(max_records=48))
     budget = _Budget(Limits(max_records=50))
     budget.record(10)
     with pytest.raises(LimitExceededError):

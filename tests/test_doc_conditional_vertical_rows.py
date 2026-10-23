@@ -71,7 +71,6 @@ def test_multiple_origin_paragraphs_and_paragraph_override(monkeypatch):
 
 @pytest.mark.parametrize('bad', [
     [(['A'], [0, 100], [32])],  # Orphan continuation.
-    [(['A'], [0, 100], [96])],  # Restart without continuation.
     [(['A'], [0, 100], [64])],  # Reserved flag.
     [(['A'], [0, 100], [96]), (['B'], [0, 100], [32])],
     [(['A'], [0, 100], [96]), (['\r'], [0, 100], [32])],
@@ -88,16 +87,19 @@ def test_unproven_vertical_ownership_retains_unconditional_visibility(monkeypatc
 
 
 @pytest.mark.parametrize('condition', [4, 8, 16, 32, 256, 512, 1024, 2048])
-def test_column_and_corner_conditions_still_unknown_even_disabled(monkeypatch, condition):
+def test_disabled_column_and_corner_conditions_do_not_block_row_proof(monkeypatch, condition):
     result = parse(monkeypatch, source(rows(), chpx=cnf(1, 1) + cnf(condition, 0)))
-    assert 'A' in result.text
-    assert any(FALLBACK in w for w in result.warnings)
+    assert result.blocks[0].rows[0][0].text == ''
+    assert not any(FALLBACK in w for w in result.warnings)
 
 
 def test_ownership_does_not_cross_table_partition(monkeypatch):
     result = parse(monkeypatch, source(rows(), row_extra=lambda r:
                                        sprm(0x940E, u16(100)) if r == 0 else b''))
-    assert 'A' in result.text
+    # The first partition has a valid singleton restart. The second starts
+    # with an orphan continuation and must retain its own source contents.
+    assert result.blocks[0].rows[0][0].text == ''
+    assert '1' in result.text and '2' in result.text
     assert any(FALLBACK in w for w in result.warnings)
 
 
@@ -179,7 +181,7 @@ def test_inheritance_and_direct_override_with_vertical_ownership(monkeypatch, in
     from test_doc_styles import style, stylesheet
     from test_doc_table_styles import vanish
 
-    data = source(rows())
+    data = source(rows(), look=0x6A0 if inherited_column else 0x620)
     if inherited_column:
         stylesheet(data, [style(0)] + [b'\0\0'] * 15 + [
             table_style(16, 17, cnf(1, 1)), table_style(17, chpx=cnf(4, 0))])
@@ -187,6 +189,81 @@ def test_inheritance_and_direct_override_with_vertical_ownership(monkeypatch, in
         # Override only the first source character, leaving the adjacent cell hidden.
         add_chpx(data, [1024, 1025, 1037], [vanish(0), None])
     result = parse(monkeypatch, data)
-    assert result.blocks[0].rows[0][0].text == 'A'
-    assert result.blocks[0].rows[0][1].text == ('0' if inherited_column else '')
-    assert any(FALLBACK in w for w in result.warnings) == inherited_column
+    # Row hide wins over column show; direct character show wins over both.
+    assert result.blocks[0].rows[0][0].text == ('' if inherited_column else 'A')
+    assert result.blocks[0].rows[0][1].text == ''
+    assert not any(FALLBACK in w for w in result.warnings)
+
+
+@pytest.mark.parametrize('combined', [False, True])
+@pytest.mark.parametrize('show', [False, True])
+def test_vertical_intervals_survive_irregular_neighbor_grids(monkeypatch, combined, show):
+    from test_doc_table_styles import vanish
+
+    first = (['A', '', 'B'], [0, 50, 100, 200], [98, 1, 0]) if combined else (
+        ['A', 'B'], [0, 100, 200], [96, 0])
+    data = [first, (['', 'C', 'D'], [0, 100, 150, 200], [32, 0, 0]),
+            (['E', '', ''], [-100, 0, 40, 100], [0, 34, 1])]
+    result = parse(monkeypatch, source(data, chpx=(vanish(1) if show else b'')
+                                       + cnf(1, 0 if show else 1)))
+    grid = result.blocks[0].rows
+    origins = [c for c in grid[0] if c.row_span == 3]
+    assert len(origins) == 1
+    assert origins[0].text == ('A' if show else '')
+    assert ('C' in result.text) == (not show)
+    assert ('E' in result.text) == (not show)
+    assert not any(FALLBACK in w for w in result.warnings)
+
+
+@pytest.mark.parametrize('bad', ['width', 'gap', 'text', 'paragraph', 'orphan'])
+def test_irregular_combined_merge_proof_rejects_ambiguous_ownership(monkeypatch, bad):
+    data = [(['A', '', 'B'], [0, 50, 100, 200], [98, 1, 0]),
+            (['', 'C'], [0, 100, 200], [32, 0])]
+    if bad == 'width':
+        data[1] = (['', 'C'], [0, 110, 200], [32, 0])
+    elif bad == 'gap':
+        data.insert(1, (['', ''], [0, 100, 200], [0, 0]))
+    elif bad in ('text', 'paragraph'):
+        data[1] = (['X' if bad == 'text' else '\r', 'C'], [0, 100, 200], [32, 0])
+    else:
+        data[0] = (['A', '', 'B'], [0, 50, 100, 200], [2, 1, 0])
+    result = parse(monkeypatch, source(data))
+    assert 'A' in result.text
+    assert any(FALLBACK in w for w in result.warnings)
+
+
+def test_empty_column_visibility_rule_does_not_require_column_geometry(monkeypatch):
+    from test_doc import u16
+    from test_doc_conditional_rows import RAGGED
+
+    # Valid CCnf containing bold only has no CFVanish effect.
+    bold = sprm(0xCA85, bytes([5]) + u16(4) + sprm(0x0835, 1))
+    result = parse(monkeypatch, source(RAGGED, look=0x6A0, chpx=cnf(1, 1) + bold))
+    assert result.blocks[0].rows[0][1].text == ''
+    assert not any(FALLBACK in w for w in result.warnings)
+
+
+@pytest.mark.parametrize('condition,look,hidden', [
+    (4, 0x680, {'A'}), (8, 0x700, {'0', '1', '2'}),
+    (512, 0x6A0, {'A'}), (256, 0x720, {'0'}),
+    (2048, 0x6C0, set()), (1024, 0x740, {'2'}),
+    (16, 0x200, {'A'}), (32, 0x200, {'0', '1', '2'}),
+])
+def test_vertical_origin_has_proven_column_and_corner_context(monkeypatch, condition, look, hidden):
+    result = parse(monkeypatch, source(rows(), look=look, chpx=cnf(condition, 1),
+                                       tapx=sprm(0x3489, 1)))
+    for value in ('A', '0', '1', '2'):
+        assert (value in result.text) == (value not in hidden)
+    assert result.blocks[0].rows[0][0].row_span == 3
+    assert not any(FALLBACK in w for w in result.warnings)
+
+
+@pytest.mark.parametrize('look,band', [(0x200, True), (0x600, True), (0x200, False)])
+def test_irregular_column_bands_respect_row_priority(monkeypatch, look, band):
+    from test_doc_conditional_rows import RAGGED
+
+    result = parse(monkeypatch, source(RAGGED, look=look | 0x20,
+                                       chpx=cnf(1, 1) + cnf(16, 0),
+                                       tapx=sprm(0x3489, 1) if band else b''))
+    assert result.blocks[0].rows[0][1].text == ''
+    assert not any(FALLBACK in w for w in result.warnings)

@@ -36,7 +36,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.27.1**. The package version is available as
+This reference describes package **0.28.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -379,19 +379,16 @@ omits both reply fields from JSON. When depth is known, JSON retains the depth
 and parent, including a null parent for a root. Other optional note/comment
 fields remain explicit nulls when unavailable.
 
-DOC selections additionally support exact complete outer-table rows, including
-fully closed nested tables. In one section, safe ordinary paragraphs can be
-combined with complete outer rows; ordinary endpoints may lie inside a paragraph,
-while table endpoints must coincide with proven row boundaries. One complete
-inner row at depth two is also supported if it has no deeper table and its entire
-enclosing outer table validates. Multiple inner rows and mixed inner/outer spans
-remain unsupported, as do partial rows and fields. See
-[inner-row evidence](DOC.md). Ordinary non-table main-story
-paragraphs may cross verified section boundaries; spans combining sections and
-tables remain unsupported. Manual page breaks do not establish section ownership.
-Source intervals are never widened. See [row evidence](DOC.md)
-and [mixed-selection evidence](DOC.md), plus
-[ordinary-section evidence](DOC.md).
+DOC selections follow the annotation bookmark rules (`fCol=0`) for table
+cell and row marks, including partial rows, multiple nested rows, table-first
+cells, and spans across verified non-table section boundaries. All enclosing
+source table structures must validate. The configured depth/cell/record limits
+still apply; no selection is widened to fit an output table. A selection containing
+a field delimiter must contain its whole source field. Field ownership requires
+matching field PLC and special-character evidence; missing/invalid evidence leaves
+affected ranges unresolved. Delimiter-free ranges remain usable even when other
+fields are unresolved. Field instructions are never evaluated. Manual page breaks
+do not establish section ownership. See [DOC](DOC.md) for source references.
 
 An `anchor_path` walks from the document through `blocks`, table `rows`, and
 cell `blocks`, using **zero-based list indices**. For example,
@@ -442,13 +439,22 @@ be appended again to a text projection.
   range of the same kind/variant; body text is not copied. A first-section absent
   variant has an empty range and no reference. An explicitly empty paragraph is a
   present body and overrides inheritance.
+- `selection_role`: `default`, `odd`, `even`, or `first`, when source settings
+  establish the role. `default` means the odd slot serves both page parities.
+- `active`: whether the source settings enable the slot, not proof that a
+  physical page uses it. First-page slots override parity when enabled.
+- `different_first_page` and `different_even_odd`: source section/document
+  flags. Missing or unreadable settings are unknown. These four fields are
+  omitted from JSON when null; false is retained. They apply only to DOC
+  header/footer slots, not separators or textboxes. Inactive stored bodies
+  remain available; inheritance follows the same source variant.
 
 Header identities require validated section and header PLCs. Missing metadata
 retains the pooled text with a diagnostic, without guessed identities. A present
 malformed PLC raises `InvalidDocumentError`; limits are never bypassed by fallback.
-Header/page-selection flags and layout are not interpreted: a stored variant is
-not proof that it appears on a rendered page. The legacy pooled projection retains
-its guard/separator whitespace; body ranges exclude guard-only blocks.
+Source page-role flags are interpreted, but layout is not: a stored or enabled
+variant is not proof that it appears on a rendered page. The legacy pooled
+projection retains its guard/separator whitespace; body ranges exclude guard-only blocks.
 
 Retained body blocks, their pooled projections, and identity records consume the
 existing budgets. Normalization preserves identities/source coordinates while
@@ -546,14 +552,10 @@ coverage is format- and construct-specific. Not every omission emits a warning.
 
 - DOC filters supported hidden, direct revision-deleted and field-hidden runs.
   Supported hidden properties resolve through paragraph/character styles, direct
-  formatting and verified table-style contexts. Row-only conditional rules also
-  cover proven unequal grids and horizontal merges with empty continuations;
-  a separate proven vertical subset requires equal grids, explicit same-column
-  restart/continuation groups and empty continuation cells, with no horizontal
-  merges. Origin text uses its own row conditions. Other vertical configurations
-  and unproven column/corner contexts retain fallback.
-  See [row-condition evidence](DOC.md) and
-  [vertical-row evidence](DOC.md). Unproven conditional contexts
+  formatting and verified table-style contexts. Conditional row, column, band
+  and corner rules use source cells, including unequal row grids and proven
+  horizontal/vertical merges. Empty merge continuations inherit their origin;
+  ambiguous ownership uses known unconditional visibility. See [DOC](DOC.md). Unsupported contexts
   use the documented fallback and warnings. Hidden/deleted structural paragraph
   or cell marks can retain boundaries; revision-driven paragraph merging is not
   implemented. Inserted text is not removed merely because it is an insertion.

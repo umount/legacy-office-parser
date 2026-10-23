@@ -156,10 +156,10 @@ def test_same_cell_multiple_paragraphs_are_proven(monkeypatch):
 
 
 @pytest.mark.parametrize('end', [3, 4])
-def test_different_cells_and_cell_delimiters_remain_unproven(monkeypatch, end):
+def test_cell_limit_offset_is_not_the_cell_delimiter(monkeypatch, end):
     main = 'A\7B\x05\7\7'
     result = parse(monkeypatch, ranged(main, 0, end, props=[IN, IN, ROW + definition([0, 0]), b'', b'']))
-    assert selection(result) == (None, None)
+    assert selection(result) == ((0, end) if end == 3 else (None, None))
     assert result.comments[0].anchor_path == ['blocks', 0, 'rows', 0, 1]
 
 
@@ -179,11 +179,11 @@ def test_nested_same_cell_span_uses_explicit_depth(monkeypatch):
     assert result.comments[0].anchor_path == ['blocks', 0, 'rows', 0, 0, 'blocks', 0, 'rows', 0, 0]
 
 
-def test_crossing_nested_table_never_uses_equal_outer_depth_as_proof(monkeypatch):
+def test_complete_nested_table_inside_one_outer_cell(monkeypatch):
     parts = [paragraph(1, 'Before'), cell(2, 'Inner'), row(2), cell(1, 'After\x05'), row(1)]
     main = ''.join(t for t, _ in parts)
     result = parse(monkeypatch, ranged(main, 0, main.index('\x05'), props=[p for _, p in parts] + [b'', b'']))
-    assert selection(result) == (None, None)
+    assert selection(result) == (0, main.index('\x05'))
 
 
 def test_complete_source_rows_bridge_omitted_output_grid_positions(monkeypatch):

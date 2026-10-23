@@ -145,6 +145,12 @@ class AuxiliaryStory:
     variant: str | None = None
     section: int | None = None
     inherited_from: int | None = None
+    # DOC source settings, not physical page placement. An enabled first slot
+    # takes precedence over parity. None means unavailable/not applicable.
+    selection_role: Literal['default', 'odd', 'even', 'first'] | None = None
+    active: bool | None = None
+    different_first_page: bool | None = None
+    different_even_odd: bool | None = None
 
 
 @dataclass(slots=True)

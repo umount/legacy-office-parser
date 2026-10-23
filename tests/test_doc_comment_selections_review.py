@@ -54,7 +54,7 @@ def test_section_metadata_cannot_relabel_an_ordinary_cr(monkeypatch):
 
 
 @pytest.mark.parametrize('begin,end,want', [(0, 4, (0, 4)), (1, 3, (1, 3)),
-                                           (0, 6, None), (4, 5, None),
+                                           (0, 6, (0, 6)), (4, 5, None),
                                            (5, 6, (5, 6))])
 def test_same_cell_paragraphs_and_cell_mark_boundaries(monkeypatch, begin, end, want):
     # First cell A CR CR B CELL; second C marker CELL; TTP CELL.
@@ -147,13 +147,15 @@ def test_cell_completion_proof_is_explicit_and_region_local(depth, termination):
 
     def props(**changes):
         values = dict(depth=depth, in_table=True, row_end=False,
-                      inner_cell=False, inner_ttp=False)
+                      inner_cell=False, inner_ttp=False, flags=[], edges=[])
         values.update(changes)
         return SimpleNamespace(**values)
 
     parser = object.__new__(_Doc)
     parser.budget = _Budget(Limits())
     parser.text = ('A\rB\rC' + ('\7' if depth == 1 else '\r')).encode('utf-16le')
+    parser.counts = [len(parser.text) // 2]
+    parser.limits = parser.budget.limits
     parser.section_ends = set()
     parser.comment_selections = {}
     parser.warn = lambda message: None
@@ -170,4 +172,4 @@ def test_cell_completion_proof_is_explicit_and_region_local(depth, termination):
     parser.comment_ranges = [SimpleNamespace(source_cp=3, selection_start=0, selection_end=3)]
     parser._comment_selection_ranges(paragraphs)
     assert parser.comment_selections.get(3) == ((0, 3) if termination == 'cell' else None)
-    assert parser.budget.records == 4 * len(paragraphs) + 1
+    assert parser.budget.records == 4 * len(paragraphs) + 1 + (37 if termination == 'row' and depth == 1 else 0)

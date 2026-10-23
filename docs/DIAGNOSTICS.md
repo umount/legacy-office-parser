@@ -28,6 +28,7 @@ Warning messages are not source locations or severity classifications. No code i
 - `doc_far_east_doc_flag_is_set_language_specific_legacy`: Far East DOC flag is set; language-specific legacy encoding is not interpreted.
 - `doc_fields_use_stored_results_field_instructions_are_not_evaluated`: Fields use stored results; field instructions are not evaluated.
 - `doc_font_dependent_symbol_codes_are_retained_verbatim_no_font`: Font-dependent symbol codes are retained verbatim; no font-specific Unicode glyph mapping is applied.
+- `doc_header_settings_unresolved`: Malformed optional header settings; affected selection metadata is unknown and source text is retained.
 - `doc_header_variants_and_textbox_placement_are_not_modeled`: Header variants and textbox placement are not modeled.
 - `doc_hidden_or_deleted_paragraph_cell_marks_retain_their_structural`: Hidden or deleted paragraph/cell marks retain their structural boundaries; revision merging is not modeled.
 - `doc_incomplete_or_zero_width_table_grids_cannot_be_normalized`: Incomplete or zero-width table grids cannot be normalized; physical cell coordinates are retained.

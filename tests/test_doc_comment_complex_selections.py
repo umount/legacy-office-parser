@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from legacy_office_parser import LimitExceededError, Limits
-from legacy_office_parser._doc_comments import whole_row_comment_selections
+from legacy_office_parser._doc_comments import comment_selection_index
 from test_doc import IN, ROW, definition, parse
 from test_doc_comment_selections import ranged, selection
 from test_doc_nested import cell, paragraph, row
@@ -12,9 +12,9 @@ from test_doc_nested import cell, paragraph, row
 
 @pytest.mark.parametrize('begin,end,want', [
     (0, 6, (0, 6)), (1, 6, (None, None)), (0, 5, (None, None)),
-    (0, 3, (None, None)), (2, 6, (None, None)),
+    (0, 3, (0, 3)), (2, 6, (None, None)),
 ])
-def test_two_cells_require_exact_whole_row(monkeypatch, begin, end, want):
+def test_two_cells_follow_bookmark_cell_limit_rule(monkeypatch, begin, end, want):
     # A=0 CELL=1 B=2 marker=3 CELL=4 TTP=5.
     data = ranged('A\7B\x05\7\7', begin, end,
                   props=[IN, IN, ROW + definition([0, 0]), b'', b''])
@@ -66,7 +66,7 @@ def source(*specs):
 
 
 def prove(text, paragraphs, **kwargs):
-    return whole_row_comment_selections(text, paragraphs, kwargs.pop('sections', set()),
+    return comment_selection_index(text, paragraphs, kwargs.pop('sections', set()),
                                        kwargs.pop('known', lambda cp: True),
                                        kwargs.pop('limits', Limits()), **kwargs)
 
@@ -103,13 +103,13 @@ def test_unclosed_nested_row_cannot_prove_enclosing_row():
     assert not prove(text, paragraphs).contains(0, 7)
 
 
-def test_rows_separated_by_ordinary_text_are_not_one_run():
+def test_complete_tables_can_span_ordinary_text():
     text, paragraphs = source(('A', 1, 'cell'), ('', 1, 'row'),
                               ('B', 0, 'para'), ('C', 1, 'cell'), ('', 1, 'row'))
     result = prove(text, paragraphs)
     assert result.contains(0, 3)
     assert result.contains(5, 8)
-    assert not result.contains(0, 8)
+    assert result.contains(0, 8)
 
 
 def test_record_budget_precedes_traversal():
@@ -138,13 +138,13 @@ def test_index_charged_once_and_overlapping_queries_do_not_read_source():
     result = prove(text, paragraphs, record=charges.append)
     for _ in range(1000):
         assert result.contains(0, 3)
-    assert charges == [13]
+    assert charges == [25]
 
 
-def test_missing_parent_depth_is_not_invented():
+def test_table_first_cell_is_proven_by_later_parent_terminators():
     text, paragraphs = source(('A', 2, 'cell'), ('', 2, 'row'),
                               ('Q', 1, 'cell'), ('', 1, 'row'))
-    assert not prove(text, paragraphs).contains(0, 6)
+    assert prove(text, paragraphs).contains(0, 6)
 
 
 def test_late_incomplete_row_invalidates_pending_table_proof():
@@ -152,9 +152,9 @@ def test_late_incomplete_row_invalidates_pending_table_proof():
     assert not prove(text, paragraphs).contains(0, 3)
 
 
-def test_field_outside_table_keeps_existing_conservative_policy():
+def test_field_outside_table_does_not_poison_selection():
     text, paragraphs = source(('A', 1, 'cell'), ('', 1, 'row'), ('\x13X\x15', 0, 'para'))
-    assert not prove(text, paragraphs).contains(0, 3)
+    assert prove(text, paragraphs).contains(0, 3)
 
 
 def test_hidden_source_text_keeps_literal_cps():
@@ -183,3 +183,38 @@ def test_aggregate_record_budget_is_charged():
 def test_decoded_source_uses_character_budget_not_input_stream_byte_budget():
     text, paragraphs = source(('AB', 1, 'cell'), ('', 1, 'row'))
     assert prove(text, paragraphs, limits=Limits(max_stream_bytes=1)).contains(0, 4)
+
+
+@pytest.mark.parametrize('begin,end,want', [
+    (0, 6, (0, 6)),  # limit = second cell mark - 1 = second TTP - 2.
+    (1, 6, (None, None)),  # A selected TTP requires a row-start bookmark.
+    (0, 7, (None, None)),  # Cell mark itself is not the allowed limit.
+])
+def test_partial_final_row_uses_exact_fcol_zero_offsets(monkeypatch, begin, end, want):
+    data = ranged('AB\7\7CD\x05\7\7', begin, end,
+                  props=[IN, ROW + definition([0]), IN, ROW + definition([0]), b'', b''])
+    doc = parse(monkeypatch, data)
+    assert selection(doc) == want
+    assert doc.comment_text == 'Body'
+
+
+@pytest.mark.parametrize('bad_first', [False, True])
+def test_invalid_adjacent_table_does_not_poison_another_identity(bad_first):
+    from legacy_office_parser._doc_table import TableIdentity, FrameIdentity
+
+    bodies = ('A\v', 'B') if bad_first else ('A', 'B\v')
+    text, ps = source((bodies[0], 1, 'cell'), ('', 1, 'row'),
+                      (bodies[1], 1, 'cell'), ('', 1, 'row'))
+    for i, p in enumerate(ps):
+        p[4].identity = TableIdentity(ipgp=i // 2)
+        p[4].frame = FrameIdentity()
+        p[4].bidi = p[4].bidi90 = False
+    got = prove(text, ps)
+    assert got.contains(4, 7) if bad_first else got.contains(0, 3)
+    assert not got.contains(0, 7)
+
+
+def test_zero_width_source_cell_keeps_its_bookmark():
+    text, ps = source(('A', 1, 'cell'), ('', 1, 'row'))
+    ps[-1][4].edges = [0, 0]
+    assert prove(text, ps).contains(0, 3)

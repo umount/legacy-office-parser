@@ -85,10 +85,13 @@ def test_json_roundtrip_exact_metadata_and_legacy_omission():
     assert 'auxiliary_stories' not in Document('doc').to_dict()
     doc = document(header(), textbox())
     data = json.loads(json.dumps(doc.to_dict()))
-    assert data['auxiliary_stories'] == [asdict(item) for item in doc.auxiliary_stories]
+    optional = {'selection_role', 'active', 'different_first_page', 'different_even_odd'}
+    assert data['auxiliary_stories'] == [
+        {k: v for k, v in asdict(item).items() if k not in optional}
+        for item in doc.auxiliary_stories]
     rebuilt = [AuxiliaryStory(**item) for item in data['auxiliary_stories']]
     assert validate(document(*rebuilt)).to_dict() == doc.to_dict()
-    assert list(data['auxiliary_stories'][0]) == list(asdict(header()))
+    assert list(data['auxiliary_stories'][0]) == [k for k in asdict(header()) if k not in optional]
 
 
 def test_normalization_and_clone_preserve_utf16_metadata_and_independence():

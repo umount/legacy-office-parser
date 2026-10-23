@@ -95,20 +95,17 @@ def test_disabled_or_absent_bands_do_not_hide(monkeypatch, look, tapx):
 
 @pytest.mark.parametrize('condition', [4, 8, 16, 32, 256, 512, 1024, 2048])
 @pytest.mark.parametrize('look', [0x620, 0x7E0])
-def test_column_or_corner_conditions_keep_whole_partition_unknown(monkeypatch, condition, look):
+def test_ragged_row_column_corner_priority(monkeypatch, condition, look):
     result = parse(monkeypatch, source(RAGGED, chpx=cnf(1, 1) + cnf(condition, 0), look=look))
-    assert result.blocks[0].rows[0][1].text == 'A'
-    assert any(FALLBACK in w for w in result.warnings)
+    assert result.blocks[0].rows[0][1].text == ('A' if look == 0x7E0 and condition == 512 else '')
+    assert not any(FALLBACK in w for w in result.warnings)
 
 
 @pytest.mark.parametrize('rows', [
     [(['A', 'B'], [0, 100, 200], [2, 1])],  # Nonempty horizontal continuation.
     [(['A', ''], [0, 100, 200], [0, 1])],  # Orphan continuation.
-    [(['A', 'B'], [0, 100, 200], [2, 0])],  # Restart without continuation.
-    [(['A'], [0, 100], [2])],
     [(['A'], [0, 100], [96]), ([''], [0, 200], [32])],  # Vertical edges disagree.
     [(['A'], [0, 100], [64])],  # Reserved vertical flag.
-    [(['A'], [0, 0], [0])],
     [(['A', 'B'], [0, 100], [0])],  # Definition/physical-cell mismatch.
     [(['A', ''], [0, 100], [2])],  # Short merge flags cannot prove an origin.
 ])
@@ -121,7 +118,6 @@ def test_unproven_ownership_or_grid_never_applies_row_hide(monkeypatch, rows):
 @pytest.mark.parametrize('kwargs', [
     {'papx': sprm(0xC666, b'\2\1\0')},
     {'tapx': sprm(0xD66A, b'\2\1\0')},
-    {'chpx': cnf(1, 128)}, {'chpx': cnf(1, 129)},
     {'row_extra': lambda r: sprm(0x560B, u16(2))},
 ])
 def test_row_proof_does_not_bypass_existing_style_or_direction_exclusions(monkeypatch, kwargs):
@@ -159,9 +155,9 @@ def test_multiple_paragraphs_in_merged_origin_share_row_context(monkeypatch):
 
 
 def test_conditional_work_is_cached_and_budgeted_before_clean(monkeypatch):
-    from legacy_office_parser import _doc_conditions
+    from legacy_office_parser import _doc_styles
     from legacy_office_parser.doc import _Doc
-    original_toggle, original_clean = _doc_conditions.toggle, _Doc.clean
+    original_toggle, original_clean = _doc_styles.toggle, _Doc.clean
     toggles, before_clean = [], []
 
     def toggle(operand, parent):
@@ -172,7 +168,7 @@ def test_conditional_work_is_cached_and_budgeted_before_clean(monkeypatch):
         before_clean.append(self.budget.records)
         return original_clean(self, *args, **kwargs)
 
-    monkeypatch.setattr(_doc_conditions, 'toggle', toggle)
+    monkeypatch.setattr(_doc_styles, 'toggle', toggle)
     monkeypatch.setattr(_Doc, 'clean', clean)
     rows = [(['A' * 500, '', 'B' * 500], [0, 100, 200, 300], [2, 1, 0])]
     parse(monkeypatch, source(rows))
@@ -185,7 +181,7 @@ def test_conditional_work_is_cached_and_budgeted_before_clean(monkeypatch):
 
 
 @pytest.mark.parametrize('column_condition', [False, True])
-def test_ragged_note_visibility_is_known_only_for_row_conditions(monkeypatch, column_condition):
+def test_ragged_note_visibility_with_disabled_column_condition(monkeypatch, column_condition):
     from test_doc_fidelity import add_chpx, append_table_part
     from test_doc_notes import reference_plc, text_plc
 
@@ -201,9 +197,9 @@ def test_ragged_note_visibility_is_known_only_for_row_conditions(monkeypatch, co
     append_table_part(data, 2, reference_plc([0]))
     append_table_part(data, 3, text_plc([0, len(body) - 1]))
     result = parse(monkeypatch, data)
-    assert result.notes[0].visibility == (['unknown'] if column_condition else ['hidden'])
+    assert result.notes[0].visibility == ['hidden']
     assert result.footnotes == 'note\n'
-    assert any(FALLBACK in w for w in result.warnings) == column_condition
+    assert not any(FALLBACK in w for w in result.warnings)
 
 
 @pytest.mark.parametrize('extra', [sprm(0x940E, u16(100)), sprm(0x560B, u16(1))])
@@ -214,19 +210,20 @@ def test_partition_boundary_restarts_first_row_on_merged_rows(monkeypatch, extra
     assert not any(FALLBACK in w for w in result.warnings)
 
 
-def test_inherited_column_condition_cannot_be_missed(monkeypatch):
-    data = source(RAGGED)
+def test_inherited_enabled_column_condition_cannot_be_missed(monkeypatch):
+    data = source(RAGGED, look=0x6A0)
     stylesheet(data, [style(0)] + [b'\0\0'] * 15 +
                [table_style(16, 17, cnf(1, 1)), table_style(17, chpx=cnf(4, 0))])
     result = parse(monkeypatch, data)
-    assert 'A' in result.text
-    assert any(FALLBACK in w for w in result.warnings)
+    assert 'A' not in result.text
+    assert not any(FALLBACK in w for w in result.warnings)
 
 
-def test_conditional_show_cannot_override_unknown_ownership(monkeypatch):
-    result = parse(monkeypatch, source(RAGGED, chpx=vanish(1) + cnf(1, 0) + cnf(4, 0)))
-    assert all(cell.text == '' for row in result.blocks[0].rows for cell in row)
-    assert any(FALLBACK in w for w in result.warnings)
+def test_conditional_show_with_proven_irregular_columns(monkeypatch):
+    result = parse(monkeypatch, source(RAGGED, look=0x6A0, chpx=vanish(1) + cnf(1, 0) + cnf(4, 0)))
+    assert 'A' in result.text and 'B' in result.text
+    assert 'C' not in result.text and 'D' not in result.text
+    assert not any(FALLBACK in w for w in result.warnings)
 
 
 def test_ragged_output_grid_still_charges_all_slots(monkeypatch):

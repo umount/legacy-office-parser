@@ -3,13 +3,14 @@
 Reference/body ordinals are paired before visibility filtering. Bookmark tags
 join metadata to starts, whose ibkl selects an exclusive limit. Marker CFSpec,
 body paragraph/table validity, and ordinary selection validity belong to _Doc.
-The supplemental row index proves exact source spans without changing bookmarks.
+The source table index proves exact spans without changing bookmark endpoints.
 """
 from bisect import bisect_right
 from dataclasses import dataclass
 import struct
 import warnings
 
+from ._doc_fields import FieldSelections
 from .diagnostics import diagnostic_warning
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
@@ -256,200 +257,234 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
 
 
 @dataclass(slots=True)
-class MixedRowSelections:
-    """Contiguous safe source atoms; table atoms require exact row endpoints."""
+class _SelectionTable:
+    begin: int
+    end: int
+    cell_starts: list[int]
+    cell_marks: list[int]
+    row_starts: set[int]
+    row_marks: list[int]
 
+    def allows(self, begin, end):
+        # MS-DOC 2.8.10 rule 1 (annotation bookmarks have fCol=0).
+        # Limits are exclusive CPs; the unusual -1/-2 offsets are specified
+        # by the format, not rounded to cells or projected output rows.
+        outside_end = not self.begin < end < self.end
+        cell = bisect_right(self.cell_marks, begin - 1)
+        if cell < len(self.cell_marks) and self.cell_marks[cell] < end:
+            if begin > self.cell_starts[cell]:
+                return False
+            i = bisect_right(self.cell_marks, end + 1) - 1
+            j = bisect_right(self.row_marks, end - 1) - 1
+            if not (outside_end or (i >= 0 and self.cell_marks[i] == end + 1)
+                    or (j >= 0 and self.row_marks[j] == end - 1)):
+                return False
+        row = bisect_right(self.row_marks, begin - 1)
+        if row < len(self.row_marks) and self.row_marks[row] < end:
+            if self.begin <= begin < self.end and begin not in self.row_starts:
+                return False
+            i = bisect_right(self.row_marks, end + 2) - 1
+            j = bisect_right(self.row_marks, end - 1) - 1
+            if not (outside_end or (i >= 0 and self.row_marks[i] == end + 2)
+                    or (j >= 0 and self.row_marks[j] == end - 1)):
+                return False
+        return True
+
+
+@dataclass(slots=True)
+class BookmarkSelections:
+    """Source bookmark index, including partial and arbitrarily nested rows."""
     starts: list[int]
     ends: list[int]
-    ordinary: list[bool]
-    runs: list[int]
+    unsafe: list[int]
+    tables: list[tuple[list[int], list[_SelectionTable]]]
     text: memoryview
-
-    def append(self, begin, end, ordinary):
-        run = self.runs[-1] if self.ends and self.ends[-1] == begin else len(self.starts)
-        self.starts.append(begin)
-        self.ends.append(end)
-        self.ordinary.append(ordinary)
-        self.runs.append(run)
+    fields: FieldSelections | None = None
 
     def contains(self, begin, end):
         if not 0 <= begin < end <= len(self.text) // 2:
             return False
+        if self.fields is not None and not self.fields.contains(begin, end):
+            return False
         i = bisect_right(self.starts, begin) - 1
         j = bisect_right(self.starts, end - 1) - 1
-        return (0 <= i <= j and begin < self.ends[i] and end <= self.ends[j]
-                and self.runs[i] == self.runs[j]
-                and (self.ordinary[i] or begin == self.starts[i])
-                and (self.ordinary[j] or end == self.ends[j])
-                and not 0xdc00 <= struct.unpack_from('<H', self.text, begin * 2)[0] <= 0xdfff
-                and not 0xd800 <= struct.unpack_from('<H', self.text, (end - 1) * 2)[0] <= 0xdbff)
+        if not (0 <= i <= j and end <= self.ends[j]
+                and self.unsafe[j + 1] == self.unsafe[i]):
+            return False
+        if (0xdc00 <= struct.unpack_from('<H', self.text, begin * 2)[0] <= 0xdfff
+                or 0xd800 <= struct.unpack_from('<H', self.text, (end - 1) * 2)[0] <= 0xdbff):
+            return False
+        # Fully enclosed tables satisfy both outside-table alternatives.
+        # Only tables containing an endpoint require examination. At each
+        # depth the intervals are disjoint, so queries are O(depth * log N).
+        for starts, tables in self.tables:
+            first = bisect_right(starts, begin) - 1
+            last = bisect_right(starts, end - 1) - 1
+            for index in (first,) if first == last else (first, last):
+                if index >= 0:
+                    table = tables[index]
+                    if begin < table.end and end > table.begin and not table.allows(begin, end):
+                        return False
+        return True
 
 
-@dataclass(frozen=True, slots=True)
-class WholeRowSelections:
-    """Source-only outer runs, optionally mixed spans and single inner rows."""
+def comment_selection_index(text, paragraphs, section_ends, paragraph_known,
+                            limits: Limits, *, record=None, fields=None):
+    """Validate source structure once, then test fCol=0 bookmark boundaries.
 
-    starts: dict[int, tuple[int, int]]
-    ends: dict[int, tuple[int, int]]
-    mixed: MixedRowSelections | None = None
-    inner_rows: set[tuple[int, int]] | None = None
-
-    def contains(self, begin, end):
-        first, last = self.starts.get(begin), self.ends.get(end)
-        return (first is not None and last is not None
-                and first[0] == last[0] and first[1] <= last[1]) or (
-                    self.mixed is not None and self.mixed.contains(begin, end)) or (
-                    self.inner_rows is not None and (begin, end) in self.inner_rows)
-
-
-def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known,
-                                 limits: Limits, *, record=None, include_ordinary=False,
-                                 include_inner=False):
-    """Index complete outer rows, including fully closed nested tables.
-
-    ``paragraphs`` is the main-story source prepass: (begin, end, mark,
-    mark_cp, properties, hidden, known). CPs count unnormalized UTF-16 units;
-    end excludes the delimiter. ``paragraph_known`` proves PAPX coverage.
-    This supplements, rather than replaces, ordinary/same-cell selection proof.
-    ``include_inner`` additionally retains single depth-two rows with no deeper
-    table inside them, after their entire enclosing outer table validates.
-    No source range is widened, and no projected table grid is consulted.
+    All depths and ordinary/section paragraphs use the same source rules. Unknown or
+    malformed tables invalidate their own source span, never unrelated text.
     """
-    # Charge before iterating or allocating indexes. Each paragraph can retain
-    # at most one pending row, two endpoint entries, and one stack frame.
-    # Mixed proof retains four additional per-paragraph arrays. Inner proof
-    # charges three more units per paragraph for pending and retained CP pairs;
-    # it never creates an interval for every possible combination of rows.
-    cost = ((10 if include_ordinary else 6) + (3 if include_inner else 0)) * len(paragraphs) + 1
+    cost = 12 * len(paragraphs) + 1
     if cost > limits.max_records:
         raise LimitExceededError('DOC comment selection record limit exceeded')
     if record is not None:
         record(cost)
     if len(text) // 2 > limits.max_text_chars:
         raise LimitExceededError('DOC comment selection source limit exceeded')
-    starts, ends = {}, {}
+    view = memoryview(text)
+    empty = BookmarkSelections([], [], [0], [], view)
     if len(text) % 2:
-        return WholeRowSelections(starts, ends)
+        return empty
     count = len(text) // 2
-    mixed = MixedRowSelections([], [], [], [], memoryview(text)) if include_ordinary else None
-    stack, rows = [], []
-    pending_inner, inner_rows = [], set()
-    inner_has_nested = False
-    bad = fields = False
-    previous_end = 0
-    run = cells = 0
+    starts, ends, safe = [], [], []
+    levels, stack, invalid = [], [], []
+    previous_end = cells = 0
+    delimiters = []
 
-    def publish():
-        if not bad and not stack:
-            inner_rows.update(pending_inner)
-            for ordinal, (begin, end) in enumerate(rows):
-                if 0xdc00 <= struct.unpack_from('<H', text, begin * 2)[0] <= 0xdfff:
-                    continue
-                starts[begin] = (run, ordinal)
-                ends[end] = (run, ordinal)
-                if mixed is not None:
-                    mixed.append(begin, end, False)
+    def charge(n):
+        nonlocal cost
+        cost += n
+        if cost > limits.max_records:
+            raise LimitExceededError('DOC comment selection record limit exceeded')
+        if record is not None:
+            record(n)
+
+    def close():
+        frame = stack.pop()
+        if frame['row_bad'] or frame['cells'] or frame['open'] or not frame['table'].row_marks:
+            frame['bad'] = True
+        if frame['bad']:
+            if stack:
+                stack[-1]['row_bad'] = True
+            else:
+                invalid.append((frame['first'], len(starts)))
 
     for begin, end, mark, mark_cp, props, _, known in paragraphs:
-        # Reject an incomplete, overlapping, or out-of-bounds prepass outright.
         if not (begin == previous_end and begin <= end == mark_cp < count):
-            return WholeRowSelections({}, {})
-        previous_end = end + 1
+            return empty
         if struct.unpack_from('<H', text, end * 2)[0] != mark:
-            return WholeRowSelections({}, {})
-        ordinary = True
-        for cp in range(begin, end):
-            unit = struct.unpack_from('<H', text, cp * 2)[0]
-            fields |= unit in (19, 20, 21)
-            ordinary &= unit >= 32 or unit in (5, 9)
+            return empty
+        previous_end = end + 1
         depth = props.depth or (1 if props.in_table else 0)
         if depth < 0:
-            return WholeRowSelections({}, {})
+            return empty
         if depth > limits.max_depth:
             raise LimitExceededError('DOC comment selection depth limit exceeded')
-        if not depth:
-            # A table may finish only after an outer TTP, never an open cell.
-            if len(stack) == 1 and stack[0][1:] == [0, False]:
-                stack.pop()
-            publish()
-            if (mixed is not None and known and paragraph_known(mark_cp) and ordinary
-                    and mark == 13 and mark_cp not in section_ends
-                    and not (props.row_end or props.inner_cell or props.inner_ttp)):
-                mixed.append(begin, end + 1, True)
-            stack, rows = [], []
-            pending_inner = []
-            inner_has_nested = False
-            bad = False
-            run += 1
-            continue
-        if not (known and paragraph_known(mark_cp) and ordinary):
-            bad = True
-        if mark_cp in section_ends:
-            bad = True
-        if bad:
-            continue
-        if depth > 2:
-            inner_has_nested = True
-        if depth > len(stack) + 1:
-            # Missing enclosing-depth paragraph: do not invent its start.
-            bad = True
-            continue
         while len(stack) > depth:
-            if stack[-1][1:] != [0, False]:
-                bad = True
-                break
-            stack.pop()
-            if len(stack) < 2:
-                inner_has_nested = False
-        if bad:
+            close()
+        ordinary = known and paragraph_known(mark_cp)
+        for cp in range(begin, end):
+            unit = struct.unpack_from('<H', text, cp * 2)[0]
+            if fields is None and unit in (19, 20, 21):
+                charge(2)
+                delimiters.append((cp, unit))
+            ordinary &= unit >= 32 or unit in (5, 9, 19, 20, 21)
+        starts.append(begin)
+        ends.append(end + 1)
+        safe.append(bool(ordinary))
+        if not depth:
+            safe[-1] &= (not (props.row_end or props.inner_cell or props.inner_ttp)
+                         and ((mark == 13 and mark_cp not in section_ends)
+                              or (mark == 12 and mark_cp in section_ends)))
             continue
-        if depth > len(stack):
+        # A cell may start with a nested table. Its later cell/TTP marks
+        # prove the enclosing scope; no leading parent paragraph is required.
+        extra = max(0, depth - len(stack) - 1) * 4
+        cost += extra
+        if cost > limits.max_records:
+            raise LimitExceededError('DOC comment selection record limit exceeded')
+        if extra and record is not None:
+            record(extra)
+        while depth > len(stack):
             if stack:
-                stack[-1][2] = True
-            stack.append([begin, 0, False])
+                stack[-1]['open'] = True
+            table = _SelectionTable(begin, begin, [], [], set(), [])
+            level = len(stack)
+            if len(levels) <= level:
+                levels.append([])
+            levels[level].append(table)
+            stack.append(dict(table=table, first=len(starts)-1, row=begin, cell=begin,
+                              cells=0, open=False, bad=False, row_bad=False,
+                              row_first=len(starts)-1, props=None, frame=None,
+                              first_frame=None))
         frame = stack[-1]
+        frame['row_bad'] |= not ordinary or mark_cp in section_ends
         is_row = props.row_end if depth == 1 else props.inner_ttp
         is_cell = mark == 7 if depth == 1 else props.inner_cell
         coherent = (mark in (7, 13) and props.in_table
                     and not (depth == 1 and (props.inner_cell or props.inner_ttp))
                     and not (depth > 1 and (mark != 13 or props.row_end)))
-        if not coherent:
-            bad = True
-        elif is_row:
-            if (begin != end or frame[2] or not 1 <= frame[1] <= 63
-                    or len(props.flags) != frame[1]
-                    or len(props.edges) != frame[1] + 1
-                    or any(a >= b for a, b in zip(props.edges, props.edges[1:]))
+        frame['row_bad'] |= not coherent
+        if frame['first_frame'] is None and not is_row and not frame['cells']:
+            frame['first_frame'] = getattr(props, 'frame', None)
+        if is_row:
+            if (begin != end or frame['open'] or not 1 <= frame['cells'] <= 63
+                    or len(props.flags) != frame['cells']
+                    or len(props.edges) != frame['cells'] + 1
+                    or any(a > b for a, b in zip(props.edges, props.edges[1:]))
                     or (depth == 1 and mark != 7) or (depth > 1 and is_cell)):
-                bad = True
-                continue
-            if depth == 1:
-                rows.append((frame[0], end + 1))
-            elif depth == 2:
-                # Single exact inner rows only, never inferred multi-row runs.
-                # Publication waits for the entire enclosing table to close.
-                if (include_inner and not inner_has_nested
-                        and not 0xdc00 <= struct.unpack_from('<H', text, frame[0] * 2)[0] <= 0xdfff):
-                    pending_inner.append((frame[0], end + 1))
-                inner_has_nested = False
-            frame[:] = [end + 1, 0, False]
+                frame['row_bad'] = True
+            # Adjacent rows with different source identities are separate
+            # tables even if their nesting depth and output grid agree.
+            previous = frame['props']
+            if previous is not None and hasattr(props, 'identity'):
+                from ._doc_conditions import row_boundary
+                if row_boundary(previous.identity, previous.bidi or previous.bidi90,
+                                frame['frame'], props, frame['first_frame']):
+                    if frame['bad']:
+                        invalid.append((frame['first'], frame['row_first']))
+                    frame['first'], frame['bad'] = frame['row_first'], False
+                    old = frame['table']
+                    n = len(old.cell_marks) - frame['cells']
+                    table = _SelectionTable(frame['row'], frame['row'],
+                                            old.cell_starts[n:], old.cell_marks[n:], set(), [])
+                    del old.cell_starts[n:]
+                    del old.cell_marks[n:]
+                    levels[depth - 1].append(table)
+                    frame['table'] = table
+            table = frame['table']
+            table.row_starts.add(frame['row'])
+            table.row_marks.append(end)
+            table.end = end + 1
+            frame['bad'] |= frame['row_bad']
+            frame.update(row=end+1, cell=end+1, cells=0, open=False, row_bad=False,
+                         row_first=len(starts), props=props, frame=frame['first_frame'], first_frame=None)
         elif is_cell:
             cells += 1
             if cells > limits.max_cells:
                 raise LimitExceededError('DOC comment selection cell limit exceeded')
-            frame[1] += 1
-            frame[2] = False
-            if frame[1] > 63:
-                bad = True
-        elif mark == 13:
-            frame[2] = True
+            frame['table'].cell_starts.append(frame['cell'])
+            frame['table'].cell_marks.append(end)
+            frame.update(cell=end+1, cells=frame['cells']+1, open=False)
+            frame['row_bad'] |= frame['cells'] > 63
         else:
-            bad = True
-    if len(stack) == 1 and stack[0][1:] == [0, False]:
-        stack.pop()
-    publish()
-    # Keep existing conservative field policy: no new proof in a story with
-    # field delimiters, even when a particular row does not contain one.
-    if fields:
-        return WholeRowSelections({}, {})
-    return WholeRowSelections(starts, ends, mixed, inner_rows)
+            frame['open'] = True
+    while stack:
+        close()
+    if fields is None and delimiters:
+        from ._doc_fields import field_selection_index
+        fields = field_selection_index(delimiters, b'', count, limits, record=charge)
+    # Difference counts handle overlapping invalid enclosing/inner scopes
+    # without walking their paragraphs repeatedly.
+    invalid_delta = [0] * (len(safe) + 1)
+    for begin, end in invalid:
+        invalid_delta[begin] += 1
+        invalid_delta[end] -= 1
+    unsafe = [0]
+    active = 0
+    for i, valid in enumerate(safe):
+        active += invalid_delta[i]
+        unsafe.append(unsafe[-1] + (not valid or active > 0))
+    return BookmarkSelections(starts, ends, unsafe,
+                              [([t.begin for t in level], level) for level in levels], view, fields)

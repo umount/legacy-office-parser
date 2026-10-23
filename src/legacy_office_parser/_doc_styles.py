@@ -124,9 +124,6 @@ class Styles:
                             if subop == 0x083C:
                                 if subarg[0] not in (0, 1, 128, 129):
                                     raise InvalidDocumentError('invalid DOC CFVanish toggle')
-                                # Relative toggles need a separately established
-                                # conditional-style base; don't guess it here.
-                                unsafe |= subarg[0] in (128, 129)
                                 values.append(subarg[0])
                         continue
                     if ((op >> 10) & 7 != 2 or op in _UPX_CHPX_FORBIDDEN
@@ -191,6 +188,48 @@ class Styles:
         result = conditions, bands, unsafe
         self.condition_cache[index] = result
         return result
+
+    def conditional_hidden(self, index, matches):
+        """Resolve CCnf toggles against the parent style at this cell position.
+
+        UpxChpx describes differences from istdBase; ToggleOperand 0x80/81
+        references that style, not preceding local Prls. Keep one immutable
+        parent value per style, including its applicable conditions. Resolve
+        local operands before merging conditions in 2.4.6.6 priority order.
+        Only twelve condition values are retained; work is linear in the
+        bounded style chain and its operations, independent of source text.
+        """
+        if index is None:
+            return False
+        if not 0 <= index < len(self.styles) or not self.styles[index] or self.styles[index][0] != 3:
+            index = 11
+        if index not in self.conditions:
+            return False
+        self.hidden(index, 3)  # Validate the graph before the iterative walk.
+        path = []
+        current = index
+        while current != 0xFFF:
+            self.doc.budget.record()
+            path.append(current)
+            current = self.styles[current][1]
+        effective = {}
+        unconditional = value = False
+        for current in reversed(path):
+            parent = value
+            base_unconditional = unconditional
+            for operand in self.styles[current][2]:
+                self.doc.budget.record()
+                unconditional = toggle(operand, base_unconditional)
+            local = self.conditions[current][0]
+            for condition in matches:
+                for operand in local.get(condition, ()):
+                    self.doc.budget.record()
+                    effective[condition] = toggle(operand, parent)
+            value = unconditional
+            for condition in matches:
+                if condition in effective:
+                    value = effective[condition]
+        return value
 
     def frame(self, index):
         """Resolve paragraph frame inheritance, bounded by existing style limits."""

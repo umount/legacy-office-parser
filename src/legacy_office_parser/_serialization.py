@@ -22,6 +22,10 @@ def _omit_defaults(result):
             result.pop('blocks', None)
         if not result.get('omitted'):
             result.pop('omitted', None)
+    if 'selection_role' in result:
+        for key in ('selection_role', 'active', 'different_first_page', 'different_even_odd'):
+            if result.get(key) is None:
+                result.pop(key, None)
     if 'reply_depth' in result and result['reply_depth'] is None:
         result.pop('reply_depth')
         if result.get('parent_ordinal') is None:

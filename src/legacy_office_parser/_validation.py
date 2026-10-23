@@ -287,6 +287,8 @@ def _validate_auxiliary_stories(doc: Document, limits: Limits) -> None:
     seen = {}
     body_ends = {}
     effective_headers = {}
+    section_settings = {}
+    facing_settings = set()
     for item in doc.auxiliary_stories:
         if not isinstance(item, AuxiliaryStory) or doc.format != 'doc':
             raise InvalidDocumentError('invalid auxiliary story metadata')
@@ -344,6 +346,24 @@ def _validate_auxiliary_stories(doc: Document, limits: Limits) -> None:
         elif (empty or item.kind != 'textbox' or item.variant is not None or
               item.section is not None or item.inherited_from is not None):
             raise InvalidDocumentError('invalid textbox identity')
+        settings = (item.selection_role, item.active,
+                    item.different_first_page, item.different_even_odd)
+        if any(value is not None for value in settings):
+            if item.kind not in ('header', 'footer'):
+                raise InvalidDocumentError('header settings on a non-header story')
+            if any(value is not None and type(value) is not bool for value in settings[1:]):
+                raise InvalidDocumentError('invalid header selection flags')
+            facing, title = item.different_even_odd, item.different_first_page
+            role = ('default' if facing is False else 'odd' if facing is True else None)
+            expected_role = role if item.variant == 'odd' else item.variant
+            expected_active = (True if item.variant == 'odd' else
+                               facing if item.variant == 'even' else title)
+            if item.selection_role != expected_role or item.active is not expected_active:
+                raise InvalidDocumentError('inconsistent header applicability')
+            earlier_settings = section_settings.setdefault(item.section, (title, facing))
+            facing_settings.add(facing)
+            if earlier_settings != (title, facing) or len(facing_settings) > 1:
+                raise InvalidDocumentError('inconsistent header section settings')
         if item.inherited_from is not None:
             target = seen.get((item.source, item.inherited_from)) if type(item.inherited_from) is int else None
             if (target is None or item.kind not in ('header', 'footer') or

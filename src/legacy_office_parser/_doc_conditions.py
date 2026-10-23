@@ -1,6 +1,5 @@
 """Narrow, bounded conditional visibility on proven structural table partitions."""
 from .diagnostics import diagnostic_warning
-from ._doc_styles import toggle
 
 
 def row_boundary(identity, direction, first_frame, props, frame, complete=True):
@@ -34,64 +33,76 @@ def matched(flags, row, column, rows, columns, header, ordinal, bands):
     return result
 
 
-def row_only_context(props, cells, conditions, vertical=False):
-    """Prove row ownership without assigning logical columns to physical cells.
+class _CellEntries(list):
+    """Direct paragraphs only; nested tables are independently styled content."""
+    __slots__ = ('nested',)
 
-    MS-DOC 2.4.3 permits unequal row grids; 2.4.6.6 makes these four
-    conditions depend only on rows. TCGRF horizontal continuations contribute
-    no rendered contents. Accept only empty continuations with an explicit
-    same-row origin. Vertical ownership requires the separate partition proof.
-    """
-    if (len(props.flags) != len(cells)
-            or any(condition not in (1, 2, 64, 128) for condition in conditions)):
+    def __init__(self):
+        super().__init__()
+        self.nested = False
+
+
+def empty_cell(cell):
+    return (not cell.nested and len(cell) == 1
+            and cell[0][0] == cell[0][1])
+
+
+def cell_ownership(props, cells, vertical=False):
+    """Validate merge ownership independently of row widths and cell counts."""
+    if len(props.flags) != len(cells):
         return False
     merged = False
-    for c, (flag, cell) in enumerate(zip(props.flags, cells)):
+    for flag, cell in zip(props.flags, cells):
         if flag & 0x60 and not vertical:
             return False
         horizontal = flag & 3
         if horizontal == 1:
-            if not merged or len(cell) != 1 or cell[0][0] != cell[0][1]:
+            if not merged or not empty_cell(cell):
                 return False
         else:
             merged = horizontal in (2, 3)
-            if merged and (c + 1 == len(cells) or props.flags[c + 1] & 3 != 1):
-                return False
     return True
 
 
 def vertical_row_context(rows, budget):
-    """Prove only explicit same-column vertical groups with empty continuations.
+    """Prove vertical ownership by consecutive equal rendered edge intervals.
 
-    MS-DOC 2.9.342 assigns content to the restart, not continuation cells.
-    Equal physical grids and no horizontal merges avoid inferred ownership.
-    Source text in each origin keeps its own row's conditional context.
+    TCGRF / VerticalMergeFlag assign formatting and content to the origin.
+    Unrelated cells may change grids, and horizontal groups may represent the
+    same interval using different physical cells. Like the output builder,
+    ignore vertical flags on horizontally covered cells. Require empty source
+    continuations because the extractor retains unexpected covered text.
     """
     if not any(flag & 0x60 for _, props, _ in rows for flag in props.flags):
         return False
-    grid = rows[0][1].edges
-    for r, (_, props, cells) in enumerate(rows):
-        if props.edges != grid or len(props.flags) != len(cells):
+    previous = set()
+    for _, props, cells in rows:
+        if (len(props.flags) != len(cells) or len(props.edges) != len(cells) + 1
+                or any(a >= b for a, b in zip(props.edges, props.edges[1:]))
+                or not cell_ownership(props, cells, vertical=True)):
             return False
-        for c, (flag, cell) in enumerate(zip(props.flags, cells)):
-            budget.record()
-            if flag & 3:
-                return False
+        current = set()
+        c = 0
+        while c < len(cells):
+            flag = props.flags[c]
+            stop = c + 1
+            if flag & 3 in (2, 3):
+                while stop < len(cells) and props.flags[stop] & 3 == 1:
+                    stop += 1
+            budget.record(stop - c)
+            key = props.edges[c], props.edges[stop]
             vertical = flag & 0x60
             if vertical == 0x40:
-                return False  # Reserved, not a restart.
+                return False
             if vertical == 0x60:
-                if r + 1 == len(rows):
-                    return False
-                following = rows[r + 1][1].flags
-                if c >= len(following) or following[c] & 0x60 != 0x20:
-                    return False
+                current.add(key)
             elif vertical == 0x20:
-                if not r or len(cell) != 1 or cell[0][0] != cell[0][1]:
+                cell = cells[c]
+                if key not in previous or not empty_cell(cell):
                     return False
-                previous = rows[r - 1][1].flags
-                if c >= len(previous) or previous[c] & 0x60 not in (0x20, 0x60):
-                    return False
+                current.add(key)
+            c = stop
+        previous = current
     return True
 
 
@@ -111,20 +122,15 @@ def apply_conditions(doc, paragraphs):
         wanted = any(doc.styles.table_conditions(p.applied_table_style)[0] for _, p, _ in rows)
         if not wanted:
             return
-        safe = not (level['unsafe'] or level['row_unsafe'] or level['pending'] or bookmark_unknown)
-        grid = rows[0][1].edges
-        rectangular = True
-        row_only = True
+        safe = not (level['unsafe'] or level['nested'] or level['pending'] or bookmark_unknown)
         vertical = vertical_row_context(rows, doc.budget)
         for entries, p, cells in rows:
             conditions, bands, unsafe = doc.styles.table_conditions(p.applied_table_style)
             safe &= (not unsafe and p.condition_known and bool(cells)
                      and len(p.edges) == len(cells) + 1
-                     and all(a < b for a, b in zip(p.edges, p.edges[1:]))
+                     and all(a <= b for a, b in zip(p.edges, p.edges[1:]))
                      and len(p.flags) == len(cells))
-            rectangular &= p.edges == grid and not any(f & 0x63 for f in p.flags)
-            row_only &= row_only_context(p, cells, conditions, vertical)
-        safe &= rectangular or row_only
+            safe &= cell_ownership(p, cells, vertical)
         # A style on an adjacent row can alter the boundary even if it has no CCnf.
         if not safe:
             doc.warn(diagnostic_warning('doc_conditional_table_visibility_has_no_proven_stable_rectangular_context', 'Conditional table visibility has no proven stable rectangular context; unconditional visibility is retained.'))
@@ -146,20 +152,17 @@ def apply_conditions(doc, paragraphs):
                 ordinal -= excluded
             excluded += r == 0 or headers[r]
             for c, cell in enumerate(cells):
-                # Never infer column positions from a ragged or merged grid.
-                look = p.table_look if rectangular else (p.table_look & ~0x180) | 0x400
-                matches = tuple(matched(look, r, c, len(rows), len(cells), headers[r], ordinal, bands))
+                # TDefTable defines columns per row (2.6.3), not on the
+                # normalized output grid. TCGRF extends the origin's formatting
+                # over its horizontal continuations; their empty source marks
+                # do not move the origin to the last column of its span.
+                matches = tuple(matched(p.table_look, r, c, len(rows), len(cells),
+                                        headers[r], ordinal, bands))
                 key = p.applied_table_style, matches, cell[0][5]
                 if key not in visibility_cache:
                     doc.budget.record()
-                    value = cell[0][5]
-                    for condition in matches:
-                        for operations in conditions.get(condition, ()):
-                            parent = value
-                            for operand in operations:
-                                doc.budget.record()
-                                value = toggle(operand, parent)
-                    visibility_cache[key] = value
+                    visibility_cache[key] = doc.styles.conditional_hidden(
+                        p.applied_table_style, matches)
                 value = visibility_cache[key]
                 for item in cell:
                     item[5] = value
@@ -176,10 +179,11 @@ def apply_conditions(doc, paragraphs):
         while len(levels) < depth:
             doc.budget.record()
             if levels:
-                # Nesting belongs to the pending row, whose table boundary
-                # is not known until its TTP. Do not taint earlier partitions.
-                levels[-1]['row_unsafe'] = True
-            levels.append({'rows': [], 'pending': [], 'unsafe': False, 'row_unsafe': False})
+                # Record where the child occurs among direct parent paragraphs.
+                # Do not copy its entries: its innermost style owns them. This
+                # also marks implicit ancestors when the source skips depths.
+                levels[-1]['nested'].add(len(levels[-1]['pending']))
+            levels.append({'rows': [], 'pending': [], 'unsafe': False, 'nested': set()})
         if not depth:
             continue
         level = levels[-1]
@@ -189,14 +193,17 @@ def apply_conditions(doc, paragraphs):
             continue
         entries = level['pending']
         level['pending'] = []
-        row_unsafe = level['row_unsafe']
-        level['row_unsafe'] = False
-        cells, pending = [], []
-        for entry in entries[:-1]:
+        nested = level['nested']
+        level['nested'] = set()
+        cells, pending = [], _CellEntries()
+        for index, entry in enumerate(entries[:-1]):
+            pending.nested |= index in nested
             pending.append(entry)
             if (entry[2] == 7 if depth == 1 else entry[4].inner_cell):
                 cells.append(pending)
-                pending = []
+                pending = _CellEntries()
+        # A nested table immediately before TTP lacks a parent cell mark.
+        row_unsafe = len(entries) - 1 in nested
         frame = entries[0][4].frame if cells else None
         rows = level['rows']
         if rows:

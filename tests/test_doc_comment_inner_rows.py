@@ -1,10 +1,10 @@
-"""Exact single depth-two row bookmarks; original source/PLC expectations."""
+"""Nested bookmark ranges; literal source/PLC expectations."""
 import struct
 
 import pytest
 
 from legacy_office_parser import Limits, LimitExceededError, normalize_text
-from legacy_office_parser._doc_comments import whole_row_comment_selections
+from legacy_office_parser._doc_comments import comment_selection_index
 from legacy_office_parser.doc import _Budget
 from test_doc import parse
 from test_doc_comment_selections import ranged, selection
@@ -25,7 +25,7 @@ def parts():
 
 @pytest.mark.parametrize('begin,end,want', [
     (2, 8, (2, 8)), (3, 8, (None, None)), (2, 7, (None, None)),
-    (2, 6, (None, None)), (4, 8, (None, None)), (0, 8, (None, None)),
+    (2, 6, (None, None)), (4, 8, (None, None)), (0, 8, (0, 8)),
     (2, 10, (None, None)), (0, 11, (0, 11)),
 ])
 def test_literal_transport_endpoints_and_unchanged_ownership(monkeypatch, begin, end, want):
@@ -54,14 +54,14 @@ def index(specs=None, **kwargs):
 
 
 def prove(text, ps, **kwargs):
-    return whole_row_comment_selections(text, ps, kwargs.pop('sections', set()),
+    return comment_selection_index(text, ps, kwargs.pop('sections', set()),
         kwargs.pop('known', lambda cp: True), kwargs.pop('limits', Limits()),
-        include_inner=True, **kwargs)
+        **kwargs)
 
 
-def test_default_helper_does_not_expand_its_scope():
+def test_all_callers_use_the_same_nested_bookmark_rules():
     text, ps = index()
-    assert not whole_row_comment_selections(text, ps, set(), lambda cp: True, Limits()).contains(2, 5)
+    assert comment_selection_index(text, ps, set(), lambda cp: True, Limits()).contains(2, 5)
     assert prove(text, ps).contains(2, 5)
 
 
@@ -101,15 +101,15 @@ def test_unproven_inner_or_enclosing_structure_refuses(fault):
     elif fault == 'later-open-row':
         text, ps = index([('P', 1, 'para'), ('A', 2, 'cell'), ('', 2, 'row'),
                           ('Q', 1, 'cell'), ('', 1, 'row'), ('Broken', 1, 'para')])
-    assert not prove(text, ps, **kwargs).contains(2, 5)
+    assert prove(text, ps, **kwargs).contains(2, 5) == (fault == 'field-outside')
 
 
-def test_two_inner_rows_remain_individual_not_a_new_row_run():
+def test_multiple_inner_rows_share_a_source_table():
     text, ps = index([('P', 1, 'para'), ('A', 2, 'cell'), ('', 2, 'row'),
                       ('B', 2, 'cell'), ('', 2, 'row'), ('Q', 1, 'cell'), ('', 1, 'row')])
     got = prove(text, ps)
     assert got.contains(2, 5) and got.contains(5, 8)
-    assert not got.contains(2, 8)
+    assert got.contains(2, 8)
 
 
 def test_equal_depth_in_different_outer_cells_is_not_shared_ownership():
@@ -122,12 +122,12 @@ def test_equal_depth_in_different_outer_cells_is_not_shared_ownership():
     assert not got.contains(2, 12)
 
 
-def test_deeper_row_and_depth_two_row_containing_it_remain_unsupported():
+def test_deeper_rows_and_enclosing_rows_are_supported():
     text, ps = index([('P', 1, 'para'), ('M', 2, 'para'), ('D', 3, 'cell'), ('', 3, 'row'),
                       ('N', 2, 'cell'), ('', 2, 'row'), ('Q', 1, 'cell'), ('', 1, 'row')])
     got = prove(text, ps)
-    assert not got.contains(4, 7)
-    assert not got.contains(2, 10)
+    assert got.contains(4, 7)
+    assert got.contains(2, 10)
     assert got.contains(0, 13)  # Existing fully closed outer row proof.
 
 
@@ -136,7 +136,7 @@ def test_deeper_previous_row_does_not_poison_plain_following_inner_row():
                       ('N', 2, 'cell'), ('', 2, 'row'), ('A', 2, 'cell'), ('', 2, 'row'),
                       ('Q', 1, 'cell'), ('', 1, 'row')])
     got = prove(text, ps)
-    assert not got.contains(2, 10)
+    assert got.contains(2, 10)
     assert got.contains(10, 13)
 
 
@@ -161,8 +161,8 @@ def test_existing_resource_guards(limit):
 def test_precharge_aggregate_and_repeated_queries():
     text, ps = index()
     charges = []
-    got = prove(text, ps, limits=Limits(max_records=46), record=charges.append)
-    assert charges == [46]  # (6+3)*5 + 1
+    got = prove(text, ps, limits=Limits(max_records=61), record=charges.append)
+    assert charges == [61]  # 12*5 + 1
     ps.clear()
     for _ in range(1000):
         assert got.contains(2, 5)
@@ -172,7 +172,7 @@ def test_precharge_aggregate_and_repeated_queries():
         def __iter__(self):
             pytest.fail('must fail before traversal')
     with pytest.raises(LimitExceededError):
-        prove(text, Unreadable(), limits=Limits(max_records=45))
+        prove(text, Unreadable(), limits=Limits(max_records=60))
     budget = _Budget(Limits(max_records=50))
     budget.record(5)
     with pytest.raises(LimitExceededError):
@@ -182,7 +182,7 @@ def test_precharge_aggregate_and_repeated_queries():
 def test_row_after_a_section_is_not_joined_to_earlier_content():
     text, ps = index([('Before', 0, 'para'), ('P', 1, 'para'), ('A', 2, 'cell'),
                       ('', 2, 'row'), ('Q', 1, 'cell'), ('', 1, 'row')])
-    got = prove(text, ps, sections={6}, include_ordinary=True)
+    got = prove(text, ps, sections={6})
     assert got.contains(9, 12)
     assert not got.contains(0, 12)
 
@@ -193,19 +193,36 @@ def test_invalid_later_table_does_not_erase_previously_closed_inner_row():
                       ('R', 1, 'para'), ('B', 2, 'cell'), ('', 2, 'row'), ('Broken', 1, 'para')])
     got = prove(text, ps)
     assert got.contains(2, 5)
-    assert got.inner_rows == {(2, 5)}
+    assert not got.contains(20, 23)
 
 
-def test_transport_builds_inner_index_once_and_only_when_present(monkeypatch):
+def test_transport_builds_one_source_index_for_any_table_depth(monkeypatch):
     import legacy_office_parser._doc_comments as comments
-    original = comments.whole_row_comment_selections
+    original = comments.comment_selection_index
     calls = []
     def capture(*args, **kwargs):
-        calls.append(kwargs['include_inner'])
+        calls.append(1)
         return original(*args, **kwargs)
-    monkeypatch.setattr(comments, 'whole_row_comment_selections', capture)
+    monkeypatch.setattr(comments, 'comment_selection_index', capture)
     d = parse(monkeypatch, transport(parts(), 2, 8))
-    assert selection(d) == (2, 8) and calls == [True]
+    assert selection(d) == (2, 8) and calls == [1]
     calls.clear()
     d = parse(monkeypatch, transport([cell(1, 'A\x05'), row(1)], 0, 4))
-    assert selection(d) == (0, 4) and calls == [False]
+    assert selection(d) == (0, 4) and calls == [1]
+
+
+@pytest.mark.parametrize('begin,end,want', [
+    (4, 11, (4, 11)),  # Two complete depth-three rows.
+    (2, 14, (2, 14)),  # Depth-two row includes both deeper rows.
+    (0, 14, (0, 14)),  # Outer cell text followed by the complete nested table.
+    (5, 11, (None, None)),  # Cannot begin after the selected cell's start.
+    (4, 10, (None, None)),  # Exclusive limit cannot land on a row mark.
+])
+def test_deep_bookmark_ranges_through_public_parser(monkeypatch, begin, end, want):
+    body = [paragraph(1, 'P'), paragraph(2, 'M'), cell(3, 'D\x05'), row(3),
+            cell(3, 'E'), row(3), cell(2, 'N'), row(2), cell(1, 'Q'), row(1)]
+    doc = parse(monkeypatch, transport(body, begin, end))
+    assert selection(doc) == want
+    assert doc.comments[0].source_cp == 5
+    assert doc.comment_text == 'Body'
+    assert doc.to_dict()['comments'][0]['selection_end'] == want[1]

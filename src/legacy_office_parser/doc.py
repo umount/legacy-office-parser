@@ -890,12 +890,26 @@ class _Doc:
             if end_props.in_table or end_props.depth or end_props.inner:
                 raise InvalidDocumentError('DOC comment body final paragraph is inside a table')
 
+    def _comment_field_selections(self, delimiters, paragraphs, starts):
+        from ._doc_fields import field_selection_index
+
+        def special(cp):
+            paragraph = paragraphs[bisect_right(starts, cp) - 1]
+            props = self._character_props(cp, paragraph[4].style, paragraph[5])
+            return self.character_coverage_known and props.get('special') is True
+
+        try:
+            plc = self.table_part(16)  # PlcfldMom: source main-story fields.
+        except InvalidDocumentError:
+            plc = b''  # Unreadable ownership cannot prove delimiter selections.
+        return field_selection_index(delimiters, plc, self.counts[0], self.limits,
+                                     record=self.budget.record, special=special)
+
     def _comment_selection_ranges(self, paragraphs):
         # Prefix counts and source regions make overlapping range validation
         # O(log paragraphs) each, without walking each selected paragraph again.
         # Verified main-story section marks can join ordinary paragraphs.
-        # Table regions still break there; neither layout nor projected text
-        # establishes source continuity.
+        # The separate table index proves bookmarks crossing cell/row boundaries.
         def ordinary_ending(mark, mark_cp, props):
             if props.row_end or props.inner_cell or props.inner_ttp:
                 return False
@@ -912,14 +926,12 @@ class _Doc:
         regions = []
         completed_cells = set()
         region, previous_depth, boundary = 0, None, False
-        fields = False
-        whole_rows = None
+        delimiters = []
+        table_index = None
         has_outer_row = False
-        has_inner_row = False
         for begin, end, mark, mark_cp, props, _, known in paragraphs:
             depth = props.depth or (1 if props.in_table else 0)
             has_outer_row |= depth == 1 and mark == 7 and props.row_end
-            has_inner_row |= depth == 2 and mark == 13 and props.inner_ttp
             if boundary or depth != previous_depth:
                 region += 1
             regions.append(region)
@@ -927,14 +939,17 @@ class _Doc:
             ordinary = covered
             for cp in range(begin, end):
                 unit = self.text[cp * 2] | self.text[cp * 2 + 1] << 8
-                fields |= unit in (19, 20, 21)
-                ordinary &= unit >= 32 or unit in (5, 9)
+                if unit in (19, 20, 21):
+                    self.budget.record(2)
+                    delimiters.append((cp, unit))
+                ordinary &= unit >= 32 or unit in (5, 9, 19, 20, 21)
             unsafe.append(unsafe[-1] + (not ordinary))
             if covered and ((depth == 1 and mark == 7 and not props.row_end)
                             or (depth > 1 and mark == 13 and props.inner_cell and not props.inner_ttp)):
                 completed_cells.add(region)
             boundary = not ordinary_ending(mark, mark_cp, props)
             previous_depth = depth
+        fields = self._comment_field_selections(delimiters, paragraphs, starts) if delimiters else None
         for source in self.comment_ranges:
             begin, end = source.selection_start, source.selection_end
             if begin is None:
@@ -944,7 +959,8 @@ class _Doc:
                 continue
             i = bisect_right(starts, begin) - 1
             j = bisect_right(starts, end - 1) - 1
-            proven = not fields and i >= 0 and j >= i
+            field_safe = fields is None or fields.contains(begin, end)
+            proven = field_safe and i >= 0 and j >= i
             if proven:
                 _, last_end, mark, mark_cp, props, _, _ = paragraphs[j]
                 # Include CR or a proven non-table section mark, without
@@ -956,27 +972,16 @@ class _Doc:
                           and end <= last_end + include_mark
                           and not 0xdc00 <= _u16(self.text, begin * 2) <= 0xdfff
                           and not 0xd800 <= _u16(self.text, (end - 1) * 2) <= 0xdbff)
-            # Only try the supplementary proof with an enclosing outer row
-            # and an ordinary endpoint or an exact outer/depth-two TTP limit.
-            mixed_candidate = False
-            if has_outer_row and 0 <= i <= j < len(paragraphs):
-                first_props, last_props = paragraphs[i][4], paragraphs[j][4]
-                mixed_candidate = (
-                    not (first_props.depth or first_props.in_table)
-                    or not (last_props.depth or last_props.in_table)
-                    or (paragraphs[j][2] == 7 and last_props.row_end
-                        and (last_props.depth or 1) == 1 and end == paragraphs[j][3] + 1)
-                    or (paragraphs[j][2] == 13 and last_props.inner_ttp
-                        and last_props.depth == 2 and end == paragraphs[j][3] + 1))
-            if not proven and not fields and mixed_candidate:
-                if whole_rows is None:
-                    from ._doc_comments import whole_row_comment_selections
+            # Check all fCol=0 bookmark cases against the source table index.
+            if not proven and field_safe and has_outer_row:
+                if table_index is None:
+                    from ._doc_comments import comment_selection_index
 
-                    whole_rows = whole_row_comment_selections(
+                    table_index = comment_selection_index(
                         memoryview(self.text)[:self.counts[0] * 2], paragraphs, self.section_ends,
                         self._comment_paragraph_known, self.limits,
-                        record=self.budget.record, include_ordinary=True, include_inner=has_inner_row)
-                proven = whole_rows.contains(begin, end)
+                        record=self.budget.record, fields=fields)
+                proven = table_index.contains(begin, end)
             if proven:
                 self.comment_selections[source.source_cp] = (begin, end)
             else:
@@ -1081,6 +1086,12 @@ class _Doc:
                                       record=self.budget.record, warn=self.warn)
         if ranges is None:
             return False
+        from ._doc_headers import _header_applicability, _header_settings
+
+        facing, titles = _header_settings(
+            self.word, self.table_part(6), self.section_count,
+            lambda: self.table_part(31), self._sprms, self.warn,
+        ) if ranges else (None, [])
         blocks = stories.setdefault('headers_footers', [])
         effective = {}
 
@@ -1108,7 +1119,10 @@ class _Doc:
                 content_end = slot_end
             append_span(item.start, content_end)
             inherited = None
+            role = active = title = even_odd = None
             if item.kind in ('header', 'footer'):
+                title, even_odd = titles[item.section - 1], facing
+                role, active = _header_applicability(item.variant, facing, title)
                 key = item.kind, item.variant
                 if item.start == item.end:
                     inherited = effective.get(key)
@@ -1120,6 +1134,8 @@ class _Doc:
                 block_start=block_start, block_end=len(blocks),
                 source_start=item.start, source_end=item.end, kind=item.kind,
                 variant=item.variant, section=item.section, inherited_from=inherited,
+                selection_role=role, active=active,
+                different_first_page=title, different_even_odd=even_odd,
             ))
             append_span(content_end, slot_end)
             cursor = slot_end
