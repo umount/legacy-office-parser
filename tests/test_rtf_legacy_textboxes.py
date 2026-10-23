@@ -88,7 +88,7 @@ def test_modern_fallback_stays_skipped_in_either_order(order):
     fallback = r'{\shprslt' + STANDALONE + '}'
     parts = [primary, fallback] if order else [fallback, primary]
     assert parse(r'{\shp' + ''.join(parts) + '}').textboxes == 'Primary'
-    assert parse(r'{\shp' + fallback + '}').textboxes == ''
+    assert parse(r'{\shp' + fallback + '}').textboxes == 'Legacy\nSecond'
 
 
 @pytest.mark.parametrize('container', ['shp', 'shpinst', 'shpgrp'])

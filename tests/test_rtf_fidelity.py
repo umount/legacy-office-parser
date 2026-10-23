@@ -278,7 +278,7 @@ def test_shape_fallback_before_or_after_primary_is_always_suppressed():
     primary = r'{\*\shpinst{\shptxt Once}}'
     for body in [fallback + primary, primary + fallback]:
         assert parse(r'{\shp' + body + '}').text == 'Once'
-    # A fallback-only drawing is not a supported text story.
+    # A result without legacy do/dptxbxtext is not a textbox story.
     assert parse(r'A{\shp' + fallback + '}B').text == 'AB'
 
 

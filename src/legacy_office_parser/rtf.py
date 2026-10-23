@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from .diagnostics import diagnostic_warning
 from .errors import InvalidDocumentError, LimitExceededError
 from .limits import Limits
+from ._rtf_shapes import shape_fallbacks
 from .models import Cell, Document, Note, NoteBodyRange, Paragraph, Table
 
 # RTF destination names and charset numbers are format facts, not executable code
@@ -32,7 +33,7 @@ nonesttables
 _SHAPE_CONTAINERS = {'shp', 'shpinst', 'shpgrp'}
 _HEADERS = set('header headerl headerr headerf footer footerl footerr footerf'.split())
 # Visibility filters character content, not table coordinates or boundaries.
-_STRUCTURAL = set('par sect page intbl itap trowd cellx trleft cell row '
+_STRUCTURAL = set('par sect page column intbl itap trowd cellx trleft cell row '
                   'clmgf clmrg clvmgf clvmrg nestcell nestrow'.split())
 _CHARS = dict(zip(
     'tab line emdash endash bullet lquote rquote ldblquote rdblquote emspace enspace '
@@ -47,6 +48,14 @@ _CHARSETS = {
     254: 'cp437', 255: 'cp850',
 }
 
+
+# Microsoft codepage IDs whose Python codec names are not cp<id>.
+_CODEPAGE_NAMES = {65001: 'utf-8', 10000: 'mac_roman', 10006: 'mac_greek',
+    10007: 'mac_cyrillic', 10010: 'mac_romanian', 10029: 'mac_latin2',
+    10079: 'mac_iceland', 10081: 'mac_turkish', 10082: 'mac_croatian',
+    20127: 'ascii', 20866: 'koi8_r', 21866: 'koi8_u',
+    **{28590 + n: f'iso8859_{n}' for n in range(1, 10)},
+    28603: 'iso8859_13', 28605: 'iso8859_15'}
 
 def _letter(b: int) -> bool:
     return 65 <= b <= 90 or 97 <= b <= 122
@@ -436,6 +445,7 @@ class _State:
     font_table: bool = False
     shape_container: bool = False
     legacy_container: bool = False
+    shape_fallback: bool = False
     # Ancestry survives entry into visible textbox text; suppression does not.
     shape_ancestor: bool = False
     legacy_ancestor: bool = False
@@ -767,6 +777,8 @@ class _Parser:
         self.stylesheet: _Stylesheet | None = None
         self.style_outlines: dict[int, int | None] = {}
         self.style_visibility = {}
+        self.selected_fallbacks: set[int] = set()
+        self.token_position = -1
 
     def heading_level(self):
         if any(self.visibility()):
@@ -840,7 +852,7 @@ class _Parser:
     def codec(self, number: int | None) -> str:
         if number is None or number <= 0:
             raise InvalidDocumentError('Invalid RTF code page')
-        name = 'utf-8' if number == 65001 else f'cp{number}'
+        name = _CODEPAGE_NAMES.get(number, f'cp{number}')
         try:
             codecs.lookup(name)
         except LookupError:
@@ -909,13 +921,17 @@ class _Parser:
         drawing = s.shape_ancestor or s.legacy_ancestor
         if (drawing and word in _HEADERS | {'footnote', 'fonttbl'}
                 or (s.shape_container or s.legacy_container) and word == 'nesttableprops'
-                or s.shape_ancestor and word == 'do'
+                or s.shape_ancestor and word == 'do' and not s.shape_fallback
                 or s.legacy_ancestor and word in _SHAPE_CONTAINERS | {'shptxt'}):
             s.skip = True
             return
         if word == 'stylesheet' and not (drawing or s.font_table or any(self.visibility())):
             self.stylesheet = _Stylesheet(len(self.stack), self.limits, s.uc)
             s.skip = True
+        elif word == 'shprslt' and self.token_position in self.selected_fallbacks:
+            s.shape_fallback = True
+            s.shape_container = True
+            s.legacy_ancestor = True
         elif word in _SKIP:
             s.skip = True
             if word in {'pict', 'object', 'mmath', 'moMath', 'moMathPara'}:
@@ -931,8 +947,8 @@ class _Parser:
         elif s.font_table:
             return
         elif word == 'do':
-            # Standalone legacy drawings only; modern alternatives are not a
-            # proven fallback source. Hard-skipped ancestors returned above.
+            # Standalone drawings or the structurally selected legacy result.
+            # Skipped ancestors and unselected alternatives remain suppressed.
             self.high_end()
             s.legacy_container = True
             s.legacy_ancestor = True
@@ -1066,7 +1082,7 @@ class _Parser:
         elif self.visible() or word in _STRUCTURAL:
             if word in _CHARS:
                 self.emit(_CHARS[word])
-            elif word in {'par', 'sect', 'page'}:
+            elif word in {'par', 'sect', 'page', 'column'}:
                 self.high_end()
                 self.sink.paragraph(force=self.visible())
             elif word == 'intbl' and number != 0:
@@ -1217,9 +1233,13 @@ class _Parser:
             setattr(self.document, story, text)
 
     def parse(self, data: bytes, start: int) -> Document:
+        self.selected_fallbacks = shape_fallbacks(
+            _tokens(data, start, self.limits), self.limits.max_depth,
+            (_SKIP - {'shprslt'}) | {'fonttbl', 'do'}, _HEADERS | {'footnote'})
         closed = False
         terminal_nul = False
-        for kind, value, number in _tokens(data, start, self.limits):
+        for position, (kind, value, number) in enumerate(_tokens(data, start, self.limits)):
+            self.token_position = position
             if closed:
                 if kind == 'bytes' and all(b in b' \t\r\n' for b in value):
                     continue

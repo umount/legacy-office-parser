@@ -1,4 +1,4 @@
-"""Authored fallback boundary probes; omission is not claimed as recovery support."""
+"""Authored shape alternatives: presence selects one representation per owner."""
 import hashlib
 import json
 import os
@@ -40,7 +40,7 @@ def fallback(content=b'Fallback'):
 
 
 @pytest.mark.parametrize('name', BOXES)
-def test_recorded_shape_controls_and_unresolved_fallback_boundary(name):
+def test_recorded_shape_controls_and_legacy_only_recovery(name):
     source = FIXTURES / (name + '.rtf')
     observations = json.loads((FIXTURES/'lo-observations.json').read_text())
     recorded = observations['files'][source.name]
@@ -48,9 +48,10 @@ def test_recorded_shape_controls_and_unresolved_fallback_boundary(name):
     assert recorded['lo_textbox_paragraphs'] == BOXES[name]
     document = parse_rtf(source)
     assert document.blocks == [Paragraph('Before'), Paragraph('After')]
-    assert document.textboxes == '\n'.join(BOXES[name])
-    # These assertions pin the current conservative boundary. They do not
-    # certify that fallback-only content is universally empty or irrelevant.
+    expected = ['Fallback only'] if name == 'no-instructions' else BOXES[name]
+    assert document.textboxes == '\n'.join(expected)
+    # Calc ignores the legacy-only shape; its historical observation is kept
+    # separate from the source-owned fallback text recovered by this reader.
     assert document.warnings
 
 
@@ -80,11 +81,12 @@ def test_fallback_controls_cannot_modify_tables_stories_or_fonts():
                    + br'}B\cell\row{\header H{\shp ' + fallback(decoy) + br'}T}')
     assert result.blocks == [Table([[Cell('AB')]])]
     assert result.headers_footers == 'HT'
-    assert result.textboxes == result.footnotes == result.endnotes == ''
+    assert result.textboxes == 'X\nX'
+    assert result.footnotes == result.endnotes == ''
 
 
 def test_fallback_scratch_is_bounded_and_binary_payload_is_opaque():
-    assert parse(b'A{\\shp ' + fallback(b'x' * 32000) + b'}B', max_text_chars=2).text == 'AB'
+    assert parse(b'A{\\shp ' + fallback(b'x' * 32000) + br'{\*\shpinst}}B', max_text_chars=2).text == 'AB'
     payload = br'{\shptxt Escape}\header injected'
     result = parse(b'A{\\shp ' + fallback(b'\\bin' + str(len(payload)).encode() + b' ' + payload) + b'}B')
     assert result.text == 'AB' and not result.textboxes
@@ -124,3 +126,53 @@ def test_live_independent_conversion(name, tmp_path):
                 for p in s.findall(TEXT+'p')] == ['Original WordArt']
     else:
         assert [''.join(p.itertext()) for p in tree.findall('.//'+TEXT+'p')] == ['AB', 'CD']
+
+
+def test_selected_legacy_result_preserves_tables_unicode_and_visibility():
+    content = (br'\ansicpg1251 \'cf\u945?{\v Hidden}{\deleted Removed}\par'
+               br'\trowd\cellx100\cellx200\intbl Left\cell Right\cell\row')
+    result = parse(br'A{\shp ' + fallback(content) + b'}B')
+    assert result.blocks == [Paragraph('AB')]
+    assert result.textboxes == 'Пα\nLeft\tRight'
+    assert result.story_blocks['textboxes'] == [Paragraph('Пα'), Table([[Cell('Left'), Cell('Right')]])]
+    with pytest.raises(LimitExceededError):
+        parse(br'{\shp ' + fallback(b'x' * 100) + b'}', max_text_chars=10)
+
+
+@pytest.mark.parametrize('native', [
+    br'{\*\shpinst}', br'{\*\shpinst{\shptxt}}',
+    br'{\*\shpinst{\shptxt\v Hidden}}',
+    br'{\*\shpinst{\shptxt\deleted Removed}}',
+    br'{\*\shpinst{\sp{\sn shapeType}{\sv 202}}}',
+])
+def test_native_presence_wins_even_empty_hidden_or_without_own_text(native):
+    for parts in (native + fallback(), fallback() + native):
+        assert not parse(br'{\shp ' + parts + b'}').textboxes
+
+
+def test_group_ownership_and_repeated_independent_results():
+    one = br'{\shp ' + fallback(b'Same') + b'}'
+    assert parse(one + one).textboxes == 'Same\nSame'
+    assert parse(br'{\shpgrp ' + fallback(b'Group') + b'}').textboxes == 'Group'
+    assert parse(br'{\shpgrp ' + fallback(b'Group') + one + b'}').textboxes == 'Same'
+    # Duplicate result branches are ambiguous, not two independent shapes.
+    assert not parse(br'{\shp ' + fallback(b'A') + fallback(b'B') + b'}').textboxes
+
+
+def test_opaque_groups_cannot_select_or_suppress_shape_representations():
+    source = br'{\shp{\*\unknown{\shpinst}}' + fallback(b'Kept') + b'}'
+    assert parse(source).textboxes == 'Kept'
+    source = br'{\shpgrp{\info{\shp}}' + fallback(b'Kept') + b'}'
+    assert parse(source).textboxes == 'Kept'
+    assert not parse(br'{\shp{\shprslt{\shptxt Wrong}}}').textboxes
+    assert not parse(br'{\shp{\shprslt{\shp{\shptxt Wrong}}}}').textboxes
+
+
+def test_starred_stories_and_skipped_metadata_use_main_reader_ownership():
+    for story in (br'\*\header', br'\*\footnote'):
+        assert parse(b'{' + story + br'{\shp ' + fallback(b'Kept') + b'}}').textboxes == 'Kept'
+    for skipped in (br'{\b\info{\shpinst}}', br'{\b\*\unknown{\shpinst}}'):
+        assert parse(br'{\shp ' + skipped + fallback(b'Kept') + b'}').textboxes == 'Kept'
+    # upr inside a shape container is inert, just as in the main reader.
+    alternate = br'{\upr{{\shpinst}}{\*\ud }}'
+    assert parse(br'{\shp ' + alternate + fallback(b'Kept') + b'}').textboxes == ''

@@ -36,7 +36,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.29.0**. The package version is available as
+This reference describes package **0.30.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -609,8 +609,14 @@ picture/object payloads are omitted; an RTF object's skipped fallback result is
 not an independently parsed document. Recognized textbox/WordArt text is a separate,
 bounded extraction feature. Explicit supported RTF WordArt accepts Windows-1250,
 1251, 1252, 1253 and 932 through the existing strict property grammar; malformed
-properties are omitted whole. Legacy fallback-only shape ownership remains
-unproven. Reading an OLE container is distinct from executing or
+properties are omitted whole. A shape's sole direct `shprslt` supplies legacy
+`do` / `dptxbxtext` stories only when its native representation is absent.
+An empty/hidden native representation still wins, regardless of branch order.
+Opaque destinations cannot supply ownership evidence or reopen text. Nested
+native shapes own their own text; repeated independent textboxes are not deduplicated.
+The bounded structural scan selects destinations without retaining their text;
+selected results share normal decoding, visibility, table and text limits.
+Reading an OLE container is distinct from executing or
 extracting every embedded object it contains. ODF package-local text-object behavior
 is described below; no external resource is opened.
 

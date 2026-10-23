@@ -272,3 +272,20 @@ def test_repeated_row_properties_without_row_terminator_recover_once():
 def test_repeated_row_properties_do_not_bypass_cell_definition_budget():
     with pytest.raises(LimitExceededError):
         parse(r'\trowd\cellx100 A\cell\trowd\cellx100\row', max_cells=1)
+
+
+@pytest.mark.parametrize('number,encoded,expected', [
+    (10000, br"\'8e", 'é'), (10007, br"\'8f", 'П'),
+    (28595, br"\'bf", 'П'), (20866, br"\'f0", 'П'),
+])
+def test_numeric_codepage_aliases_in_font_and_document_scope(number, encoded, expected):
+    font = b'\\ansi\\deff0{\\fonttbl{\\f0\\cpg' + str(number).encode() + b' F;}}'
+    result = parse(font + encoded)
+    assert result.text == expected and not result.warnings
+    assert parse(b'\\ansicpg' + str(number).encode() + b' ' + encoded).text == expected
+
+
+def test_column_break_preserves_word_boundary_without_layout():
+    result = parse(br'\sectd\cols2 First\column Second')
+    assert result.blocks == [Paragraph('First'), Paragraph('Second')]
+    assert parse(br'A{\v hidden\column}B').blocks == [Paragraph('A'), Paragraph('B')]
