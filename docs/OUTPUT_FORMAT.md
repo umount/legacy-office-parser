@@ -881,6 +881,15 @@ it does not convert unsupported legacy versions through an external office suite
 
 ## Failures and exception boundaries
 
+Missing optional document parts do not, by themselves, invalidate available
+content. For DOC with an empty header story (`ccpHdd == 0`), an aligned header
+PLC whose defined CPs are all zero is ignored with `doc_empty_header_plc_ignored`,
+even if its slot count does not match the section count. No header text or source
+identities are inferred. The undefined terminal CP is ignored as usual. Source
+size and record limits still apply; nonzero defined CPs and malformed PLC byte
+alignment remain invalid rather than establishing a missing optional part.
+
+
 The public readers return a `Document` on successful extraction. Recognized
 format failures use this hierarchy, exported by `legacy_office_parser` and
 defined in `legacy_office_parser.errors`:

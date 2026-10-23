@@ -224,3 +224,44 @@ def test_original_lo_doc_literal_readback():
     assert story[:48].decode('utf-16le') == 'Header heading specimen\r'
     assert story[50:52] == b'\r\0'
     assert [r.ordinal for r in records if r.start == r.end] == [1, 2, 3, 4, 5, 6, 7, 9, 10, 12]
+
+
+@pytest.mark.parametrize('cp_count', [2, 8, 13, 14, 20])
+@pytest.mark.parametrize('sections', [None, 0, 1, 2])
+@pytest.mark.parametrize('final', [0, 0xffffffff])
+def test_empty_story_degenerate_plc_retains_no_identities(cp_count, sections, final):
+    raw = bytes(4 * (cp_count - 1)) + struct.pack('<I', final)
+    warnings, charges = [], []
+    assert decode_header_ranges(memoryview(raw), b'', Limits(), sections,
+                                record=charges.append, warn=warnings.append) == []
+    assert charges == [cp_count]
+    assert [w.code for w in warnings] == ['doc_empty_header_plc_ignored']
+
+
+@pytest.mark.parametrize('index', range(12))
+def test_empty_story_nonzero_defined_cp_still_rejected(index):
+    raw = bytearray(52)
+    struct.pack_into('<I', raw, index * 4, 1)
+    warnings = []
+    with pytest.raises(InvalidDocumentError):
+        decode_header_ranges(raw, b'', Limits(), 1, warn=warnings.append)
+    assert warnings == []
+
+
+@pytest.mark.parametrize('raw', [b'x', bytes(4), bytes(51), bytes(53)])
+def test_empty_story_malformed_plc_size_still_rejected(raw):
+    with pytest.raises(InvalidDocumentError):
+        decode_header_ranges(raw, b'', Limits(), 1)
+
+
+def test_empty_story_degenerate_plc_keeps_preflight_limits():
+    warnings, charges = [], []
+    for limits in (Limits(max_stream_bytes=51), Limits(max_records=12)):
+        with pytest.raises(LimitExceededError):
+            decode_header_ranges(bytes(52), b'', limits, 1, warn=warnings.append)
+    def exhausted(count):
+        charges.append(count)
+        raise LimitExceededError('aggregate exhausted')
+    with pytest.raises(LimitExceededError, match='aggregate exhausted'):
+        decode_header_ranges(bytes(52), b'', Limits(), 1, record=exhausted, warn=warnings.append)
+    assert charges == [13] and warnings == []

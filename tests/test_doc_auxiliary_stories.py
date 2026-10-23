@@ -136,10 +136,10 @@ def test_real_authored_header_has_proven_odd_variant():
     assert d.story_blocks[a.story][a.block_start:a.block_end] == [Paragraph('Header heading specimen', 2)]
 
 
-def test_header_plc_with_absent_header_subdocument_is_rejected(monkeypatch):
+def test_nonzero_header_plc_with_absent_header_subdocument_is_rejected(monkeypatch):
     from legacy_office_parser import InvalidDocumentError
     streams = fixture([('Body\r', True)])
-    put(streams, 11, b'\0' * 56)
+    put(streams, 11, u32(1) + bytes(52))
     with pytest.raises(InvalidDocumentError):
         parse(monkeypatch, streams)
 
@@ -153,3 +153,18 @@ def test_field_state_does_not_leak_between_header_variants(monkeypatch):
     assert d.story_blocks['headers_footers'][even.block_start:even.block_end] == [Paragraph('')]
     assert d.story_blocks['headers_footers'][odd.block_start:odd.block_end] == [Paragraph('VISIBLE')]
     assert 'INSTRUCTION' not in d.text
+
+
+
+def test_empty_header_story_with_degenerate_plc_preserves_main_text(monkeypatch):
+    from test_doc_header_ranges import sed
+    main = 'First paragraph\rSecond paragraph\r'
+    streams = fixture([(main, True)], counts=[len(main), 0, 0, 0, 0, 0, 0])
+    put(streams, 6, sed([0, len(main)]))
+    put(streams, 11, bytes(52))  # 13 CPs; not a valid nonempty-story slot count.
+    doc = parse(monkeypatch, streams)
+    assert [b.text for b in doc.blocks] == ['First paragraph', 'Second paragraph']
+    assert doc.text == 'First paragraph\n\nSecond paragraph'
+    assert doc.headers_footers == ''
+    assert not doc.auxiliary_stories and 'headers_footers' not in doc.story_blocks
+    assert [d.code for d in doc.diagnostics].count('doc_empty_header_plc_ignored') == 1

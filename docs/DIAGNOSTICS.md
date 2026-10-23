@@ -157,3 +157,7 @@ Warning messages are not source locations or severity classifications. No code i
 - `odf_inline_text_object_projected_to_slide`: recognized direct inline ODF text
   object projected to its owning slide's display destination; object identity
   and layout are not represented.
+
+- `doc_empty_header_plc_ignored`: the header story is empty and all defined
+  CPs in its aligned, bounded PLC are zero. The redundant PLC is ignored;
+  main content remains available and no header identities are invented.

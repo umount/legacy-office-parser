@@ -73,8 +73,10 @@ def decode_header_ranges(
 
     section_count must come from a validated PlcfSed, e.g. decode_section_count
     or the caller's existing section validation. Missing evidence produces a
-    coded warning, never invented section metadata. A present malformed PLC
-    raises even when section_count is absent. record charges all CP entries
+    coded warning, never invented section metadata. An empty header story with
+    aligned all-zero defined CPs is ignored with a diagnostic, without inferring
+    slots. Other malformed PLCs raise even when section_count is absent.
+    record charges all CP entries
     before iteration/allocation; pass the caller's aggregate budget callback.
 
     Nonempty slots lose exactly one verified guard CR in their returned range.
@@ -102,6 +104,15 @@ def decode_header_ranges(
         raise InvalidDocumentError('invalid DOC header PLC size')
     cp_count = len(plc) // 4
     _charge(cp_count, limits, record)
+    # Some producers retain a degenerate PLC despite ccpHdd == 0. There is
+    # no source text or identity to recover. Check all defined CPs without
+    # allocating ranges; the terminal CP remains undefined (MS-DOC 2.8.22).
+    if not story_count and all(struct.unpack_from('<I', plc, i * 4)[0] == 0
+                               for i in range(cp_count - 1)):
+        warn(diagnostic_warning('doc_empty_header_plc_ignored',
+                                'Degenerate header PLC for an empty story ignored; '
+                                'no header identities inferred.'))
+        return []
     slots = cp_count - 2
     if slots < 6 or (slots - 6) % 6:
         raise InvalidDocumentError('invalid DOC header slot count')
