@@ -54,3 +54,16 @@ Each change passed independent review and focused adversarial regressions.
 Combined acceptance covers the full suite, mutation/resource checks and public
 fixtures; results are recorded in TESTING.md. Integration validation continues
 independently.
+
+
+## Next checkpoint (0.27)
+
+- Investigate exact source ownership for inner-row DOC comment selections;
+  only extend proven ranges without changing endpoints or aggregate budgets.
+- Inspect remaining XLS General display behavior using primary evidence and
+  independent literal expectations; retain fallback where semantics are unclear.
+- Extend ODP frame selection to recognized direct inline ODF text documents,
+  keeping display text with its owning slide and prohibiting reference access.
+
+Separate research, adversarial tests and independent review precede integration.
+Published 0.26.0 remains immutable; private integration runs are independent.
