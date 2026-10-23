@@ -105,11 +105,6 @@ class _Parser:
         self.in_note = False
         self.heading_cells = False
         self.drawing_records = self.sheet_visible = 0
-        self.styles = {}
-        for root in roots:
-            if root is not None:
-                for e in root.iter(q('style:style')):
-                    self.styles[(e.get(q('style:family')), e.get(q('style:name')))] = e
         self.visibility_scopes = {}
         self.paragraph_visibility = {}
         self.empty_visibility_scope = ({}, {}, {}, {})
@@ -903,19 +898,38 @@ class _Parser:
                 self.unsupported(e)
 
     def hidden(self, e, family, property_tag, attribute):
+        # The same named style in another XML or embedded document is not a
+        # definition for this sheet/page. Parent references resolve common styles.
+        common, defaults, automatic, _ = self.visibility_scopes.get(e, self.empty_visibility_scope)
         name = e.get(q('table:style-name') if family == 'table' else q('draw:style-name'))
+        index = automatic if (family, name) in automatic else common
         visited = set()
-        while name and name not in visited:
-            style = self.styles.get((family, name))
-            if style is None:
-                break
+        while name:
+            marker = id(index), name
+            if marker in visited or index.get((family, name)) is None:
+                self.warn(diagnostic_warning('odf_sheet_slide_visibility_style_unresolved',
+                          'ODF sheet/slide visibility style is missing, duplicate or cyclic; '
+                          'hidden state is not inferred.'))
+                return False
             if len(visited) >= min(self.limits.max_depth, 256):
                 raise LimitExceededError('ODF style inheritance depth limit exceeded')
-            visited.add(name)
+            visited.add(marker)
+            style = index[(family, name)]
             prop = style.find(q(property_tag))
             if prop is not None and q(attribute) in prop.attrib:
                 return prop.get(q(attribute)) in {'false', '0', 'hidden'}
             name = style.get(q('style:parent-style-name'))
+            index = common
+        if family in defaults:
+            default = defaults[family]
+            if default is None:
+                self.warn(diagnostic_warning('odf_sheet_slide_visibility_style_unresolved',
+                          'ODF sheet/slide default visibility style is duplicate; '
+                          'hidden state is not inferred.'))
+            else:
+                prop = default.find(q(property_tag))
+                if prop is not None:
+                    return prop.get(q(attribute)) in {'false', '0', 'hidden'}
         return False
 
     def value(self, e, text):

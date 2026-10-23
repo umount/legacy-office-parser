@@ -31,10 +31,13 @@ def presentation_styles(count):
                      'style:parent-style-name="s%d"/>' % (i, i + 1)
                      for i in range(count))
     declarations = ' '.join(f'xmlns:{p}="{uri}"' for p, uri in NS.items())
+    # Parent references resolve common styles, not an automatic-to-automatic chain.
     return package(fmt='odp', content=f'<office:document-content {declarations}>'
-                   '<office:automatic-styles>' + styles + '</office:automatic-styles>'
                    '<office:body><office:presentation><draw:page draw:style-name="s0"/>'
-                   '</office:presentation></office:body></office:document-content>')
+                   '</office:presentation></office:body></office:document-content>',
+                   extra={'styles.xml': f'<office:document-styles {declarations}>'
+                          '<office:styles>' + styles + '</office:styles></office:document-styles>'})
+
 
 
 def test_slide_style_inheritance_obeys_depth_budget():

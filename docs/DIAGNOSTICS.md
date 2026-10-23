@@ -151,3 +151,5 @@ Warning messages are not source locations or severity classifications. No code i
 - `doc_header_plc_missing`: Header PLC is absent; retain the whole story without source identities.
 - `doc_header_section_count_missing`: Validated section count is absent; retain the whole header story without source identities.
 - `doc_textbox_placement_unmodeled`: Textbox source ranges are retained when proven; drawing relationships and page placement are not modeled.
+
+- `odf_sheet_slide_visibility_style_unresolved`: A named sheet/slide visibility style is missing, duplicated or cyclic in its owning document scope; hidden state is not inferred.
