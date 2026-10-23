@@ -115,11 +115,13 @@ def _numeric_parts(code: str, *, allow_literal: bool = False) -> tuple[str, str,
         return None
     if fixed is not None:
         _, fraction, commas, percent = fixed.groups()
-        # All-optional decimals are a separate bounded increment: no new
-        # scaling, percent or currency combinations. See optional-decimal research.
-        if fraction and fraction.startswith('#') and (commas or percent or currency):
+        optional_only = bool(fraction and fraction.startswith('#'))
+        # Optional-only decimals may scale OR use percent, but not currency.
+        # Their integral-after-rounding ambiguity is checked by the renderer.
+        if optional_only and currency:
             return None
-        if len(fraction or '') > 15 or (percent and (commas or '#' in (fraction or ''))):
+        if len(fraction or '') > 15 or (percent and (
+                commas or ('#' in (fraction or '') and not optional_only))):
             return None
     return ''.join(prefix), core, ''.join(suffix)
 
@@ -255,7 +257,7 @@ def _render_variable_fraction(value: int | float, width: int) -> str | None:
             + str(numerator).rjust(width) + '/' + str(denominator).ljust(width))
 
 
-def render_number(value: int | float, code: str) -> str | None:
+def render_number(value: int | float, code: str, *, _for_text: bool = False) -> str | None:
     """Render a finite BIFF number without altering its stored Python value.
 
     Decimal uses the shortest round-trip string, with explicit half-up rounding.
@@ -316,6 +318,15 @@ def render_number(value: int | float, code: str) -> str | None:
             parts = _numeric_parts(section, allow_literal=index == 2)
         if parts is None:
             return None
+        if _for_text:
+            # Numeric scaling support must not broaden fourth-section string
+            # helpers via their -1/0/1 probes. These cores were unsupported
+            # for strings before optional-decimal scaling was introduced.
+            fixed = _FIXED.fullmatch(parts[1])
+            if fixed is not None:
+                _, fraction, commas, percent = fixed.groups()
+                if fraction and fraction.startswith('#') and (commas or percent):
+                    return None
         parsed.append(parts)
 
     # Validate the complete format before routing, including unused sections.
@@ -429,7 +440,7 @@ def hides_text(code: str) -> bool:
     """
     sections = _split_sections(code)
     return (sections is not None and len(sections) == 4 and sections[-1] == ''
-            and all(render_number(value, code) is not None for value in (-1, 0, 1)))
+            and all(render_number(value, code, _for_text=True) is not None for value in (-1, 0, 1)))
 
 
 def text_affixes(code: str) -> tuple[str, str] | None:
@@ -443,7 +454,7 @@ def text_affixes(code: str) -> tuple[str, str] | None:
     if sections is None or len(sections) != 4:
         return None
     parts = _text_parts(sections[-1])
-    if parts is None or not all(render_number(value, code) is not None
+    if parts is None or not all(render_number(value, code, _for_text=True) is not None
                                 for value in (-1, 0, 1)):
         return None
     return parts
@@ -455,7 +466,7 @@ def text_literal(code: str) -> str | None:
     if sections is None or len(sections) != 4:
         return None
     parts = _text_parts(sections[-1], literal_only=True)
-    if parts is None or not all(render_number(value, code) is not None
+    if parts is None or not all(render_number(value, code, _for_text=True) is not None
                                 for value in (-1, 0, 1)):
         return None
     return parts[0]
