@@ -161,3 +161,8 @@ Warning messages are not source locations or severity classifications. No code i
 - `doc_empty_header_plc_ignored`: the header story is empty and all defined
   CPs in its aligned, bounded PLC are zero. The redundant PLC is ignored;
   main content remains available and no header identities are invented.
+
+- `doc_empty_note_plc_ignored`: no note story or reference entries exist, and
+  a zero-entry body PLC contains only a zero boundary and undefined sentinel.
+- `doc_empty_comment_plc_ignored`: the corresponding empty comment-body case;
+  other present author/bookmark metadata still undergoes its normal validation.

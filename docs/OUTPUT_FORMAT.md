@@ -885,7 +885,12 @@ Missing optional document parts do not, by themselves, invalidate available
 content. For DOC with an empty header story (`ccpHdd == 0`), an aligned header
 PLC whose defined CPs are all zero is ignored with `doc_empty_header_plc_ignored`,
 even if its slot count does not match the section count. No header text or source
-identities are inferred. The undefined terminal CP is ignored as usual. Source
+identities are inferred. Empty footnote/endnote/comment body tables also recover
+when the story and reference-entry count are zero and the body table has only
+one zero boundary plus its undefined terminal CP. They emit
+`doc_empty_note_plc_ignored` or `doc_empty_comment_plc_ignored`, without creating
+notes or comments. Present independent metadata still receives validation.
+The undefined terminal CP is ignored as usual. Source
 size and record limits still apply; nonzero defined CPs and malformed PLC byte
 alignment remain invalid rather than establishing a missing optional part.
 

@@ -89,15 +89,20 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
     n = (len(refs) - 4) // 34 if refs else 0
     body_count = len(texts) // 4 - 2 if texts else 0
     charge((2 * n + 1 if refs else 0) + (body_count + 2 if texts else 0))
+    empty_body = not story_count and not n and len(texts) == 8 and u32(texts) == 0
+    if empty_body:
+        warn(diagnostic_warning('doc_empty_comment_plc_ignored',
+                                'Empty comment body PLC for an absent story ignored; '
+                                'no comment relationships inferred.'))
     boundaries = []
     previous = -1
-    for i in range(body_count + 1 if texts else 0):
+    for i in range(body_count + 1 if texts and not empty_body else 0):
         cp = u32(texts, i * 4)
         if not previous < cp < story_count:
             invalid('body CP order or bounds are invalid')
         boundaries.append(cp)
         previous = cp
-    if texts and boundaries[-1] != story_count - 1:
+    if texts and not empty_body and boundaries[-1] != story_count - 1:
         invalid('body PLC does not end at reserved final CP')
     for begin, end in zip(boundaries, boundaries[1:]):
         if u16(story_utf16, begin * 2) != 5 or u16(story_utf16, (end - 1) * 2) != 13:
@@ -233,6 +238,8 @@ def decode_comments(parts, main_utf16, story_utf16, limits: Limits, *,
             warn(diagnostic_warning('doc_comment_selection_bookmark_is_unresolved_reference_ownership_is', 'DOC comment selection bookmark is unresolved; reference ownership is retained.'))
         charge()
         descriptors.append((i + 1, cp, author, initials, begin, end))
+    if empty_body:
+        return []
     if refs and texts and n != body_count:
         invalid('reference and body counts differ')
     if not refs or not texts:

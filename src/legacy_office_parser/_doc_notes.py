@@ -79,6 +79,12 @@ def decode_note_ranges(
         raise LimitExceededError('DOC note record limit exceeded')
     if record is not None:
         record(count)
+    if (not story_count and not ref_count and len(texts) == 8
+            and struct.unpack_from('<I', texts)[0] == 0):
+        warn(diagnostic_warning('doc_empty_note_plc_ignored',
+                                'Empty note body PLC for an absent story ignored; '
+                                'no note relationships inferred.'))
+        return []
     refs = []
     previous = -1
     for index in range(ref_count):

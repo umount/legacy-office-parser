@@ -147,9 +147,11 @@ def test_zero_body_plc_emits_no_invented_note(references):
         assert 'no corresponding bodies' in messages[0]
 
 
-def test_zero_body_plc_cannot_claim_an_absent_reserved_cp():
-    with pytest.raises(InvalidDocumentError, match='CP order or range'):
-        decode_note_ranges(reference_plc([]), text_plc([0]), 0, b'', Limits())
+def test_zero_body_plc_does_not_infer_an_absent_reserved_cp():
+    warnings = []
+    assert decode_note_ranges(reference_plc([]), text_plc([0]), 0, b'', Limits(),
+                              warn=warnings.append) == []
+    assert [w.code for w in warnings] == ['doc_empty_note_plc_ignored']
 
 
 @pytest.mark.parametrize('ref_sentinel', [0, 1, 0x7fffffff, 0xffffffff])
