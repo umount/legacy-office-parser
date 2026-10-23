@@ -31,11 +31,11 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.25.0 adds Central European/Greek RTF WordArt text and verified DOC
-comment selections combining ordinary text with whole table rows. ODP frames
-select one supported text alternative; integral XLS General values display
-without a decimal suffix. Explicit text normalization removes soft hyphens by
-default, with an opt-out. Typed values and unverified-case fallbacks are preserved.
+Version 0.26.0 corrects ODF sheet/slide visibility style ownership, preserves
+DOC comment ranges across verified ordinary sections, and extends conditional
+visibility to proven vertical table merges. XLS optional-decimal displays now
+support percent or scaling separately. Raw values, formula caches and documented
+fallbacks remain preserved.
 Full compatibility with arbitrary documents has not been established; see
 [coverage and limitations](docs/TESTING.md).
 

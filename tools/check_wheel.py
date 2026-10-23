@@ -42,6 +42,10 @@ def main():
     ranges = parse(args.fixtures / 'doc_comment_selections/authored.doc')
     assert [(c.selection_start, c.selection_end) for c in ranges.comments] == [(8, 22), (50, 61)]
     assert ranges.text.count('Across empty paragraph.') == 1
+    sections = parse(args.fixtures / 'doc_comment_sections/authored.doc')
+    assert [(c.selection_start, c.selection_end) for c in sections.comments] == [(8, 21)]
+    assert sections.comments[0].author == 'Ada Section'
+
     labels = parse(args.fixtures / 'xls_text_sections/preserved.xls')
     assert any(c.value == 'retained' and c.text == 'Name: retained'
                for c in labels.sheets[0].cells)

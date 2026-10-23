@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register for 0.24. Each item requires a verified example, independent
+Working register for 0.26. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -169,10 +169,21 @@ does not establish completeness.
 - DOC: exact same-section comment selections spanning safe ordinary text and
   proven complete outer rows, without widening or output-grid inference.
 
+## Completed in 0.26
+
+- ODF: document-owned sheet/slide visibility styles and family defaults;
+  unresolved definitions are diagnosed without inferring hidden state.
+- DOC: exact ordinary main-story comment selections across verified section
+  boundaries; mixed section/table selections remain outside the proof.
+- DOC: row-only conditional visibility for equal-grid vertical groups with
+  explicit origins and empty continuations; no mixed horizontal merges.
+- XLS: nonintegral optional-decimal displays with percent or scaling separately;
+  cached values and fourth-section string-helper acceptance remain unchanged.
+
 ## Next areas to verify
 
 - DOC: page/header-selection flags, drawing/frame associations and ink;
-  partial-row, inner-row-only and cross-section selections; mixed text/table
+  partial-row, inner-row-only and cross-section table selections; mixed text/table
   spans outside the supported complete-row proof.
 - DOC: remaining conditional table styles and explicit geometry that does not
   require page layout.
@@ -189,8 +200,8 @@ does not establish completeness.
 
 ## Additional evidence required
 
-Negative values in conditional XLS masks and fully optional fractional digits
-still return the original value with a warning. Available primary sources have
+Negative values in conditional XLS masks and integral results from fully optional
+fractional digits still return the original value with a warning. Available primary sources have
 not established unambiguous rules for signs and decimal-point removal;
 individual Calc results do not replace that contract.
 Research: `research-xls-conditions.md`.

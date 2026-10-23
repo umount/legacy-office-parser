@@ -35,7 +35,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.25.0**. The package version is available as
+This reference describes package **0.26.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -66,6 +66,12 @@ results remain equivalent. Changes to defaults must be recorded explicitly.
 
 Recent output history:
 
+- **0.26.0:** ODF sheet/slide hidden flags resolve document-owned styles and
+  family defaults, with a coded diagnostic for unresolved definitions. DOC gains
+  exact ordinary main-story comment ranges across verified section boundaries
+  and row-only conditional visibility for a proven vertical-merge subset. XLS
+  optional-decimal numeric displays accept percent or scaling separately; raw
+  caches and existing fourth-section string behavior remain unchanged.
 - **0.25.0:** explicit RTF WordArt gains CP1250/CP1253 decoding; ODP frames
   select one supported text representation rather than concatenate alternatives;
   integral XLS General values below twelve digits omit the decimal suffix; DOC
@@ -413,9 +419,12 @@ DOC selections additionally support exact complete outer-table rows, including
 fully closed nested tables. In one section, safe ordinary paragraphs can be
 combined with complete outer rows; ordinary endpoints may lie inside a paragraph,
 while table endpoints must coincide with proven row boundaries. Partial rows,
-inner-row-only spans, fields and cross-section extensions remain unsupported.
+inner-row-only spans and fields remain unsupported. Ordinary non-table main-story
+paragraphs may cross verified section boundaries; spans combining sections and
+tables remain unsupported. Manual page breaks do not establish section ownership.
 Source intervals are never widened. See [row evidence](research-doc-comment-complex-selections.md)
-and [mixed-selection evidence](research-doc-comment-mixed-selections.md).
+and [mixed-selection evidence](research-doc-comment-mixed-selections.md), plus
+[ordinary-section evidence](research-doc-comment-section-selections.md).
 
 An `anchor_path` walks from the document through `blocks`, table `rows`, and
 cell `blocks`, using **zero-based list indices**. For example,
@@ -572,8 +581,12 @@ coverage is format- and construct-specific. Not every omission emits a warning.
   Supported hidden properties resolve through paragraph/character styles, direct
   formatting and verified table-style contexts. Row-only conditional rules also
   cover proven unequal grids and horizontal merges with empty continuations;
-  vertical merges and unproven column/corner contexts retain fallback.
-  See [row-condition evidence](research-doc-conditional-rows.md). Unproven conditional contexts
+  a separate proven vertical subset requires equal grids, explicit same-column
+  restart/continuation groups and empty continuation cells, with no horizontal
+  merges. Origin text uses its own row conditions. Other vertical configurations
+  and unproven column/corner contexts retain fallback.
+  See [row-condition evidence](research-doc-conditional-rows.md) and
+  [vertical-row evidence](research-doc-conditional-vertical-rows.md). Unproven conditional contexts
   use the documented fallback and warnings. Hidden/deleted structural paragraph
   or cell marks can retain boundaries; revision-driven paragraph merging is not
   implemented. Inserted text is not removed merely because it is an insertion.
@@ -588,6 +601,11 @@ coverage is format- and construct-specific. Not every omission emits a warning.
 
 Keep the separate visibility rules for ODF below. Hidden spreadsheet sheets and
 presentation slides remain in the model and text projection with their flags.
+ODF sheet/slide flags resolve automatic styles within the owning XML part,
+common parent styles and same-family defaults. Embedded definitions cannot
+supply host styles. Missing, duplicate or cyclic definitions retain a false
+hidden flag with `odf_sheet_slide_visibility_style_unresolved`; unresolved chains
+do not inherit a hidden default. See [scope evidence](research-odf-hidden-style-scopes.md).
 Consumers requiring complete exclusion of all hidden/deleted material must not
 assume that a successful parse or an empty warning list proves that condition.
 
@@ -755,9 +773,13 @@ affixes and locale combinations retain fallback. See
 Fixed cores `0.#{1,15}` and `#,##0.#{1,15}` additionally retain a nonintegral
 rounded decimal result with trailing optional zeros removed. Integral results,
 zero and rounding carry keep fallback because decimal-point suppression is not
-established by the primary evidence used here. Scaling, percent and currency
-combinations for these new cores are excluded. See
-[optional-decimal evidence](research-xls-optional-decimals.md).
+established by the primary evidence used here. One percent token or trailing
+scaling commas are supported separately; the nonintegral-result rule is applied
+after scaling and rounding. Combining percent and scaling, currency/locale tokens
+and mixed mandatory/optional percent cores remains unsupported. Fourth-section
+string-helper acceptance is unchanged. See
+[optional-decimal evidence](research-xls-optional-decimals.md) and
+[scaling evidence](research-xls-optional-decimal-scaling.md).
 
 ## XLS dates and times
 

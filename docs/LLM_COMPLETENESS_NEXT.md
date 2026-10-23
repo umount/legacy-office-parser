@@ -40,7 +40,7 @@ ordinary-text/complete-row comment subset. An integration-reported XLS General
 whole-number display issue is corrected without recalculating formula caches.
 See OUTPUT_FORMAT.md and TESTING.md for the precise contract and validation.
 
-## Next checkpoint (0.26)
+## Completed checkpoint (0.26)
 
 1. Correct ODF sheet/slide hidden metadata to use XML/document-owned styles and
    family defaults, with diagnostics for unresolved definitions.
@@ -50,6 +50,7 @@ See OUTPUT_FORMAT.md and TESTING.md for the precise contract and validation.
 4. Extend XLS optional-decimal display to percent or comma scaling, preserving
    raw caches and fallback for integral-after-rounding ambiguity.
 
-Each change requires independent review and focused adversarial regressions.
-Combined acceptance uses the full suite, mutation/resource checks and public
-fixtures. Integration validation continues independently.
+Each change passed independent review and focused adversarial regressions.
+Combined acceptance covers the full suite, mutation/resource checks and public
+fixtures; results are recorded in TESTING.md. Integration validation continues
+independently.

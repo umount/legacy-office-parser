@@ -776,3 +776,25 @@ listed in EXTRACTION_GAPS.md and the feature research documents.
 Private integration inputs are not fixtures or published reference artifacts.
 No whole-corpus equivalence or complete spreadsheet locale/rendering support
 is inferred from these checks.
+
+
+## 0.26 local validation
+
+- Full combined suite: **6914 passed, 81 optional skips**.
+- New XLS numeric percent/scaling oracle: **23 literal preserved-source cases**;
+  its complete module with the live check enabled passes **151 tests**.
+- Independent reviews cover DOC section ownership and exact source endpoints,
+  conditional visibility and vertical continuation ownership, ODF style/default
+  scopes, and XLS arithmetic/format helpers. Review caught and corrected an
+  unintended expansion of fourth-section string handling; **8748 helper
+  comparisons** now match baseline behavior.
+- Deterministic public-fixture mutations: **8000 cases**, no unexpected exception.
+- Resource suite: **12 cases**, all within configured bounds, including repeated
+  parsing and hostile expansion/depth inputs. This is bounded evidence, not a
+  proof of absence of memory or resource defects for arbitrary input.
+- Public corpus: **80 documents parsed**; all 79 existing documents retain their
+  status and plain-text hash. The additional original DOC demonstrates a stored
+  cross-section bookmark whose range is lost by LibreOffice readback; raw PLC
+  evidence is retained separately instead of treating readback as the oracle.
+- Ruff and whitespace checks pass. New live XLS checks are included in reference
+  CI. Private integration inputs remain separate from these public results.
