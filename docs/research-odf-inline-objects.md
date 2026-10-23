@@ -1,5 +1,10 @@
 # Inline ODF text objects: passive ODT subset
 
+**0.27 follow-up:** the bounded ODP inline text-body projection is now documented
+in [ODP object research](research-odp-inline-text-objects.md). Earlier ODP deferral
+statements below describe the original checkpoint; ODS remains deferred.
+
+
 Inline text objects reuse the bounded ODF story reader. The supported subset
 extracts stored text and tables without resolving object references.
 

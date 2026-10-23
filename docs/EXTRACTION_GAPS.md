@@ -1,6 +1,6 @@
 # Remaining extraction gaps
 
-Working register for 0.26. Each item requires a verified example, independent
+Working register for 0.27. Each item requires a verified example, independent
 expected results, negative tests and limits, API checks, and comparison with an
 external reader where it supports the construct. The absence of warnings alone
 does not establish completeness.
@@ -180,10 +180,19 @@ does not establish completeness.
 - XLS: nonintegral optional-decimal displays with percent or scaling separately;
   cached values and fourth-section string-helper acceptance remain unchanged.
 
+## Completed in 0.27
+
+- ODP: direct inline ODF text-document body projected to its owning slide,
+  with first-supported frame selection and no reference resolution.
+- DOC: exact single depth-two inner-row comment selections, with no deeper
+  contents and only after full enclosing-table validation.
+- XLS: documented and regression-tested General projection limits; no new
+  display rounding or scientific-threshold policy is inferred.
+
 ## Next areas to verify
 
 - DOC: page/header-selection flags, drawing/frame associations and ink;
-  partial-row, inner-row-only and cross-section table selections; mixed text/table
+  partial-row, multiple/deeper inner-row and cross-section table selections; mixed text/table
   spans outside the supported complete-row proof.
 - DOC: remaining conditional table styles and explicit geometry that does not
   require page layout.

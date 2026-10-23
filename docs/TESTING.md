@@ -798,3 +798,21 @@ is inferred from these checks.
   evidence is retained separately instead of treating readback as the oracle.
 - Ruff and whitespace checks pass. New live XLS checks are included in reference
   CI. Private integration inputs remain separate from these public results.
+
+
+## 0.27 local validation
+
+- Full suite: **7040 passed, 82 optional skips**; Ruff and whitespace checks pass.
+- DOC inner-row proof: **38 new tests**, reviewed independently for source bounds,
+  parent ownership, delayed publication and aggregate preallocation/query costs.
+- ODP inline-object extraction: original source tests and independent ownership,
+  style-scope, destination and resource probes. The schema-valid ODP is omitted
+  by LibreOffice 7.4, while its matching ODT control exposes the Writer model;
+  these negative ODP observations are preserved, not counted as reader parity.
+- XLS General: **61 tests with the optional explicit-scientific oracle enabled**
+  (three preserved-format literal examples). General runtime behavior is unchanged.
+- **8200** deterministic input mutations produced no unexpected exceptions;
+  all **12** bounded resource scenarios passed.
+- All **82** public fixtures parsed. The existing 80 retain status and text hashes;
+  two original ODP/ODT object probes were added. No private integration files
+  are included or counted in this run.

@@ -31,11 +31,10 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.26.0 corrects ODF sheet/slide visibility style ownership, preserves
-DOC comment ranges across verified ordinary sections, and extends conditional
-visibility to proven vertical table merges. XLS optional-decimal displays now
-support percent or scaling separately. Raw values, formula caches and documented
-fallbacks remain preserved.
+Version 0.27.0 adds slide-owned text from direct inline ODF text objects and
+exact DOC comment selections of a proven complete inner table row. XLS General
+projection remains unchanged, with explicit documentation of its width-free
+limits. Raw values, formula caches and documented fallbacks remain preserved.
 Full compatibility with arbitrary documents has not been established; see
 [coverage and limitations](docs/TESTING.md).
 

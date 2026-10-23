@@ -56,7 +56,7 @@ fixtures; results are recorded in TESTING.md. Integration validation continues
 independently.
 
 
-## Next checkpoint (0.27)
+## Completed checkpoint (0.27)
 
 - Investigate exact source ownership for inner-row DOC comment selections;
   only extend proven ranges without changing endpoints or aggregate budgets.
@@ -65,5 +65,7 @@ independently.
 - Extend ODP frame selection to recognized direct inline ODF text documents,
   keeping display text with its owning slide and prohibiting reference access.
 
-Separate research, adversarial tests and independent review precede integration.
+Separate research, adversarial tests and independent review accompanied integration.
+The bounded DOC/ODP extensions are implemented. XLS investigation retained the
+existing runtime policy and added boundary evidence. Validation is in TESTING.md.
 Published 0.26.0 remains immutable; private integration runs are independent.

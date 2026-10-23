@@ -25,6 +25,9 @@ def main():
             assert len(doc.slides) == 3 and doc.slides[2].notes
         else:
             assert any(b.kind == 'table' for b in doc.blocks)
+    inline = parse(args.fixtures / 'odp_inline_objects/inline.odp')
+    assert inline.slides[0].text == 'Object before\nObject cell\nObject after'
+    assert inline.textboxes == ''
     comments = parse(args.fixtures / 'doc_comments/authored.doc')
     assert [c.author for c in comments.comments] == ['Ada Fixture', 'Ben Fixture', 'Ada Fixture']
     assert [c.source_cp for c in comments.comments] == [20, 38, 61]

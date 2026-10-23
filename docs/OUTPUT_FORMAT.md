@@ -25,6 +25,7 @@ Those are consumer policies, not additional output fields.
 - [ODF visibility and tracked changes](#odf-visibility-and-tracked-changes)
 - [ODF whitespace, Unicode, and control characters](#odf-whitespace-unicode-and-control-characters)
 - [ODF lists, links, and embedded objects](#odf-lists-links-and-embedded-objects)
+- [Inline text objects on ODP slides](#inline-text-objects-on-odp-slides)
 - [XLS numeric display subsets](#xls-numeric-display-subsets)
 - [XLS dates and times](#xls-dates-and-times)
 - [Older binary formats and error boundaries](#older-binary-formats-and-error-boundaries)
@@ -35,7 +36,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.26.0**. The package version is available as
+This reference describes package **0.27.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -66,6 +67,10 @@ results remain equivalent. Changes to defaults must be recorded explicitly.
 
 Recent output history:
 
+- **0.27.0:** ODP frames may select a direct inline ODF text document and
+  project its supported body into the owning slide destination. DOC gains exact
+  single complete depth-two comment-row ranges after enclosing-table validation.
+  XLS General display behavior is unchanged; its width-free limits are clarified.
 - **0.26.0:** ODF sheet/slide hidden flags resolve document-owned styles and
   family defaults, with a coded diagnostic for unresolved definitions. DOC gains
   exact ordinary main-story comment ranges across verified section boundaries
@@ -418,8 +423,11 @@ fields remain explicit nulls when unavailable.
 DOC selections additionally support exact complete outer-table rows, including
 fully closed nested tables. In one section, safe ordinary paragraphs can be
 combined with complete outer rows; ordinary endpoints may lie inside a paragraph,
-while table endpoints must coincide with proven row boundaries. Partial rows,
-inner-row-only spans and fields remain unsupported. Ordinary non-table main-story
+while table endpoints must coincide with proven row boundaries. One complete
+inner row at depth two is also supported if it has no deeper table and its entire
+enclosing outer table validates. Multiple inner rows and mixed inner/outer spans
+remain unsupported, as do partial rows and fields. See
+[inner-row evidence](research-doc-comment-inner-rows.md). Ordinary non-table main-story
 paragraphs may cross verified section boundaries; spans combining sections and
 tables remain unsupported. Manual page breaks do not establish section ownership.
 Source intervals are never widened. See [row evidence](research-doc-comment-complex-selections.md)
@@ -743,17 +751,35 @@ stories. A warning explains the loss of object identity, anchors, and embedded
 page layout. Embedded styles/masters are not imported as an independent rendering
 scope. In a frame, the first supported representation wins, even when empty;
 other alternatives must not be assumed to be concatenated. ODP frames likewise
-select only the first supported direct text box or table, even when empty or
+select only the first supported direct text box, table or recognized inline text
+document, even when empty or
 hidden. Separate frames retain identical text independently. Unsupported
 embedded objects remain omitted; no fallback follows a selected-content error.
 
 This does not mean recursive extraction of arbitrary embedded files. Linked or
 package-referenced objects, OLE payloads, images and their replacement/attached
 text, scripts, and unsupported embedded document families are not executed or
-opened as child documents. ODS/ODP do not share the ODT inline text-object support.
+opened as child documents. ODS does not share inline text-object support. ODP
+has a narrower display projection described below, without ODT pooled stories.
 Supported ODS floating labels are sheet-owned `drawings`, not embedded-object
 extraction. Unsupported content encountered by traversal generally produces a
 warning; warnings are not a complete inventory of unvisited package members.
+
+## Inline text objects on ODP slides
+
+A frame may select a recognized direct inline ODF text document instead of a
+text box or table. The first supported alternative wins even when empty or hidden.
+Supported body text is projected into the owning slide's current title/text/notes
+destination, without also adding it to pooled textboxes. Embedded presentation
+attributes cannot reroute host content. Document styles remain locally scoped.
+
+Any object reference (including package-local or empty `xlink:href`) is excluded;
+metadata, masters and scripts are not traversed. Embedded footnotes and drawings
+inside paragraphs keep the existing ODP diagnosed omissions. Object layout and
+identity are not represented. The projection has a stable diagnostic code.
+An original schema-valid example is retained; LibreOffice 7.4 does not import its
+ODP object, so no positive reader-parity claim is made. See
+[ODP object evidence](research-odp-inline-text-objects.md).
 
 ## XLS numeric display subsets
 
