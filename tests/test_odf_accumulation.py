@@ -16,9 +16,9 @@ def test_cell_stops_before_accumulating_all_paragraphs(fmt, monkeypatch):
     original = _Parser.inline
     calls = []
 
-    def counted(self, element):
+    def counted(self, element, extras=None):
         calls.append(1)
-        return original(self, element)
+        return original(self, element, extras)
 
     monkeypatch.setattr(_Parser, 'inline', counted)
     with pytest.raises(LimitExceededError):

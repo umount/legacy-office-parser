@@ -221,11 +221,12 @@ def test_original_metadata_and_empty_sentinel_record_boundaries():
 
 @pytest.mark.parametrize('fmt', ['ods', 'odp'])
 def test_non_odt_does_not_create_note_metadata(fmt):
-    body = table(p(note(p('secret'))))
+    body = table(p(note(p('note body'))))
     if fmt == 'odp':
         body = '<draw:page>' + body + '</draw:page>'
     doc = read(package(body, fmt))
-    assert doc.notes == [] and doc.story_blocks == {} and 'secret' not in doc.text
+    assert doc.notes == [] and doc.story_blocks == {}
+    assert ('note body' in doc.text) is (fmt == 'odp')
 
 
 def test_embedded_same_kind_notes_repeated_with_parent_ranges_are_disjoint():
