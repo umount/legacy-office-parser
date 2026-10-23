@@ -72,12 +72,11 @@ def test_embedded_styles_are_local_and_preludes_not_text():
     assert doc.text == '\npublic\noutside'
 
 
-def test_notes_and_inline_drawings_keep_explicit_existing_omission():
-    # This increment does not introduce pooled footnotes or paragraph-anchored drawings in ODP.
+def test_embedded_note_body_stays_in_slide_text():
     body = p('before<text:note text:note-class="footnote"><text:note-body>' +
-             p('note omitted') + '</text:note-body></text:note>after')
+             p('note body') + '</text:note-body></text:note>after')
     doc = parse(data(frame(embedded(body))))
-    assert doc.text == 'beforeafter' and doc.footnotes == ''
+    assert doc.text == 'beforeafter\nnote body' and doc.footnotes == ''
     assert doc.warnings
 
 
@@ -131,3 +130,52 @@ def test_original_schema_valid_odp_and_matching_odt_control():
     assert doc.slides[0].text == doc.text == 'Object before\nObject cell\nObject after'
     control = parse(root / 'inline.odt')
     assert control.textboxes == 'Object before\n\nObject cell\n\nObject after'
+
+
+def test_inline_drawings_and_notes_keep_destination_and_repeated_cells():
+    note = ('<text:note text:note-class="footnote"><text:note-citation>1</text:note-citation>'
+            '<text:note-body>' + p('note') + '</text:note-body></text:note>')
+    drawing = frame(box('drawing') + box('wrong alternative'))
+    content = embedded(table(p('cell' + note + drawing), rows=2, columns=2))
+    for attrs, wrapper, destination in [('', '', 'text'), ('presentation:class="title"', '', 'title'),
+                                         ('', 'presentation:notes', 'notes')]:
+        outer = frame(content, attrs)
+        if wrapper:
+            outer = '<' + wrapper + '>' + outer + '</' + wrapper + '>'
+        doc = parse(data(outer))
+        expected = 'cell\nnote\ndrawing\tcell\nnote\ndrawing\n' * 2
+        assert getattr(doc.slides[0], destination) == expected.rstrip('\n')
+        assert not doc.footnotes and not doc.textboxes
+        assert 'wrong alternative' not in doc.text
+
+
+def test_hidden_inline_content_and_nested_note_do_not_leak():
+    nested = '<text:note text:note-class="footnote"><text:note-body>' + p('nested secret') + '</text:note-body></text:note>'
+    note = '<text:note text:note-class="endnote"><text:note-body>' + p('note' + nested) + '</text:note-body></text:note>'
+    hidden = '<text:span text:display="none">' + frame(box('hidden')) + note + '</text:span>'
+    doc = parse(data(frame(embedded(p('body' + hidden + note)))))
+    assert doc.text == 'body\nnote'
+
+
+def test_repeated_inline_fragments_share_cell_and_text_limits():
+    drawing = frame(box('x' * 100))
+    obj = frame(embedded(table(p('a' + drawing), rows=10, columns=10)))
+    with pytest.raises(LimitExceededError, match='text limit'):
+        parse(data(obj), limits=Limits(max_text_chars=2000))
+    with pytest.raises(LimitExceededError, match='cell limit'):
+        parse(data(obj), limits=Limits(max_cells=99))
+
+
+def test_inline_note_table_text_is_charged_once():
+    body = '<text:note text:note-class="footnote"><text:note-body>' + table(
+        p('<text:s text:c="1500"/>')) + '</text:note-body></text:note>'
+    result = parse(data(frame(embedded(p('A' + body + 'B')))),
+                   limits=Limits(max_text_chars=2000))
+    assert result.text == 'AB\n' + ' ' * 1500
+
+
+def test_fragment_collection_bounds_many_expanded_paragraphs():
+    body = p('<text:s text:c="1500"/>') * 20
+    with pytest.raises(LimitExceededError, match='fragment text limit'):
+        parse(data(frame(embedded(p('A' + frame('<draw:text-box>' + body +
+             '</draw:text-box>') + 'B')))), limits=Limits(max_text_chars=2000))

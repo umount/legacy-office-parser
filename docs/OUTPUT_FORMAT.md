@@ -759,9 +759,11 @@ destination, without also adding it to pooled textboxes. Embedded presentation
 attributes cannot reroute host content. Document styles remain locally scoped.
 
 Any object reference (including package-local or empty `xlink:href`) is excluded;
-metadata, masters and scripts are not traversed. Embedded footnotes and drawings
-inside paragraphs keep the existing ODP diagnosed omissions. Object layout and
-identity are not represented. The projection has a stable diagnostic code.
+metadata, masters and scripts are not traversed. Footnote/endnote bodies and
+paragraph-anchored drawing text follow the containing paragraph in the same
+slide destination. Citation labels are omitted; no document-level note anchors
+or pooled stories are invented. Nested notes remain unsupported. Object layout
+and identity are not represented. The projection has a stable diagnostic code.
 An original schema-valid example is retained; LibreOffice 7.4 does not import its
 ODP object, so no positive reader-parity claim is made. See
 [ODP object evidence](ODP.md).

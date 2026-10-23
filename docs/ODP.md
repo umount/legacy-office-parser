@@ -9,11 +9,13 @@
 - Inline text objects remain in the owning slide's destination, not pooled
   textboxes. Embedded styles are isolated; presentation attributes inside an
   embedded text document cannot reroute host content.
+- Inline footnote/endnote bodies and paragraph-anchored drawings follow their
+  enclosing paragraph in the same slide destination. Citation labels are omitted;
+  repeated table cells retain repeated content under shared limits.
 - Empty presentations and missing optional styles/metadata are accepted.
 
 ## Limits and remaining work
 
-Embedded footnotes and paragraph-anchored drawings retain diagnosed omissions.
 Object identity/layout, images, external or package-linked objects and other
 embedded formats are not extracted. Any `xlink:href` excludes inline-object
 recognition, even an empty or package-local reference.

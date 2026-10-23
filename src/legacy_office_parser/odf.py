@@ -105,6 +105,7 @@ class _Parser:
         # A containing story subtracts this delta to isolate its own block cost.
         self.story_budget_text = 0
         self.in_note = False
+        self.slide_fragment = None
         self.heading_cells = False
         self.drawing_records = self.sheet_visible = 0
         self.visibility_scopes = {}
@@ -272,7 +273,7 @@ class _Parser:
             return
         self.warn(diagnostic_warning('odf_unsupported_odf_content_omitted_annotations_revisions_objects_or_extensions', 'Unsupported ODF content omitted (annotations, revisions, objects, or extensions).'))
 
-    def inline(self, element):
+    def inline(self, element, extras=None):
         tokens = []
         count = 0
 
@@ -304,6 +305,8 @@ class _Parser:
                         self.visibility_omissions += 1
                 elif not hidden and self.doc.format == 'ods' and child.tag in DRAW_STORIES:
                     pass  # Extracted separately as a sheet-owned drawing.
+                elif not hidden and extras is not None and child.tag in DRAW_STORIES | {q('text:note')}:
+                    extras.append(child)
                 elif not hidden and self.doc.format == 'odt' and child.tag in DRAW_STORIES:
                     self.drawing(child)
                 elif not hidden and child.tag == q('text:note'):
@@ -689,14 +692,17 @@ class _Parser:
                 if self.paragraph_hidden(child):
                     continue
                 self.read_heading_level(child)
-                yield self.inline(child)
+                extras = [] if self.slide_fragment is not None else None
+                yield self.inline(child, extras)
+                for extra in extras or ():
+                    yield from self.slide_fragment(extra)
             elif self.doc.format == 'ods' and child.tag in DRAW_STORIES:
                 pass  # Never use drawing labels as a cell's display value.
             elif self.doc.format == 'odt' and child.tag in DRAW_STORIES:
                 self.drawing(child)
             elif child.tag in BLOCK_WRAPPERS or child.tag in {
                 q('draw:frame'), q('draw:text-box'), q('draw:g'), q('draw:custom-shape'),
-                q('draw:rect'), q('draw:ellipse'), q('draw:a'), q('presentation:notes')}:
+                q('draw:rect'), q('draw:ellipse'), q('draw:caption'), q('draw:a'), q('presentation:notes')}:
                 yield from self.paragraphs(child)
             else:
                 self.unsupported(child)
@@ -1122,7 +1128,9 @@ class _Parser:
                                         'presentation:visibility'))
             parts = {'title': [], 'text': [], 'notes': []}
 
-            def walk(e, destination='text', embedded=False):
+            def walk(e, destination='text', embedded=False, output=None, charge=True):
+                if output is None:
+                    output = parts
                 if self.section_hidden(e):
                     return
                 if e.tag in SKIP:
@@ -1141,17 +1149,39 @@ class _Parser:
                 if e.tag in PARAS:
                     if self.paragraph_hidden(e):
                         return
-                    text = self.inline(e)
-                    self.budget.text(len(text))
-                    parts[destination].append(text)
+                    for text in self.paragraphs([e]):
+                        if charge:
+                            self.budget.text(len(text))
+                        else:
+                            # A detached fragment is collected before its owner
+                            # charges it. Bound the whole collection, not merely
+                            # each paragraph's expanded spaces.
+                            size = output.get('_chars', 0) + len(text) + bool(output[destination])
+                            if size + self.budget.output_chars > self.limits.max_text_chars:
+                                raise LimitExceededError('ODF inline fragment text limit exceeded')
+                            output['_chars'] = size
+                        output[destination].append(text)
                     return
                 if e.tag == q('table:table'):
+                    before = self.budget.output_chars
                     table = self.table(e)
-                    parts[destination].extend('\t'.join(c.text for c in row) for row in table.rows)
+                    if not charge:
+                        # table() preflights its temporary cells. The enclosing
+                        # paragraph/cell will charge their retained projection;
+                        # do not charge that same text twice.
+                        self.budget.output_chars = before
+                    for row in table.rows:
+                        size = sum(len(c.text) for c in row) + max(0, len(row) - 1)
+                        if not charge:
+                            size += output.get('_chars', 0) + bool(output[destination])
+                            if size + self.budget.output_chars > self.limits.max_text_chars:
+                                raise LimitExceededError('ODF inline fragment text limit exceeded')
+                            output['_chars'] = size
+                        output[destination].append('\t'.join(c.text for c in row))
                     return
                 if e.tag not in {q('draw:page'), q('draw:g'), q('draw:frame'), q('draw:text-box'),
-                                 q('draw:custom-shape'), q('draw:rect'), q('draw:ellipse'),
-                                 q('draw:a'), q('presentation:notes')} | BLOCK_WRAPPERS:
+                                 q('draw:custom-shape'), q('draw:rect'), q('draw:ellipse'), q('draw:caption'),
+                                 q('draw:a'), q('presentation:notes'), q('text:note-body')} | BLOCK_WRAPPERS:
                     self.unsupported(e)
                     return
                 if e.tag == q('draw:frame'):
@@ -1160,7 +1190,7 @@ class _Parser:
                     # empty or hidden content must not expose a later alternative.
                     for child in e:
                         if child.tag in {q('draw:text-box'), q('table:table')}:
-                            walk(child, destination, embedded)
+                            walk(child, destination, embedded, output, charge)
                             return
                         if child.tag == q('draw:object'):
                             object_body = self.inline_object_body(child)
@@ -1168,15 +1198,45 @@ class _Parser:
                                 self.warn(diagnostic_warning('odf_inline_text_object_projected_to_slide',
                                           'ODF inline text object projected to its owning slide; '
                                           'object layout and identity are not retained.'))
-                                for item in object_body:
-                                    walk(item, destination, True)
+                                in_note = self.in_note
+                                self.in_note = False
+                                try:
+                                    for item in object_body:
+                                        walk(item, destination, True, output, charge)
+                                finally:
+                                    self.in_note = in_note
                                 return
                         else:
                             self.unsupported(child)
                     return
                 for child in e:
-                    walk(child, destination, embedded)
-            walk(page)
+                    walk(child, destination, embedded, output, charge)
+
+            def fragment(element):
+                is_note = element.tag == q('text:note')
+                if is_note:
+                    bodies = element.findall(q('text:note-body'))
+                    if (self.in_note or element.get(q('text:note-class')) not in self.notes
+                            or len(bodies) != 1):
+                        self.unsupported(element)
+                        return []
+                    element = bodies[0]
+                output = {'text': []}
+                in_note = self.in_note
+                self.in_note = in_note or is_note
+                try:
+                    # Keep the enclosing destination; embedded presentation
+                    # attributes cannot promote text into a different story.
+                    walk(element, embedded=True, output=output, charge=False)
+                finally:
+                    self.in_note = in_note
+                return output['text']
+
+            self.slide_fragment = fragment
+            try:
+                walk(page)
+            finally:
+                self.slide_fragment = None
             slide.title, slide.text, slide.notes = ('\n'.join(parts[k]) for k in ('title', 'text', 'notes'))
             self.doc.slides.append(slide)
 
