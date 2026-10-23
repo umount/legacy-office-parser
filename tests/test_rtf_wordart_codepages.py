@@ -126,7 +126,7 @@ def test_primary_fallback_and_independent_story_identity():
     body = shape(br'\u937?', tail=fallback) + shape(br'\u937?')
     assert parse(br'\ansicpg1253 ' + body).textboxes == 'Ω\nΩ'
     assert parse(br'\ansicpg1253 ' + shape(br'\u937?', after=primary)).textboxes == 'Primary'
-    assert not parse(br'\ansicpg1253 {\shp' + fallback + b'}').textboxes
+    assert parse(br'\ansicpg1253 {\shp' + fallback + b'}').textboxes == 'Fallback'
 
 
 @pytest.mark.parametrize('cp,unit,expected', [(1250, br"\'8e", 'Ž'),
