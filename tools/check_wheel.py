@@ -97,7 +97,7 @@ def main():
     from legacy_office_parser._xls_formats import render_number
     assert render_number(1 / 3, '# ?/?') == ' 1/3'
     assert render_number(1.23, '0.##') == '1.23'
-    assert render_number(1.0, '0.##') is None
+    assert render_number(1.0, '0.##') == '1.'
     assert render_number(1.0, 'General') == '1'
     soft = parse(br'{\rtf1 co\-operate\u8203?word}')
     assert normalize_text(soft).text == 'cooperate\u200bword'
