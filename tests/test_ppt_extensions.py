@@ -138,7 +138,9 @@ def test_original_libreoffice_fixture_fidelity_and_no_extension_warning():
     fixtures = Path(__file__).parent / 'fixtures'
     actual = parse_ppt(fixtures / 'slides_notes.ppt').to_dict()
     expected = json.loads((fixtures / 'slides_notes.expected.json').read_text())
-    assert actual.pop('warnings') == []
+    assert actual.pop('warnings') == ['PPT active slide-number field is not evaluated; no generated value is extracted.']
+    assert [d['code'] for d in actual.pop('diagnostics')] == [
+        'ppt_f_ppt_active_name_field_is_not_evaluated_no']
     expected.pop('warnings')
     assert actual == expected
 

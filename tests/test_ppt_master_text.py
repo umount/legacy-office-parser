@@ -189,7 +189,7 @@ def test_original_libreoffice_master_objects(monkeypatch):
         'Slide 3\nMASTER NOTICE / Привет 世界',
     ]
     assert all(s.title == s.notes == '' for s in result.slides)
-    assert result.warnings == []
+    assert result.warnings == ['PPT active slide-number field is not evaluated; no generated value is extracted.']
     # This fixture proves the omission: ordinary slide text cannot supply it.
     monkeypatch.setattr(ppt._Parser, 'master_text', lambda self, master_id: [])
     assert ppt.parse_ppt_bytes(raw, Limits()).text == 'Slide 1\n\nSlide 2\n\nSlide 3'
@@ -293,3 +293,7 @@ def test_many_empty_master_shapes_are_not_cached_or_revisited(monkeypatch):
 
 # Original LibreOffice-generated CFB, unmodified; no private or external file.
 # Provenance and regeneration: docs/PPT.md.
+
+
+def test_explicit_no_placeholder_keeps_ordinary_master_text(monkeypatch):
+    assert run(monkeypatch, fixture(shape('Ordinary', placeholder=0))).text == 'Slide body\nOrdinary'

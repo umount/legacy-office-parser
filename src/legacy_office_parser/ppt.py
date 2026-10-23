@@ -23,6 +23,7 @@ from typing import Iterator
 from .diagnostics import diagnostic_warning
 from ._ole import open_ole, read_stream
 from ._ppt_extensions import _timing_metadata
+from ._ppt_notes import notes_master
 from .errors import (EncryptedDocumentError, InvalidDocumentError,
                      LimitExceededError, UnsupportedFormatError)
 from .limits import Limits
@@ -63,8 +64,12 @@ class _Parser:
         self.default_hf: _Record | None = None
         self.hf_cache: dict[int, tuple[int, dict[int, _Record]]] = {}
         self.omit_title_fields = False
-        self.inline_footer: _Record | None = None
-        self.inline_footer_done = False
+        self.inline_values: dict[int, _Record] = {}
+        self.inline_fields_done: set[int] = set()
+        self.notes_master_id = 0
+        self.notes_persist_ids: set[int] = set()
+        self.notes_master_cache = None
+        self.notes_hf: _Record | None = None
         self.outline_sources: list[str] = []
 
     def charge(self, count: int = 1) -> None:
@@ -222,8 +227,8 @@ class _Parser:
                 sources.append(original)
             # One text atom is the unambiguous association supported here.
             # Do not join independently encoded atoms or guess unknown metadata.
-            if (markers and set(markers.values()) == {4090} and not unknown
-                    and len(chunks) == 1 and self.inline_footer is not None):
+            if (markers and set(markers.values()) <= self.inline_values.keys()
+                    and not unknown and len(chunks) == 1):
                 raw = chunks[0]
                 positions = []
                 unit = 0
@@ -231,27 +236,32 @@ class _Parser:
                     if unit in markers:
                         if char != '*':
                             break
-                        positions.append(index)
+                        positions.append((index, markers[unit]))
                     unit += 2 if ord(char) > 0xffff else 1
                 else:
                     if len(positions) == len(markers):
-                        footer = self.inline_footer
-                        # Source text was already charged. Charge every copy of
-                        # the footer before decoding or constructing expanded text.
-                        extra = (len(positions) - 1) * ((footer.end - footer.start) // 2)
-                        if self.text_chars + extra + (footer.end - footer.start) // 2 > self.limits.max_text_chars:
+                        # Budget every expanded copy before decoding any value.
+                        extra = sum((self.inline_values[typ].end - self.inline_values[typ].start) // 2
+                                    for _, typ in positions)
+                        if self.text_chars + extra > self.limits.max_text_chars:
                             raise LimitExceededError('PPT inline field text limit exceeded')
-                        self.text_chars += extra
-                        value = self.decode(_Record(4000, 0, 0, footer.start, footer.end, footer.depth),
-                                            normalize=False)
+                        values = {}
+                        for typ in dict.fromkeys(typ for _, typ in positions):
+                            atom = self.inline_values[typ]
+                            values[typ] = self.decode(
+                                _Record(4000, 0, 0, atom.start, atom.end, atom.depth), normalize=False)
+                        self.text_chars += extra - sum(
+                            (self.inline_values[typ].end - self.inline_values[typ].start) // 2
+                            for typ in values)
                         pieces = []
                         previous = 0
-                        for index in positions:
-                            pieces.extend((raw[previous:index], value))
+                        for index, typ in positions:
+                            pieces.extend((raw[previous:index], values[typ]))
                             previous = index + 1
                         pieces.append(raw[previous:])
                         blocks.append((kind, self.normalize_text(''.join(pieces))))
-                        self.inline_footer_done = True
+                        self.inline_fields_done.update({4088: 7, 4089: 10, 4090: 9}[typ]
+                                                       for typ in values)
                         return
             if markers:
                 self.warn(diagnostic_warning('ppt_text_field_markers_are_not_evaluated_stored_text', 'PPT text field markers are not evaluated; stored text may contain placeholders.'))
@@ -380,9 +390,9 @@ class _Parser:
                         self.size(atom, 8, exact=True)
                         # Position=-1 may still describe a conditional field.
                         placeholder = self.data[atom.start + 4]
-        if allowed and placeholder in (7, 8, 9) and self.collect_master_fields is not None:
+        if allowed and placeholder in (7, 8, 9, 10) and self.collect_master_fields is not None:
             self.collect_master_fields.add(placeholder)
-        return allowed and placeholder is None
+        return allowed and placeholder in (None, 0)
 
     def shape_text(self, shape: _Record, outline: list[tuple[int, str]]) -> list[tuple[int, str]]:
         blocks: list[tuple[int, str]] = []
@@ -416,7 +426,7 @@ class _Parser:
                     elif atom.type == 3011:
                         self.size(atom, 8, exact=True)
                         placement = self.data[atom.start + 4]
-                        if placement in (7, 8, 9):
+                        if placement in (7, 8, 9, 10):
                             self.local_fields.add(placement)
             elif rec.type in (0xf00b, 0xf122):
                 text = self.shape_properties(rec)
@@ -533,7 +543,7 @@ class _Parser:
                 if flags is not None or child.version != 0 or child.instance != 0:
                     raise InvalidDocumentError('invalid or duplicate PPT header/footer flags')
                 flags = unpack_from('<H', self.data, child.start + 2)[0]
-            elif child.type == 4026 and child.instance in (0, 2):
+            elif child.type == 4026 and child.instance in (0, 1, 2):
                 length = child.end - child.start
                 if child.version != 0 or length % 2 or (child.instance == 0 and length > 510):
                     raise InvalidDocumentError('invalid PPT header/footer string record')
@@ -576,15 +586,23 @@ class _Parser:
                 if flags & 0x29:
                     self.warn(diagnostic_warning('ppt_active_master_header_footer_settings_are_not_resolved', 'PPT active master header/footer settings are not resolved for slides.'))
             return []
+        return self.static_fields(settings, fields, local_fields)
+
+    def static_fields(self, settings, fields: set[int], local_fields: set[int],
+                      *, notes: bool = False) -> list[tuple[int, str]]:
+        if settings is None:
+            return []
         flags, strings = settings
         blocks = []
         for placement, bit, instance, name in ((7, 1, 0, 'date'), (8, 8, None, 'slide-number'),
-                                              (9, 32, 2, 'footer')):
+                                              (9, 32, 2, 'footer'), (10, 16, 1, 'header')):
+            if placement == 10 and not notes:
+                continue
             if not flags & bit:
                 continue
-            if (placement == 9 or (placement == 7 and flags & 4 and not flags & 2)) and instance not in strings:
+            if (placement in (9, 10) or (placement == 7 and flags & 4 and not flags & 2)) and instance not in strings:
                 continue
-            if placement == 9 and self.inline_footer_done:
+            if placement in self.inline_fields_done:
                 continue
             if placement in local_fields or 0 in local_fields:
                 self.warn(diagnostic_warning('ppt_slide_local_field_shapes_are_retained_as_stored', 'PPT slide-local field shapes are retained as stored text; legacy field text is not merged.'))
@@ -677,9 +695,9 @@ class _Parser:
 
     def sheet(self, entry: _Entry, typ: int) -> tuple[list[tuple[int, str]], int, bool, list[SlideComment]]:
         rec = self.resolve(entry.persist_id, typ)
-        self.local_fields = set() if typ == 1006 else None
-        self.inline_footer = None
-        self.inline_footer_done = False
+        self.local_fields = set()
+        self.inline_values = {}
+        self.inline_fields_done = set()
         children = list(self.children(rec))
         local_hf = None
         for child in children:
@@ -687,10 +705,15 @@ class _Parser:
                 if local_hf is not None:
                     raise InvalidDocumentError('duplicate PPT slide header/footer container')
                 local_hf = child
-        if local_hf is not None:
-            flags, strings = self.header_footer_settings(local_hf)
-            if flags & 32:
-                self.inline_footer = strings.get(2)
+        source = local_hf if local_hf is not None else (self.default_hf if typ == 1006 else self.notes_hf)
+        settings = self.header_footer_settings(source) if source is not None else None
+        if settings is not None:
+            flags, strings = settings
+            for marker, enabled, instance in ((4090, bool(flags & 32), 2),
+                                              (4088, flags & 7 == 5, 0),
+                                              (4089, typ == 1008 and bool(flags & 16), 1)):
+                if enabled and instance in strings:
+                    self.inline_values[marker] = strings[instance]
         self.outline_sources = []
         outline = self.text_blocks(entry.records, sources=self.outline_sources)
         blocks = list(outline)
@@ -698,6 +721,7 @@ class _Parser:
         hidden = False
         master_id = 0
         title_layout = False
+        inherit_notes = False
         comments: list[SlideComment] = []
         seen_extensions: set[str] = set()
         for child in children:
@@ -706,6 +730,8 @@ class _Parser:
                     raise InvalidDocumentError('duplicate PPT slide/notes atom')
                 self.size(child, 24 if typ == 1006 else 8, exact=True)
                 link = self.u32(child, 16 if typ == 1006 else 0)
+                if typ == 1008:
+                    inherit_notes = bool(self.data[child.start + 4] & 1)
                 if typ == 1006:
                     title_layout = self.u32(child) == 0
                 if typ == 1006 and self.data[child.start + 20] & 1:
@@ -724,12 +750,16 @@ class _Parser:
             raise InvalidDocumentError('missing PPT slide/notes atom')
         local_fields = self.local_fields or set()
         self.local_fields = None
-        self.inline_footer = None
+        self.inline_values = {}
         self.outline_sources = []
         if master_id:
             blocks.extend(self.master_text(master_id))
         if typ == 1006:
             blocks.extend(self.static_slide_fields(master_id, local_hf, local_fields, title_layout))
+        else:
+            inherited, fields = notes_master(self) if inherit_notes else ([], set())
+            blocks.extend(inherited)
+            blocks.extend(self.static_fields(settings, fields, local_fields, notes=True))
         return blocks, link, hidden, comments
 
     def parse(self, edit_offset: int) -> Document:
@@ -743,16 +773,22 @@ class _Parser:
                     raise InvalidDocumentError('duplicate PPT document atom')
                 seen_document_atom = True
                 self.omit_title_fields = bool(self.data[rec.start + 37])
+                self.notes_master_id = self.u32(rec, 24)
             elif rec.type == 4057 and rec.instance == 3:
                 if self.default_hf is not None:
                     raise InvalidDocumentError('duplicate PPT default header/footer container')
                 self.default_hf = rec
+            elif rec.type == 4057 and rec.instance == 4:
+                if self.notes_hf is not None:
+                    raise InvalidDocumentError('duplicate PPT notes header/footer container')
+                self.notes_hf = rec
             elif rec.type == 4080 and rec.instance in (0, 1, 2):
                 if rec.instance in lists:
                     raise InvalidDocumentError('duplicate PPT slide/notes list')
                 lists[rec.instance] = self.entries(rec)
         self.masters = {e.slide_id: e for e in lists.get(1, [])}
         notes = {e.slide_id: e for e in lists.get(2, [])}
+        self.notes_persist_ids = {e.persist_id for e in notes.values()}
         document = Document(format='ppt')
         emitted_chars = 0
         for entry in lists.get(0, []):

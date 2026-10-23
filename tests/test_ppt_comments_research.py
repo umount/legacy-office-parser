@@ -93,7 +93,7 @@ def test_comments_are_structured_separately_from_body_and_notes():
     assert [[dict(text=c.text, author=c.author, initials=c.initials) for c in s.comments]
             for s in document.slides] == [s['comments'] for s in EXPECTED]
     assert document.text.endswith('Slide body 2\nSlide body 2')
-    assert document.warnings == []
+    assert document.warnings == ['PPT active slide-number field is not evaluated; no generated value is extracted.']
 
 
 @pytest.mark.skipif(os.environ.get('OFFICE_CORPUS_LIBREOFFICE') != '1',

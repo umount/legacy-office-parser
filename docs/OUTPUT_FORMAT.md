@@ -36,7 +36,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.30.0**. The package version is available as
+This reference describes package **0.31.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -341,6 +341,12 @@ A `SlideComment` has required `text: str`, plus `author: str` and `initials: str
 defaulting to `""`. All three fields are retained in JSON. Supported PPT comments belong to their slide;
 they are different from DOC's document-level `Comment` objects. Missing comment
 metadata is not permission to infer an author or a location.
+
+Since 0.31, PPT `notes` also includes ordinary text inherited from the active
+notes master and supported static notes headers/footers. Template prompts are
+excluded. Inline footer and fixed-date markers use the applicable local or
+document settings; automatic dates and page numbers are not calculated.
+The schema is unchanged, but affected text and diagnostics can change.
 
 ## Auxiliary stories, notes, and DOC comments
 

@@ -192,7 +192,7 @@ def test_original_libreoffice_static_fields(monkeypatch):
         'Body 3\nAnother stored date\nDifferent footer',
     ]
     assert all(s.title == s.notes == '' for s in result.slides)
-    assert result.warnings == []
+    assert result.warnings == ['PPT active slide-number field is not evaluated; no generated value is extracted.']
     monkeypatch.setattr(ppt._Parser, 'static_slide_fields', lambda self, *args: [])
     assert [s.text for s in ppt.parse_ppt_bytes(raw, Limits()).slides] == ['Body 1', 'Body 2', 'Body 3']
 
@@ -257,3 +257,29 @@ def test_field_positions_use_original_utf16_units(monkeypatch):
     result = run(monkeypatch, fixture(local=hf(32), slide_payload=local))
     assert result.text == '😀 *'
     assert any('not merged' in warning for warning in result.warnings)
+
+
+def test_notes_static_fields_and_inline_values_use_notes_settings(monkeypatch):
+    from test_ppt import slide as plain_slide
+    from test_ppt_inline_fields import inline, marker
+
+    settings = hf(53, 'Notes footer', 'Fixed date', instance=4,
+                  extra=atom(4026, 'Notes header'.encode('utf-16le'), instance=1))
+    header = bytearray(40)
+    header[24:28] = pack('<I', 4)
+    root = container(1000, atom(1001, header, version=1) + settings
+                     + container(4080, persist(2, 200))
+                     + container(4080, persist(3, 300), 2))
+    master = container(1008, atom(1009, bytes(8), version=1) + drawing(
+        shape('date prompt', placeholder=7) + shape('footer prompt', placeholder=9)
+        + shape('header prompt', placeholder=10)))
+    for payload, expected in [
+        (drawing(shape('Speaker notes')), 'Speaker notes\nFixed date\nNotes footer\nNotes header'),
+        (inline(text('* / * / *') + marker(0, 4089) + marker(4, 4088) + marker(8)),
+         'Notes header / Fixed date / Notes footer'),
+    ]:
+        notes = container(1008, atom(1009, pack('<IHH', 200, 1, 0), version=1) + payload)
+        result = run(monkeypatch, File().edit({1: root, 2: plain_slide(notes=300), 3: notes, 4: master}))
+        assert result.slides[0].notes == expected
+        assert result.slides[0].text == ''
+        assert result.warnings == []

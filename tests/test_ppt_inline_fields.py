@@ -78,8 +78,8 @@ def test_mixed_unknown_or_ambiguous_text_warns_without_guessing(monkeypatch, raw
     assert any('field markers are not evaluated' in w for w in result.warnings)
 
 
-@pytest.mark.parametrize('settings', [None, hf(0, 'Hidden'), hf(32, None)])
-def test_missing_or_disabled_local_source_does_not_borrow_default(monkeypatch, settings):
+@pytest.mark.parametrize('settings', [hf(0, 'Hidden'), hf(32, None)])
+def test_disabled_or_empty_local_source_does_not_borrow_default(monkeypatch, settings):
     f = fixture(local=settings, default=hf(32, 'Default', instance=3), slide_payload=inline(text('*') + marker(0)))
     result = run(monkeypatch, f)
     assert result.text == '*'
@@ -242,3 +242,26 @@ def test_outline_original_equivalence_is_specific_to_referenced_block(monkeypatc
     result = run(monkeypatch, f)
     assert result.text == 'First: Team\nSecond: Team\nFirst: *'
     assert result.warnings == []
+
+
+def test_default_footer_and_fixed_date_replace_their_own_markers(monkeypatch):
+    raw = text('😀 * / * / *') + marker(3, 4088) + marker(7) + marker(11)
+    f = fixture(default=hf(37, 'Team', '2026-10-23', instance=3), slide_payload=inline(raw))
+    result = run(monkeypatch, f)
+    assert result.text == '😀 2026-10-23 / Team / Team'
+    assert result.warnings == []
+
+
+def test_dynamic_date_does_not_use_stored_fixed_date(monkeypatch):
+    raw = text('Date: *') + marker(6, 4088)
+    result = run(monkeypatch, fixture(local=hf(7, None, 'Stale date'), slide_payload=inline(raw)))
+    assert result.text == 'Date: *'
+    assert any('field markers are not evaluated' in w for w in result.warnings)
+
+
+def test_mixed_field_copies_share_text_budget(monkeypatch):
+    raw = text('***') + marker(0, 4088) + marker(1) + marker(2)
+    f = fixture(local=hf(37, 'abc', 'xy'), slide_payload=inline(raw))
+    with pytest.raises(LimitExceededError, match='inline field text'):
+        run(monkeypatch, f, replace(Limits(), max_text_chars=10))
+    assert run(monkeypatch, f, replace(Limits(), max_text_chars=11)).text == 'xyabcabc'
