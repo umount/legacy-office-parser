@@ -106,7 +106,7 @@ def test_column_or_corner_conditions_keep_whole_partition_unknown(monkeypatch, c
     [(['A', ''], [0, 100, 200], [0, 1])],  # Orphan continuation.
     [(['A', 'B'], [0, 100, 200], [2, 0])],  # Restart without continuation.
     [(['A'], [0, 100], [2])],
-    [(['A'], [0, 100], [96]), ([''], [0, 100], [32])],  # Vertical ownership deferred.
+    [(['A'], [0, 100], [96]), ([''], [0, 200], [32])],  # Vertical edges disagree.
     [(['A'], [0, 100], [64])],  # Reserved vertical flag.
     [(['A'], [0, 0], [0])],
     [(['A', 'B'], [0, 100], [0])],  # Definition/physical-cell mismatch.

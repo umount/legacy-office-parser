@@ -34,20 +34,20 @@ def matched(flags, row, column, rows, columns, header, ordinal, bands):
     return result
 
 
-def row_only_context(props, cells, conditions):
+def row_only_context(props, cells, conditions, vertical=False):
     """Prove row ownership without assigning logical columns to physical cells.
 
     MS-DOC 2.4.3 permits unequal row grids; 2.4.6.6 makes these four
     conditions depend only on rows. TCGRF horizontal continuations contribute
     no rendered contents. Accept only empty continuations with an explicit
-    same-row origin. Vertical ownership remains outside this proof.
+    same-row origin. Vertical ownership requires the separate partition proof.
     """
     if (len(props.flags) != len(cells)
             or any(condition not in (1, 2, 64, 128) for condition in conditions)):
         return False
     merged = False
     for c, (flag, cell) in enumerate(zip(props.flags, cells)):
-        if flag & 0x60:
+        if flag & 0x60 and not vertical:
             return False
         horizontal = flag & 3
         if horizontal == 1:
@@ -57,6 +57,41 @@ def row_only_context(props, cells, conditions):
             merged = horizontal in (2, 3)
             if merged and (c + 1 == len(cells) or props.flags[c + 1] & 3 != 1):
                 return False
+    return True
+
+
+def vertical_row_context(rows, budget):
+    """Prove only explicit same-column vertical groups with empty continuations.
+
+    MS-DOC 2.9.342 assigns content to the restart, not continuation cells.
+    Equal physical grids and no horizontal merges avoid inferred ownership.
+    Source text in each origin keeps its own row's conditional context.
+    """
+    if not any(flag & 0x60 for _, props, _ in rows for flag in props.flags):
+        return False
+    grid = rows[0][1].edges
+    for r, (_, props, cells) in enumerate(rows):
+        if props.edges != grid or len(props.flags) != len(cells):
+            return False
+        for c, (flag, cell) in enumerate(zip(props.flags, cells)):
+            budget.record()
+            if flag & 3:
+                return False
+            vertical = flag & 0x60
+            if vertical == 0x40:
+                return False  # Reserved, not a restart.
+            if vertical == 0x60:
+                if r + 1 == len(rows):
+                    return False
+                following = rows[r + 1][1].flags
+                if c >= len(following) or following[c] & 0x60 != 0x20:
+                    return False
+            elif vertical == 0x20:
+                if not r or len(cell) != 1 or cell[0][0] != cell[0][1]:
+                    return False
+                previous = rows[r - 1][1].flags
+                if c >= len(previous) or previous[c] & 0x60 not in (0x20, 0x60):
+                    return False
     return True
 
 
@@ -80,6 +115,7 @@ def apply_conditions(doc, paragraphs):
         grid = rows[0][1].edges
         rectangular = True
         row_only = True
+        vertical = vertical_row_context(rows, doc.budget)
         for entries, p, cells in rows:
             conditions, bands, unsafe = doc.styles.table_conditions(p.applied_table_style)
             safe &= (not unsafe and p.condition_known and bool(cells)
@@ -87,7 +123,7 @@ def apply_conditions(doc, paragraphs):
                      and all(a < b for a, b in zip(p.edges, p.edges[1:]))
                      and len(p.flags) == len(cells))
             rectangular &= p.edges == grid and not any(f & 0x63 for f in p.flags)
-            row_only &= row_only_context(p, cells, conditions)
+            row_only &= row_only_context(p, cells, conditions, vertical)
         safe &= rectangular or row_only
         # A style on an adjacent row can alter the boundary even if it has no CCnf.
         if not safe:
