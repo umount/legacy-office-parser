@@ -280,33 +280,40 @@ class MixedRowSelections:
 
 @dataclass(frozen=True, slots=True)
 class WholeRowSelections:
-    """Source-only proof for exact runs of complete outer table rows."""
+    """Source-only outer runs, optionally mixed spans and single inner rows."""
 
     starts: dict[int, tuple[int, int]]
     ends: dict[int, tuple[int, int]]
     mixed: MixedRowSelections | None = None
+    inner_rows: set[tuple[int, int]] | None = None
 
     def contains(self, begin, end):
         first, last = self.starts.get(begin), self.ends.get(end)
         return (first is not None and last is not None
                 and first[0] == last[0] and first[1] <= last[1]) or (
-                    self.mixed is not None and self.mixed.contains(begin, end))
+                    self.mixed is not None and self.mixed.contains(begin, end)) or (
+                    self.inner_rows is not None and (begin, end) in self.inner_rows)
 
 
 def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known,
-                                 limits: Limits, *, record=None, include_ordinary=False):
+                                 limits: Limits, *, record=None, include_ordinary=False,
+                                 include_inner=False):
     """Index complete outer rows, including fully closed nested tables.
 
     ``paragraphs`` is the main-story source prepass: (begin, end, mark,
     mark_cp, properties, hidden, known). CPs count unnormalized UTF-16 units;
     end excludes the delimiter. ``paragraph_known`` proves PAPX coverage.
     This supplements, rather than replaces, ordinary/same-cell selection proof.
+    ``include_inner`` additionally retains single depth-two rows with no deeper
+    table inside them, after their entire enclosing outer table validates.
     No source range is widened, and no projected table grid is consulted.
     """
     # Charge before iterating or allocating indexes. Each paragraph can retain
     # at most one pending row, two endpoint entries, and one stack frame.
-    # Mixed proof retains four additional per-paragraph arrays, charged here.
-    cost = (10 if include_ordinary else 6) * len(paragraphs) + 1
+    # Mixed proof retains four additional per-paragraph arrays. Inner proof
+    # charges three more units per paragraph for pending and retained CP pairs;
+    # it never creates an interval for every possible combination of rows.
+    cost = ((10 if include_ordinary else 6) + (3 if include_inner else 0)) * len(paragraphs) + 1
     if cost > limits.max_records:
         raise LimitExceededError('DOC comment selection record limit exceeded')
     if record is not None:
@@ -319,12 +326,15 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
     count = len(text) // 2
     mixed = MixedRowSelections([], [], [], [], memoryview(text)) if include_ordinary else None
     stack, rows = [], []
+    pending_inner, inner_rows = [], set()
+    inner_has_nested = False
     bad = fields = False
     previous_end = 0
     run = cells = 0
 
     def publish():
         if not bad and not stack:
+            inner_rows.update(pending_inner)
             for ordinal, (begin, end) in enumerate(rows):
                 if 0xdc00 <= struct.unpack_from('<H', text, begin * 2)[0] <= 0xdfff:
                     continue
@@ -360,6 +370,8 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
                     and not (props.row_end or props.inner_cell or props.inner_ttp)):
                 mixed.append(begin, end + 1, True)
             stack, rows = [], []
+            pending_inner = []
+            inner_has_nested = False
             bad = False
             run += 1
             continue
@@ -369,6 +381,8 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
             bad = True
         if bad:
             continue
+        if depth > 2:
+            inner_has_nested = True
         if depth > len(stack) + 1:
             # Missing enclosing-depth paragraph: do not invent its start.
             bad = True
@@ -378,6 +392,8 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
                 bad = True
                 break
             stack.pop()
+            if len(stack) < 2:
+                inner_has_nested = False
         if bad:
             continue
         if depth > len(stack):
@@ -402,6 +418,13 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
                 continue
             if depth == 1:
                 rows.append((frame[0], end + 1))
+            elif depth == 2:
+                # Single exact inner rows only, never inferred multi-row runs.
+                # Publication waits for the entire enclosing table to close.
+                if (include_inner and not inner_has_nested
+                        and not 0xdc00 <= struct.unpack_from('<H', text, frame[0] * 2)[0] <= 0xdfff):
+                    pending_inner.append((frame[0], end + 1))
+                inner_has_nested = False
             frame[:] = [end + 1, 0, False]
         elif is_cell:
             cells += 1
@@ -422,4 +445,4 @@ def whole_row_comment_selections(text, paragraphs, section_ends, paragraph_known
     # field delimiters, even when a particular row does not contain one.
     if fields:
         return WholeRowSelections({}, {})
-    return WholeRowSelections(starts, ends, mixed)
+    return WholeRowSelections(starts, ends, mixed, inner_rows)
