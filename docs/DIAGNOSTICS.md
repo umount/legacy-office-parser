@@ -153,3 +153,7 @@ Warning messages are not source locations or severity classifications. No code i
 - `doc_textbox_placement_unmodeled`: Textbox source ranges are retained when proven; drawing relationships and page placement are not modeled.
 
 - `odf_sheet_slide_visibility_style_unresolved`: A named sheet/slide visibility style is missing, duplicated or cyclic in its owning document scope; hidden state is not inferred.
+
+- `odf_inline_text_object_projected_to_slide`: recognized direct inline ODF text
+  object projected to its owning slide's display destination; object identity
+  and layout are not represented.

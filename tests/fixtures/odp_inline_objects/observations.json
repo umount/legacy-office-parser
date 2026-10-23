@@ -1,0 +1,30 @@
+{
+  "reader": "LibreOffice 7.4.7.2 40(Build:2)",
+  "schema": "OASIS ODF 1.3 (content, styles, manifest validated)",
+  "observations": [
+    {
+      "format": "odp",
+      "loaded": true,
+      "page_count": 1,
+      "pages": [
+        {
+          "shape_count": 0,
+          "shapes": []
+        }
+      ]
+    },
+    {
+      "format": "odt",
+      "loaded": true,
+      "embedded_count": 1,
+      "embedded": [
+        {
+          "writer_service": true,
+          "text": "Object before\nObject cell\nObject after",
+          "table_count": 1,
+          "cell_A1": "Object cell"
+        }
+      ]
+    }
+  ]
+}

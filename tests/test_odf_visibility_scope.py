@@ -49,7 +49,7 @@ def test_embedded_style_cannot_override_host_flag(fmt, host_hidden):
     doc = document(fmt, style(fmt, hidden=host_hidden), style(fmt, hidden=not host_hidden))
     assert hidden(doc) is host_hidden
     assert 'Host' in doc.text
-    assert 'Embedded' not in doc.text
+    assert ('Embedded' in doc.text) is (fmt == 'odp')
 
 
 @pytest.mark.parametrize('fmt', ['ods', 'odp'])

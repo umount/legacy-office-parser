@@ -1095,17 +1095,20 @@ class _Parser:
                                         'presentation:visibility'))
             parts = {'title': [], 'text': [], 'notes': []}
 
-            def walk(e, destination='text'):
+            def walk(e, destination='text', embedded=False):
                 if self.section_hidden(e):
                     return
                 if e.tag in SKIP:
                     self.unsupported(e)
                     return
-                if e.tag == q('presentation:notes'):
+                if embedded and e.tag == q('presentation:notes'):
+                    self.unsupported(e)
+                    return
+                if not embedded and e.tag == q('presentation:notes'):
                     destination = 'notes'
-                elif e.get(q('presentation:class')) in {'title', 'subtitle'} and destination != 'notes':
+                elif not embedded and e.get(q('presentation:class')) in {'title', 'subtitle'} and destination != 'notes':
                     destination = 'title'
-                elif e.get(q('presentation:class')) in {'header', 'footer', 'date-time', 'page-number'}:
+                elif not embedded and e.get(q('presentation:class')) in {'header', 'footer', 'date-time', 'page-number'}:
                     self.warn(diagnostic_warning('odf_slide_headers_footers_dates_and_page_numbers_omitted', 'ODF slide headers, footers, dates and page numbers omitted.'))
                     return
                 if e.tag in PARAS:
@@ -1130,12 +1133,22 @@ class _Parser:
                     # empty or hidden content must not expose a later alternative.
                     for child in e:
                         if child.tag in {q('draw:text-box'), q('table:table')}:
-                            walk(child, destination)
+                            walk(child, destination, embedded)
                             return
-                        self.unsupported(child)
+                        if child.tag == q('draw:object'):
+                            object_body = self.inline_object_body(child)
+                            if object_body is not None:
+                                self.warn(diagnostic_warning('odf_inline_text_object_projected_to_slide',
+                                          'ODF inline text object projected to its owning slide; '
+                                          'object layout and identity are not retained.'))
+                                for item in object_body:
+                                    walk(item, destination, True)
+                                return
+                        else:
+                            self.unsupported(child)
                     return
                 for child in e:
-                    walk(child, destination)
+                    walk(child, destination, embedded)
             walk(page)
             slide.title, slide.text, slide.notes = ('\n'.join(parts[k]) for k in ('title', 'text', 'notes'))
             self.doc.slides.append(slide)

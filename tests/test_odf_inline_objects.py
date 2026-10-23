@@ -271,12 +271,12 @@ def test_inline_object_shares_xml_depth_record_and_text_budgets():
 
 
 @pytest.mark.parametrize('fmt', ['ods', 'odp'])
-def test_other_formats_do_not_gain_inline_object_recursion(fmt):
+def test_inline_object_host_support_is_explicit(fmt):
     obj = embedded(p('OMIT'))
     body = table(frame(obj)) if fmt == 'ods' else '<draw:page>' + frame(obj) + '</draw:page>'
     # The simple object uses only the namespaces already in the shared helper.
     body = body.replace(' svg:width="12cm" svg:height="4cm"', '')
-    assert 'OMIT' not in parse_odf_bytes(other_package(body, fmt), Limits()).text
+    assert ('OMIT' in parse_odf_bytes(other_package(body, fmt), Limits()).text) is (fmt == 'odp')
 
 
 @pytest.mark.skipif(not os.environ.get('ODF13_SCHEMA'), reason='optional official ODF 1.3 schema')
