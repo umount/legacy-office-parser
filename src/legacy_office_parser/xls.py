@@ -5,13 +5,13 @@ Protocol/reference provenance is recorded in docs/XLS.md.
 from __future__ import annotations
 
 import math
-import re
 import struct
-from datetime import datetime, timedelta
 
 from .diagnostics import diagnostic_warning
 from ._ole import open_ole, read_stream
-from ._xls_formats import BUILTIN_NUMERIC, hides_text, text_affixes, text_literal, render_number, simple_date_format
+from ._xls_formats import BUILTIN_NUMERIC, hides_text, text_affixes, text_literal, render_number
+from ._xls_dates import interpret_date
+from .number_locale import resolve_locale
 from ._xls_strings import Segments, shared_strings
 from .errors import EncryptedDocumentError, InvalidDocumentError, LimitExceededError, UnsupportedFormatError
 from .limits import Limits
@@ -38,7 +38,8 @@ def _rk(data):
 
 
 class _Parser:
-    def __init__(self, data, limits):
+    def __init__(self, data, limits, *, display_locale=None):
+        self.display_locale = resolve_locale(display_locale)
         self.data, self.limits = data, limits
         self.records = self.chars = self.cells = self.merges = 0
         self.warnings = []
@@ -110,60 +111,22 @@ class _Parser:
         custom = self.formats.get(fmt)
         numeric_format = custom if custom is not None else BUILTIN_NUMERIC.get(fmt)
         if numeric_format is not None:
-            text = render_number(value, numeric_format)
+            text = render_number(value, numeric_format, display_locale=self.display_locale)
             if text is not None:
                 return value, 'number', text
-        # Reject unsupported custom syntax before the legacy date heuristic can
-        # mistake literal letters, locale tags or mixed number/date codes for dates.
-        if custom is not None and not simple_date_format(custom):
-            self.warn(diagnostic_warning('xls_unsupported_or_ambiguous_date_number_format_raw_numeric_value', 'Unsupported or ambiguous date/number format: raw numeric value retained.'))
-            return value, 'number', str(value)
-        date = 14 <= fmt <= 22 or 45 <= fmt <= 47
-        time_only = fmt in (18, 19, 20, 21, 45, 47)
-        uncertain = 27 <= fmt <= 36 or 50 <= fmt <= 58 or fmt == 46
-        if custom is not None:
-            # Already gated as a plain date/time format; never strip literals.
-            cleaned = custom.lower()
-            date = bool(re.search('[ymdhs]', cleaned))
-            uncertain = date and (';' in cleaned or '[' in cleaned)
-            # Excel m/mm means minutes only after h/hh or before ss;
-            # longer m tokens always mean calendar months. Ignore separators,
-            # and keep AM/PM whole so its m letters cannot become month tokens.
-            # https://support.microsoft.com/en-us/excel/format-numbers-as-dates-or-times
-            tokens = re.findall(r'am/pm|a/p|y+|m+|d+|h+|s+', cleaned)
-            calendar_month = any(
-                token.startswith('m') and (
-                    len(token) > 2 or not (
-                        (i > 0 and tokens[i - 1] in ('h', 'hh')) or
-                        (i + 1 < len(tokens) and tokens[i + 1] == 'ss')
-                    )
-                )
-                for i, token in enumerate(tokens)
-            )
-            time_only = (date and not calendar_month and not re.search('[yd]', cleaned)
-                         and bool(re.search('[hs]', cleaned)))
-        elif not date:
-            uncertain = True
-        if uncertain:
-            self.warn(diagnostic_warning('xls_unsupported_or_ambiguous_date_number_format_raw_numeric_value', 'Unsupported or ambiguous date/number format: raw numeric value retained.'))
-        elif date:
-            if value < 0 or (not self.datemode and not time_only and 60 <= value < 61):
-                self.warn(diagnostic_warning('xls_unrepresentable_excel_date_including_serial_60_raw_numeric_value', 'Unrepresentable Excel date (including serial 60): raw numeric value retained.'))
-            else:
-                try:
-                    base = datetime(1904, 1, 1) if self.datemode else datetime(1899, 12, 31)
-                    serial = value if self.datemode or value < 60 else value - 1
-                    dt = base + timedelta(days=serial)
-                    if time_only:
-                        text = dt.time().isoformat(timespec='milliseconds').rstrip('0').rstrip('.')
-                    else:
-                        text = dt.isoformat(timespec='milliseconds').rstrip('0').rstrip('.')
-                        if dt.time() == datetime.min.time():
-                            text = dt.date().isoformat()
-                    return text, 'date', text
-                except (ValueError, OverflowError):
-                    self.warn(diagnostic_warning('xls_excel_date_outside_supported_range_raw_numeric_value_retained', 'Excel date outside supported range: raw numeric value retained.'))
-        return value, 'number', str(value)
+        outcome = interpret_date(value, custom if custom is not None else fmt, self.datemode)
+        if outcome.status == 'ok':
+            return outcome.result
+        diagnostics = {
+            'unsupported': ('xls_unsupported_or_ambiguous_date_number_format_raw_numeric_value',
+                            'Unsupported or ambiguous date/number format: raw numeric value retained.'),
+            'unrepresentable': ('xls_unrepresentable_excel_date_including_serial_60_raw_numeric_value',
+                                'Unrepresentable Excel date (including serial 60): raw numeric value retained.'),
+            'out_of_range': ('xls_excel_date_outside_supported_range_raw_numeric_value_retained',
+                             'Excel date outside supported range: raw numeric value retained.'),
+        }
+        self.warn(diagnostic_warning(*diagnostics[outcome.status]))
+        return outcome.result
 
     def add(self, sheet, seen, row, col, xf, value=None, kind='empty', formula=False,
             charged=False):
@@ -401,15 +364,15 @@ class _Parser:
         return bool(value), 'boolean'
 
 
-def _parse_workbook(data: bytes, limits: Limits) -> Document:
+def _parse_workbook(data: bytes, limits: Limits, *, display_locale=None) -> Document:
     """Internal stream entry, also used for synthetic protocol tests."""
     if len(data) > limits.max_stream_bytes:
         raise LimitExceededError('XLS stream size limit exceeded')
-    return _Parser(data, limits).parse()
+    return _Parser(data, limits, display_locale=display_locale).parse()
 
 
-def parse_xls_bytes(data: bytes, limits: Limits) -> Document:
+def parse_xls_bytes(data: bytes, limits: Limits, *, display_locale=None) -> Document:
     with open_ole(data, limits) as ole:
         name = 'Workbook' if ole.exists('Workbook') else 'Book'
         stream = read_stream(ole, name, limits)
-    return _parse_workbook(stream, limits)
+    return _parse_workbook(stream, limits, display_locale=display_locale)

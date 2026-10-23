@@ -7,7 +7,7 @@ from decimal import ROUND_DOWN, localcontext
 
 import pytest
 
-from legacy_office_parser._xls_formats import render_number, simple_date_format
+from legacy_office_parser._xls_formats import render_number
 from legacy_office_parser.errors import InvalidDocumentError, LimitExceededError
 from legacy_office_parser.limits import Limits
 from legacy_office_parser.xls import _parse_workbook
@@ -83,19 +83,18 @@ def test_literal_integer_records(code, expected, kind):
 
 @pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('code', [
-    '"kg"', '"0.00%"', r'\0', '""',
+    '""',
     '"unterminated', '0"unterminated', '"USD "0"',
     '\\', '0\\', '"USD "0\\',
     '0"x"0', '0""0', '0."x"00', '0"x".00', r'0\.00',
     '#,"x"##0', '0.00"x"E+00', '0E+"x"00', '0E+0""0',
     '0"%"%', r'0\%%', '"USD "0"x"0',
     '[>0]"USD "0',
-    '[$-409]0" kg"', '_("USD "0_)', '* "USD "0',
-    '$0.00', 'USD 0.00', '0.00 kg', ' "USD "0', '0" kg" ',
-    '"USD "$0',
-    '"USD "General', 'General" kg"', '"USD "0.#0',
+    '[$-777]0" kg"',
+    'USD 0.00', '0.00 kg',
+    '"USD "General', 'General" kg"',
     '"USD "0.0000000000000000', '0E+0000" kg"', '0.00E+00%" kg"',
-    '"USD "yyyy-mm-dd', 'yyyy"days"mm', '0"days"yyyy',
+    '"USD "yyyyyyyy-mm-dd', 'yyyy"days"mmmmmm', '0"days"yyyy',
 ])
 def test_literal_rejections_keep_raw_and_warn(code, kind):
     assert render_number(.125, code) is None
@@ -169,6 +168,5 @@ def test_nonfinite_literal_values(value):
 ])
 def test_date_recognition_unchanged(code, value, expected):
     assert render_number(value, code) is None
-    assert simple_date_format(code)
     cell = parse_number(value, 164, code).sheets[0].cells[0]
     assert (cell.value, cell.value_type, cell.text) == (expected, 'date', expected)

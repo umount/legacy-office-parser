@@ -3,10 +3,11 @@ from .api import parse, parse_doc, parse_ppt, parse_xls, parse_rtf, parse_odt, p
 from .errors import (ParseError, InvalidDocumentError, UnsupportedFormatError,
                      EncryptedDocumentError, LimitExceededError)
 from .limits import Limits
+from .number_locale import NumberLocale
 from .models import AuxiliaryStory, Document, Paragraph, Table, Cell, Slide, SlideComment, SpreadsheetCell, CellRange, Sheet, Note, NoteBodyRange, Comment, CommentBodyRange
 
-__version__ = '0.28.0'
-__all__ = ['AuxiliaryStory', 'Diagnostic', 'normalize_text', 'parse_xls', 'parse_rtf', 'parse_odt', 'parse_ods', 'parse_odp',
+__version__ = '0.29.0'
+__all__ = ['NumberLocale', 'AuxiliaryStory', 'Diagnostic', 'normalize_text', 'parse_xls', 'parse_rtf', 'parse_odt', 'parse_ods', 'parse_odp',
            'SpreadsheetCell', 'CellRange', 'Sheet', 'parse', 'parse_doc', 'parse_ppt', 'Limits', 'Document', 'Paragraph',
            'Table', 'Cell', 'Slide', 'SlideComment', 'Note', 'NoteBodyRange', 'Comment', 'CommentBodyRange', 'ParseError', 'InvalidDocumentError',
            'UnsupportedFormatError', 'EncryptedDocumentError', 'LimitExceededError']

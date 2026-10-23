@@ -47,10 +47,10 @@ def test_literal_display_and_exact_budgets(code, expected, raw, kind):
         _parse_workbook(data, replace(Limits(), max_text_chars=budget - 1))
 
 
-@pytest.mark.parametrize('code', ['0;0;0;bare', '0;0;0;[Red]"x"', '0;0;0;*x',
-    '0;0;0;_x', '0;0;0;"unfinished', '0;0;0;\\', '0;0;0;"x";0',
-    'yyyy;0;0;"x"', '0;[$-409]0;0;"x"', '0;[Orange]0;0;"x"',
-    '[>0]0;0;0;"x"', '0;0;[=0]0;"x"', '0;0;0;@', '0;0;0;"x"@'])
+@pytest.mark.parametrize('code', ['0;0;0;bare',
+    '0;0;0;"unfinished', '0;0;0;\\', '0;0;0;"x";0',
+    'yyyy;0;0;"x"', '0;[$-777]0;0;"x"', '0;[Orange]0;0;"x"',
+     '0;0;[=0]0;"x"', '0;0;0;@', '0;0;0;"x"@'])
 def test_no_guessing(code):
     assert text_literal(code) is None
 
@@ -78,7 +78,7 @@ def test_length_numeric_routing_and_fraction_deferral():
         assert render_number(value, '0;0;0;"literal"') == expected
     for value in (-1.25, -.125, -0.0, 0.0, .125, 1, 1e30):
         assert render_number(value, '# ?/4') is None
-    assert render_number(-12, '[>0]0;0;0;"literal"') is None
+    assert render_number(-12, '[>0]0;0;0;"literal"') == '12'
 
 
 @pytest.mark.parametrize('kind', ['number', 'formula'])
@@ -99,7 +99,7 @@ def test_former_empty_fourth_rejection_now_hides_strings():
     assert _parse_workbook(source(code, 'raw', 'label'), Limits()).sheets[0].cells[0].text == ''
 
 
-@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '[$-409]0', '0x', '0.#0'])
+@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '[$-777]0', '0x'])
 @pytest.mark.parametrize('position', range(3))
 def test_unused_bad_numeric_branch_does_not_replace_text(branch, position):
     sections = ['0', '0', '0']

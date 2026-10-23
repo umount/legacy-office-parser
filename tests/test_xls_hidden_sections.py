@@ -33,9 +33,9 @@ def test_empty_numeric_sections(code, expected, kind):
         assert not any('format' in w.lower() for w in doc.warnings)
 
 
-@pytest.mark.parametrize('code', ['', ';;;;', '0;0;0;@;0', '[>0]0;', ';[<0]0',
-    '0;;yyyy', '0;;[Red]', '0;;""', '0;;\\', '0;;"bad', '0;;[$-409]0',
-    '[>0]0;0;', '0;[Orange]0;', '0' * 65 + ';;;'])
+@pytest.mark.parametrize('code', ['', ';;;;', '0;0;0;@;0',  ';[<0]0',
+    '0;;yyyy', '0;;[Red]', '0;;""', '0;;\\', '0;;"bad', '0;;[$-777]0',
+     '0;[Orange]0;', '0' * 65 + ';;;'])
 def test_unsupported_empty_combinations(code):
     assert not hides_text(code)
     for value in (-12, 0, 12):
@@ -58,7 +58,7 @@ def string_workbook(code, kind='label', text='retained'):
 @pytest.mark.parametrize('kind', ['label', 'formula'])
 @pytest.mark.parametrize('code,expected', [(';;;', ''), ('0;0;0;', ''),
     (';;;@', 'retained'), (';;', 'retained'), ('0;;0', 'retained'),
-    ('yyyy;;;', 'retained'), ('[>0]0;0;0;', 'retained')])
+    ('yyyy;;;', 'retained'), ('[>0]0;0;0;', '')])
 def test_string_fourth_section(code, expected, kind):
     doc = _parse_workbook(string_workbook(code, kind), Limits())
     cell = doc.sheets[0].cells[0]

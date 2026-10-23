@@ -31,10 +31,7 @@ documents authored for this project.
 
 ## Supported formats
 
-Version 0.27.0 adds slide-owned text from direct inline ODF text objects and
-exact DOC comment selections of a proven complete inner table row. XLS General
-projection remains unchanged, with explicit documentation of its width-free
-limits. Raw values, formula caches and documented fallbacks remain preserved.
+Format-specific support and exclusions are documented in [docs](docs/EXTRACTION_GAPS.md).
 Full compatibility with arbitrary documents has not been established; see
 [coverage and limitations](docs/TESTING.md).
 
@@ -42,9 +39,9 @@ Full compatibility with arbitrary documents has not been established; see
   inherited style visibility and heading levels; comments with authors and source references.
 - XLS BIFF8: sheets, sparse typed cells, merges and stored formula results;
   percentages, decimals, digit grouping and scientific notation; explicit text
-  labels before/after numbers and strings, sign-based sections, and verified
-  fixed-denominator fractions. Older BIFF versions are
-  unsupported.
+  labels before/after numbers and strings, conditional sections, fixed and
+  approximate fractions, explicit numeric locales, normalized dates and elapsed
+  durations. Older BIFF versions are unsupported.
 - PPT 97–2003: current slides, titles, text, WordArt, ordinary text from active
   masters, stored static dates/footers, notes and comments.
 - RTF: code pages and Unicode, paragraph heading levels, tables with ordinary rectangular

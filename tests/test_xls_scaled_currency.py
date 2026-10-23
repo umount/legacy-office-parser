@@ -66,17 +66,17 @@ def test_scaled_integer_records(kind):
 
 
 @pytest.mark.parametrize('code', [
-    '[$-407]0.00', '[$-409]0.00', '[$-F800]0.00', '[$-F400]0.00',
+    '[$-777]0.00', '[$-F800]0.00', '[$-F400]0.00',
     '[$-2000409]0.00', '[$-10409]0.00', '[$-0]0.00', '[$]0.00',
-    '[$USD]0.00', '[$€-409]0.00', '[$$-407]0.00', '[$USD-0409]0',
-    '[$USD-409]yyyy', '[$USD-409]General', '[$USD-409]0%',
-    '[$USD-409]0E+00', '[$USD-409]0[$$-409]', '[$$-409][$€-407]0',
-    '0;0;[$$-409]', '[$USD-409', '[DBNum1]0.0',
-    '0,,.0', '0,00', '0.0,"x",', '0.0,%', '0%,', '0E+00,',
-    '0.#0', '0.#0', '0.0#0', '0.0#%', '0.0#E+00', '0.0#"x"#',
+    '[$USD]0.00', '[$€-GGG]0.00', '[$$-40]0.00', '[$USD-040Z]0',
+    '[$USD-409]yyyy', '[$USD-409]General',
+    '[$USD-409]0[$$-409]', '[$$-409][$€-407]0',
+    '0;0;[$$-ZZZ]', '[$USD-409', '[DBNum1]0.0',
+    '0,,.0', '0.0,"x",', '0%,', '0E+00,',
+    '0.0#E+00', '0.0#"x"#',
     '0.' + '0' * 15 + '#', '0.0' + '#' * 15,
     '0.0,,"unfinished', '0.0,,\\', '0.0,,"x"0',
-    '0;0;0;[$$-409]@', '0.0;[$-407]0',
+    '0;0;0;[$$-409]@', '0.0;[$-777]0',
 ])
 def test_unsupported_or_malformed_retains_raw_and_warns(code):
     assert render_number(.125, code) is None
@@ -86,12 +86,11 @@ def test_unsupported_or_malformed_retains_raw_and_warns(code):
     assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
 
 
-@pytest.mark.parametrize('code', [
-    '[>=0][$$-409]0.0;0.0', '[<0]0.0,;0.0',
-    '[<0]General;[$$-409]0.0', '[>0]0.0;[=0]0.0;"negative"',
-])
-def test_negative_conditionals_still_always_raw(code):
-    assert render_number(-1234, code) is None
+@pytest.mark.parametrize('code,expected', [
+    ('[>=0][$$-409]0.0;0.0', '1234.0'), ('[<0]0.0,;0.0', '1.2'),
+    ('[<0]General;[$$-409]0.0', '1234'), ('[>0]0.0;[=0]0.0;"negative"', 'negative')])
+def test_negative_conditionals_render_selected_section(code, expected):
+    assert render_number(-1234, code) == expected
 
 
 @pytest.mark.parametrize('code,value,expected', CASES)

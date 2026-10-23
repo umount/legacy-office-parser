@@ -55,9 +55,9 @@ def generate_probe(destination, cases):
 
 
 
-# Observed Calc output, NOT a normative Excel sign oracle. Negative conditional
-# values intentionally fall back even when this finite probe has a display. Avoid rounding ties: the parser's documented decimal policy is tested
-# separately, not inferred from a spreadsheet engine's binary rounding.
+# Observed Calc output defines the conditional-sign compatibility policy.
+# Avoid rounding ties here: decimal half-up is tested independently, not
+# inferred from a spreadsheet engine's binary rounding.
 CALC_OBSERVATIONS = [
     ('[<10]0.0;0.00', -2, '-2.0'),
     ('[<=10]0.0;0.00', 10, '10.0'),
@@ -114,14 +114,10 @@ for first in ('<', '<='):
 def test_proven_conditions_biff(code, value, expected, kind):
     doc = parse_number(value, 164, code, kind)
     cell = doc.sheets[0].cells[0]
-    if value < 0:
-        expected = str(float(value))
-    elif 'General' in code:
-        expected = str(float(value))
     assert cell.text == expected and cell.value_type == 'number'
     assert struct.pack('<d', cell.value) == struct.pack('<d', value)
     assert cell.is_formula == (kind == 'formula') and cell.formula is None
-    assert len(doc.warnings) == (kind == 'formula') + (value < 0)
+    assert len(doc.warnings) == (kind == 'formula')
 
 
 @pytest.mark.parametrize('op,expected', [
@@ -135,12 +131,10 @@ def test_comparison_boundaries(op, expected):
 
 
 @pytest.mark.parametrize('code', [
-    '0;[>0]0', '[>0]0;0;0', '[<0]0;0;"zero"', '[>0]0',
-    '[>0]0;[<0]0;[=0]0', '[>0]0;[<0]0;0;[Red]@',
+    '0;[>0]0', '[>0]0',
+    '[>0]0;[<0]0;[=0]0',
     '[>0][<10]0;0', '[Red][<0][Blue]0;0', '[Red][Blue][<0]0;0',
     '[<0]0;[Orange]0', '[<0]0;[<1]0;yyyy',
-    '[<0]0;[<1]0;0.#0', '[<0]0;[<1]0;0;"text"@',
-    '[<0]0;', '[<0]0;;0', '[<0]0;"hidden"',
     '[<0]0;[<1]0;""', '[<0]0;[<1]0;0;@;0',
     '[<+1]0;0', '[<.1]0;0', '[<1.]0;0', '[<1e+2]0;0', '[<1E2]0;0',
     '[<1E+0000]0;0', '[<1E+309]0;0', '[<1E-325]0;0', '[<1E-324]0;0',
@@ -159,7 +153,7 @@ def test_all_sections_and_condition_grammar_validated(code, value):
 
 @pytest.mark.parametrize('code,value', [
     ('[>10]0;[<-10]0', 0), ('[>10]0;[<-10]0', 2),
-    ('[>10]General', -2), ('[>0]0.0;0.00', 0),
+    ('[>10]General', -2),
 ])
 def test_unmatched_or_ambiguous_uses_warning_fallback(code, value):
     assert render_number(value, code) is None
@@ -172,15 +166,15 @@ def test_unmatched_or_ambiguous_uses_warning_fallback(code, value):
 def test_raw_integer_records(kind):
     cell = parse_number(-20, 164, '[<-10]0.00;0', kind).sheets[0].cells[0]
     assert type(cell.value) is int and cell.value == -20
-    assert cell.text == '-20'
+    assert cell.text == '-20.00'
 
 
 def test_routing_precedes_rounding_and_percent_scaling():
-    assert render_number(-.001, '[<0]0.00;0.0') is None
+    assert render_number(-.001, '[<0]0.00;0.0') == '0.00'
     assert render_number(.001, '[=0]0.0;0.00') == '0.00'
     assert render_number(.25, '[<1]0%;0.00') == '25%'
     assert render_number(-2, '0;0') == '2'
-    assert render_number(-2, '[<10]0;0') is None
+    assert render_number(-2, '[<10]0;0') == '-2'
     for value in (0.0, -0.0):
         assert render_number(value, '[<0]0.0;[>0]0.00;"zero"') == 'zero'
         cell = parse_number(value, 164, '[<0]0.0;0.00').sheets[0].cells[0]
@@ -202,10 +196,10 @@ def test_private_decimal_context_extremes_and_exact_thresholds():
         assert render_number(1.235, '[<2]0.00;0') == '1.24'
         assert render_number(.1, '[=0.1]0.00;0') == '0.10'
         assert render_number(5e-324, '[=5E-324]0.00E+00;0') == '5.00E-324'
-        assert render_number(-5e-324, '[<-1E-323]0;0.00E+00') is None
+        assert render_number(-5e-324, '[<-1E-323]0;0.00E+00') == '5.00E-324'
         text = render_number(sys.float_info.max, '[<=1.7976931348623157E+308]0.000000000000000%;0')
         assert text.endswith('.000000000000000%') and len(text) < 450
-        assert render_number(-sys.float_info.max, '[<0]0.0E+00;0') is None
+        assert render_number(-sys.float_info.max, '[<0]0.0E+00;0') == '1.8E+308'
         assert not any(ctx.flags.values())
 
 
@@ -258,44 +252,39 @@ def test_independent_libreoffice_probe(tmp_path):
         with (tmp_path / 'conditions.csv').open() as stream:
             assert list(csv.reader(stream)) == expected
         parsed = parse_xls(xls)
-        assert len(parsed.warnings) == 1
-        assert 'Unsupported or ambiguous' in parsed.warnings[0]
+        assert not parsed.warnings
         for cell, (code, value, display) in zip(parsed.sheets[0].cells, CALC_OBSERVATIONS, strict=True):
             assert cell.value == value and cell.value_type == 'number'
-            assert cell.text == (str(cell.value) if value < 0 or 'General' in code else display)
+            assert cell.text == display
     finally:
         sys.path.pop(0)
 
 
 @pytest.mark.parametrize('kind', ['number', 'formula'])
-@pytest.mark.parametrize('value,expected', [(12.5, '13'), (-12.5, '-12.5'), (0.0, '0')])
+@pytest.mark.parametrize('value,expected', [(12.5, '13'), (-12.5, '13'), (0.0, '0')])
 def test_previously_rejected_mask_now_supported(value, expected, kind):
-    # Only nonnegative cases replace historical rejections now; negative
-    # conditional display is explicitly incomplete and must continue to warn.
+    # The zero-threshold negative section consumes magnitude on this route.
     doc = parse_number(value, 164, '[<=0]0;0', kind)
     assert doc.sheets[0].cells[0].text == expected
     assert doc.sheets[0].cells[0].value == value
-    assert len(doc.warnings) == (kind == 'formula') + (value < 0)
+    assert len(doc.warnings) == (kind == 'formula')
 
 
 def test_single_general_condition_and_matching_two_condition_format():
     assert render_number(2, '[>1]General') == '2'
-    assert render_number(-2, '[<-1]General') is None
-    assert render_number(-2, '[<0]General') is None
-    assert render_number(-20, '[>10]0.0;[<-10]0.00') is None
+    assert render_number(-2, '[<-1]General') == '-2'
+    assert render_number(-2, '[<0]General') == '2'
+    assert render_number(-20, '[>10]0.0;[<-10]0.00') == '20.00'
     assert render_number(20, '[>10]0.0;[<-10]0.00') == '20.0'
 
 
-@pytest.mark.parametrize('value', [-sys.float_info.max, -1.0, -5e-324])
-def test_negative_conditional_guard_has_no_sign_whitelist(value):
-    # Exercise the rejected class beyond the finite Calc observation matrix.
-    # Every choice of first/second operator and threshold must take raw fallback.
-    for first in ('<', '<=', '>', '>=', '=', '<>'):
-        for second in ('<', '<=', '>', '>=', '=', '<>'):
-            for limit in (-1, 0, 1):
-                for fallback in ('0.00', 'General', '"other"'):
-                    code = f'[{first}{limit}]0;[{second}{limit}]0;{fallback}'
-                    assert render_number(value, code) is None
+@pytest.mark.parametrize('value,code,expected', [
+    (-2, '[<0]0;[<1]0;0', '-2'), (-2, '[<0]0;[>=0]0;0', '2'),
+    (-2, '[<=0]0;[>=0]0;0', '-2'), (-2, '[=-2]0;0', '-2'),
+    (-2, '[>10]0;[<-10]0;"other"', 'other'),
+])
+def test_negative_conditional_routing_policy(value, code, expected):
+    assert render_number(value, code) == expected
 
 
 @pytest.mark.parametrize('kind', ['number', 'formula', 'rk', 'mulrk'])

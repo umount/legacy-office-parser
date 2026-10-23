@@ -36,7 +36,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.28.0**. The package version is available as
+This reference describes package **0.29.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -60,7 +60,7 @@ For the pre-1.0 series, the compatibility policy is:
 
 **Schema compatibility does not imply identical extracted content.** A patch
 can change an output hash. Pin exact versions and record the release, effective
-limits, input hash and consumer normalization policy in cache provenance. Decide
+limits, display locale, input hash and consumer normalization policy in cache provenance. Decide
 whether to regenerate stored content from the release's affected formats and
 behavior changes; neither “patch” nor “unchanged fields” establishes that old
 results remain equivalent. Changes to defaults must be recorded explicitly.
@@ -277,12 +277,24 @@ continues to display `"1.0"`. Larger/fractional General values retain their
 existing raw text projection; width-dependent General rendering is not modeled.
 See [General evidence](XLS.md).
 
-Supported XLS numeric masks use invariant decimal `.` and grouping `,`
-separators, independently of machine locale or document language. This is a
-stable extraction convention, not a reconstruction of the user's Excel locale.
-Explicit supported currency literals remain part of their masks. Unsupported
-locale-qualified masks retain the documented raw-value fallback and warning;
-there is no `display_locale` argument or language-based locale inference.
+Supported XLS numeric masks default to decimal `.` and grouping `,`, independently
+of machine locale or document language. `parse_xls(..., display_locale="ru-RU")`
+and `parse(..., display_locale="ru-RU")` select explicit display separators;
+`parse` applies this option only when the detected format is XLS. The CLI accepts
+`--display-locale ru-RU` with `--format auto` (default) or `--format xls`.
+Supported names are `en-US`/`en-GB` (`.`/`,`), `ru-RU` (`,`/NBSP U+00A0),
+`de-DE` (`,`/`.`), and `fr-FR` (`,`/narrow NBSP U+202F); names are case-insensitive
+and accept an underscore in place of the hyphen. Use
+`NumberLocale(decimal=",", grouping=" ")` for explicit custom separators.
+Separators must be distinct single punctuation characters (the group separator
+may also be a space); signs, digits, controls, percent and fraction syntax are
+rejected. Invalid options raise `TypeError` or `ValueError`.
+
+Localization changes numeric display cores, including General, but never raw
+values, source literal punctuation, text cells or normalized dates. Unsupported
+formats still use invariant `str(value)` fallback with diagnostics. Format locale
+tags do not select display separators. No process locale or document-language
+inference is used. Record the effective locale with cached extraction output.
 
 For numeric search, consumers can derive an additional locale-independent token
 from a numeric `value`, retaining `text` for its units and display meaning.
@@ -748,25 +760,32 @@ ODP object, so no positive reader-parity claim is made. See
 supported display; a stored formula result is not recalculated. Unsupported or
 ambiguous formats keep the raw numeric display with a diagnostic.
 
-In addition to the existing fixed-denominator subset, exact masks `# ?/?` and
-`# ??/??` (built-in IDs 12/13) recognize reduced rationals with denominators up
-to 9/99 that round to the identical stored binary64 value. The magnitude cap is
-1,000,000; general nearest-fraction approximation is not inferred. Literal
-alignment spaces, negative signs and integer padding remain in display text.
-Source numeric bits and cached-formula markers remain unchanged. Other masks,
-affixes and locale combinations retain fallback. See
-[fraction evidence](XLS.md).
+Numeric masks support mandatory `0`, optional `#` and alignment `?` digits,
+grouping, up to 15 decimal places, percent and trailing-comma scaling in
+combination, literal/currency affixes, scientific notation with one integer digit,
+and positive/negative/zero/text sections. Conditions choose a section using the
+stored value before rounding. Unmatched conditions retain raw values with a
+warning. Unsupported syntax in another section is not silently ignored.
+Built-in numeric formats 37–40 use their standard grouped sign sections.
+`_x` contributes one alignment space; `*x` contributes no column-width fill.
 
-Fixed cores `0.#{1,15}` and `#,##0.#{1,15}` additionally retain a nonintegral
-rounded decimal result with trailing optional zeros removed. Integral results,
-zero and rounding carry keep fallback because decimal-point suppression is not
-established by the primary evidence used here. One percent token or trailing
-scaling commas are supported separately; the nonintegral-result rule is applied
-after scaling and rounding. Combining percent and scaling, currency/locale tokens
-and mixed mandatory/optional percent cores remains unsupported. Fourth-section
-string-helper acceptance is unchanged. See
-[optional-decimal evidence](XLS.md) and
-[scaling evidence](XLS.md).
+Fixed-denominator fractions (denominator 1–999) use decimal half-up rounding and
+remain unreduced. Variable masks `# ?/?` through `# ???/???` use the nearest
+rational to the stored binary64 value, with denominator at most 9/99/999.
+Equal approximation errors prefer the smaller denominator, then the lower
+magnitude. Padding and literal affixes remain in `text`. This changes display,
+never the stored value or cached-formula marker.
+
+Optional decimal digits are removed after rounding, including integral, zero
+and carry results. An explicitly authored decimal point remains: `0.##` applied
+to 1 yields `"1."`; `0.0#` yields `"1.0"`. Fixed decimals and fixed fractions
+round halfway away from zero. These explicit policies may differ from office
+engines at fractional ties or optional-only integral decimal displays. Masks
+longer than 64 characters and unsupported precision fall back with diagnostics.
+
+Currency labels in `[$symbol-LCID]` are treated as literals; ordinary plain locale
+tags do not change the explicit display locale. Worksheet conditional-formatting
+records, alternative numeral systems and engineering notation are not evaluated.
 
 General uses a deterministic extraction projection rather than cell-width-driven
 rendering. Beyond the supported whole-number suffix cleanup, values retain their
@@ -810,12 +829,22 @@ values, not a reproduction of the source's exact date mask, locale, AM/PM label,
 calendar display, or timezone. A date-only source mask can still produce a
 full datetime if its stored serial has a time fraction.
 
-Supported built-in date/time IDs are 14–22, 45, and 47. Format 46 (elapsed time)
-and locale-dependent IDs 27–36 and 50–58 fall back with a warning. A bounded
-custom-format recognizer accepts plain date/time tokens and supported separators;
-not every Excel date format is recognized. Unsupported/ambiguous formats, missing
-XFs, negative date serials, and out-of-range dates retain the raw numeric value,
-set `value_type="number"`, and emit warnings; the fallback display is `str(value)`.
+Supported built-in date/time IDs are 14–22, 45, and 47. Custom masks recognize
+calendar/clock tokens, quoted/escaped literals and ordinary locale tags for
+English, German, French and Russian Gregorian dates; output remains normalized.
+Minute/month interpretation follows surrounding time tokens, not letters inside
+literals. Multiple sections, alternative calendars and locale-dependent built-in
+IDs 27–36 and 50–58 remain unsupported.
+
+Elapsed masks such as `[h]:mm:ss` (built-in 46), `[m]:ss` and `[s].000` retain
+`value_type="number"` and the original serial in `value`; their `text` shows total
+hours/minutes/seconds without wrapping at midnight. For example, serial 1.5 with
+format 46 gives `value=1.5`, `text="36:00:00"`. Fractional seconds support up to
+three places. Seconds round half up with carry; omitted seconds/minutes truncate.
+Elapsed values are bounded to 2,958,465 days. Display locale does not alter these
+time strings. Negative and out-of-range serials, unsupported/ambiguous formats
+and missing XFs retain the raw numeric value with a diagnostic; fallback text
+is `str(value)`.
 Non-finite numeric input is rejected. Ordinary supported numeric formatting
 retains the number in `value` and only changes `text`, which differs from the date
 conversion behavior above. ODS follows its own source-value/display rules.

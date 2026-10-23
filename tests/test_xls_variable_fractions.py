@@ -96,44 +96,40 @@ def test_fraction_biff_transport_preserves_value_cache_and_spaces(code, value, e
     assert json.loads(json.dumps(doc.to_dict()))['sheets'][0]['cells'][0]['text'] == expected
 
 
-@pytest.mark.parametrize('value', [123.456, .456, .001, -.001, .99, .999,
-                                   1 / 198, 197 / 198,
-                                   1000000.01, -1000000.01, 1e12,
-                                   1.7976931348623157e308, 5e-324, -5e-324])
-@pytest.mark.parametrize('code,fmt', [('# ?/?', 12), ('# ??/??', 13)])
-@pytest.mark.parametrize('builtin', [False, True])
-def test_unverified_approximations_and_extremes_keep_raw_value(value, code, fmt, builtin):
-    assert render_number(value, code) is None
-    doc = parse_xls(ole_workbook(workbook(value, fmt if builtin else 164,
-                                        None if builtin else code)))
+@pytest.mark.parametrize('code,value,expected', [
+    ('# ?/?', .456, ' 4/9'), ('# ?/?', .001, '0    '),
+    ('# ?/?', -.001, '0    '), ('# ?/?', .99, '1    '),
+    ('# ??/??', 123.456, '123 31/68'), ('# ??/??', .01, '  1/99'),
+    ('# ?/?', 1000000.01, '1000000    '),
+])
+def test_approximations_preserve_raw_value(code, value, expected):
+    doc = parse_xls(ole_workbook(workbook(value, 164, code)))
     cell, = doc.sheets[0].cells
+    assert render_number(value, code) == cell.text == expected
     assert struct.pack('<d', cell.value) == struct.pack('<d', value)
-    assert cell.text == str(value) and cell.value_type == 'number'
-    assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
+    assert not doc.warnings
 
 
-@pytest.mark.parametrize('midpoint', [1 / 18, 17 / 18, 1 / 198, 197 / 198])
-@pytest.mark.parametrize('toward', [-math.inf, math.inf])
-def test_midpoint_neighbors_never_choose_a_tie_rule(midpoint, toward):
-    for code in ('# ?/?', '# ??/??'):
-        assert render_number(math.nextafter(midpoint, toward), code) is None
+def test_midpoint_neighbors_choose_nearest_stored_rational():
+    assert render_number(math.nextafter(1 / 18, 0), '# ?/?') == '0    '
+    assert render_number(math.nextafter(1 / 18, 1), '# ?/?') == ' 1/9'
+    assert render_number(math.nextafter(17 / 18, 0), '# ?/?') == ' 8/9'
+    assert render_number(math.nextafter(17 / 18, 1), '# ?/?') == '1    '
 
 
-@pytest.mark.parametrize('code', ['# ???/???', '# ?/??', '# ??/?', '?/?', '# #/#',
-                                '0 ?/?', '#  ?/?', '# ? /?', '# ?/? ',
-                                '"part: "# ?/?', '# ?/?"!"', '[Red]# ?/?',
-                                '# ?/?;(# ?/?)', '[>0]# ?/?;0', '# ?/?;;;@',
+@pytest.mark.parametrize('code', [   '?/?', '# #/#',
+    '0 ?/?', '#  ?/?', '# ? /?',
                                 '# ?/?' + '""' * 30, '# ' + '?' * 1000 + '/?'])
 def test_other_placeholder_layouts_and_sections_remain_unsupported(code):
     assert render_number(.5, code) is None
 
 
 def test_denominator_bounds_and_reduction_are_exact():
-    assert render_number(.1, '# ?/?') is None  # Reduced denominator 10 > 9.
-    assert render_number(.01, '# ??/??') is None  # Denominator 100 > 99.
+    assert render_number(.1, '# ?/?') == ' 1/9'
+    assert render_number(.01, '# ??/??') == '  1/99'
     assert render_number(.02, '# ??/??') == '  1/50'
     assert render_number(.5, '# ??/??') == '  1/2 '
-    assert render_number(math.nextafter(.5, 1), '# ??/??') is None
+    assert render_number(math.nextafter(.5, 1), '# ??/??') == '  1/2 '
 
 
 def test_private_decimal_context():
@@ -142,7 +138,7 @@ def test_private_decimal_context():
         ctx.traps[Inexact] = True
         assert render_number(999999.25, '# ??/??') == '999999  1/4 '
         assert render_number(-0.0, '# ?/?') == '0    '
-        assert render_number(123.456, '# ??/??') is None
+        assert render_number(123.456, '# ??/??') == '123 31/68'
 
 
 @pytest.mark.parametrize('value', [math.nan, math.inf, -math.inf])
@@ -181,15 +177,16 @@ def test_preserved_xls_formats_match_libreoffice(tmp_path):
     generate_preserved(tmp_path, CASES)
 
 
-@pytest.mark.parametrize('value', [1 / 3, 1 / 7, 1 / 99, 98 / 99])
-@pytest.mark.parametrize('toward', [-math.inf, math.inf])
-def test_adjacent_values_do_not_gain_approximation_support(value, toward):
-    assert render_number(math.nextafter(value, toward), '# ??/??') is None
+@pytest.mark.parametrize('value,expected', [(1 / 3, '  1/3 '), (1 / 7, '  1/7 '),
+                                        (1 / 99, '  1/99'), (98 / 99, ' 98/99')])
+def test_adjacent_values_keep_nearest_rational(value, expected):
+    for toward in (-math.inf, math.inf):
+        assert render_number(math.nextafter(value, toward), '# ??/??') == expected
 
 
-def test_single_digit_denominator_midpoints_remain_unsupported():
-    assert render_number(1 / 18, '# ?/?') is None
-    assert render_number(17 / 18, '# ?/?') is None
+def test_single_digit_midpoints_use_actual_binary_value():
+    assert render_number(1 / 18, '# ?/?') == '0    '
+    assert render_number(17 / 18, '# ?/?') == ' 8/9'
 
 
 def test_large_repeating_fraction_is_bounded_and_context_independent():

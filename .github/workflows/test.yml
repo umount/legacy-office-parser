@@ -54,6 +54,7 @@ jobs:
       - run: python -m pip install -e '.[dev]'
       - name: Check original documents against LibreOffice
         env:
+          XLS_NUMERIC_COMPLETENESS_LO: '1'
           XLS_FRACTIONS_LO: '1'
           XLS_VARIABLE_FRACTIONS_LO: '1'
           XLS_OPTIONAL_DECIMALS_LO: '1'
@@ -83,7 +84,7 @@ jobs:
                 'tests/test_odf_notes.py', 'tests/test_odf_stories.py', 'tests/test_live_corpus.py',
                 'tests/test_doc_styles.py', 'tests/test_nested_reference.py', 'tests/test_rtf_nested.py',
                 'tests/test_doc_nested.py', 'tests/test_doc_sections.py', 'tests/test_auxiliary_reference.py',
-                'tests/test_doc_external_ole.py', 'tests/test_xls_formats_ole.py', 'tests/test_xls_literals_ole.py',
+                'tests/test_doc_external_ole.py', 'tests/test_xls_formats_ole.py', 'tests/test_xls_numeric_completeness.py', 'tests/test_xls_literals_ole.py',
                 'tests/test_xls_sections_ole.py', 'tests/test_rtf_story_blocks.py', 'tests/test_xls_conditions.py',
                 'tests/test_odf_inline_objects.py', 'tests/test_rtf_legacy_textboxes.py', 'tests/test_rtf_wordart.py',
                 'tests/test_rtf_fallback_text.py', 'tests/test_rtf_wordart_unicode.py', 'tests/test_rtf_wordart_codepages.py',

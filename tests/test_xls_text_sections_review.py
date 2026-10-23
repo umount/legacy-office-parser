@@ -44,7 +44,7 @@ def test_literal_oracles_and_raw_retention(kind, raw, section, prefix, suffix):
     _validate_result(doc, Limits())
 
 
-@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '[$-409]0', '0x', '0.#0'])
+@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '[$-777]0', '0x'])
 @pytest.mark.parametrize('position', range(3))
 def test_unused_bad_numeric_branch_cannot_enable_text_expansion(branch, position):
     sections = ['0', '0', '0']
@@ -55,8 +55,8 @@ def test_unused_bad_numeric_branch_cannot_enable_text_expansion(branch, position
     assert _parse_workbook(source(code, 'raw', 'sst'), Limits()).sheets[0].cells[0].text == 'raw'
 
 
-@pytest.mark.parametrize('section', ['@@', '@x', 'x@', '[Red]@',
-                                   '@\\', '"unfinished@', '@;@', '_x@', '*x@'])
+@pytest.mark.parametrize('section', ['@@', '@x', 'x@',
+                                   '@\\', '"unfinished@', '@;@', ])
 def test_invalid_fourth_section_never_changes_strings_or_validates_numbers(section):
     code = '0;0;0;' + section
     assert text_affixes(code) is None

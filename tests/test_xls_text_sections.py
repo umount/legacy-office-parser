@@ -40,9 +40,9 @@ def test_string_affixes(code, expected, kind):
 
 
 @pytest.mark.parametrize('code', ['0;0;0;@@',
-    '0;0;0;@x', '0;0;0;[Red]@', '0;0;0;*x@', '0;0;0;_x@',
+    '0;0;0;@x',
     '0;0;0;@\\', '0;0;0;"bad@', '0;0;0;@;0', '0;yyyy;0;"x"@',
-    '0;[$-409]0;0;"x"@', '[>0]0;0;0;"x"@', '0;0;0;"'+'x'*64+'"@'])
+    '0;[$-777]0;0;"x"@',  '0;0;0;"'+'x'*64+'"@'])
 def test_unsupported_text_retains_raw(code):
     assert text_affixes(code) is None
     doc = _parse_workbook(string_workbook(code), Limits())
@@ -52,7 +52,7 @@ def test_unsupported_text_retains_raw(code):
 def test_numeric_routing_and_negative_conditions_unchanged():
     for value, expected in ((12, '12'), (-12, '12'), (0, '0')):
         assert render_number(value, '0;0;0;"text"@') == expected
-    assert render_number(-12, '[>0]0;0;0;"text"@') is None
+    assert render_number(-12, '[>0]0;0;0;"text"@') == '12'
 
 
 def test_repeat_sst_expansion_budget():

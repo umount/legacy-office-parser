@@ -11,6 +11,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description='Extract DOC/XLS/PPT/RTF/ODT/ODS/ODP text and structure')
     parser.add_argument('file')
     parser.add_argument('--format', choices=['auto', 'doc', 'xls', 'ppt', 'rtf', 'odt', 'ods', 'odp'], default='auto')
+    parser.add_argument('--display-locale', help='XLS numeric separators: en-US, en-GB, ru-RU, de-DE, fr-FR')
     parser.add_argument('--json', action='store_true', help='write structured JSON')
     parser.add_argument('--normalize-text', action='store_true', help='normalize display line breaks and controls')
     parser.add_argument('--nfc', action='store_true', help='normalize display text including Unicode NFC')
@@ -21,7 +22,12 @@ def main(argv=None) -> int:
         limits = Limits(max_file_bytes=args.max_file_bytes)
         reader = {'auto': parse, 'doc': parse_doc, 'ppt': parse_ppt, 'xls': parse_xls,
                   'rtf': parse_rtf, 'odt': parse_odt, 'ods': parse_ods, 'odp': parse_odp}[args.format]
-        doc = reader(args.file, limits=limits)
+        options = {}
+        if args.display_locale is not None:
+            if args.format not in ('auto', 'xls'):
+                raise ValueError('display_locale applies to XLS only')
+            options['display_locale'] = args.display_locale
+        doc = reader(args.file, limits=limits, **options)
         if args.normalize_text or args.nfc:
             doc = normalize_text(doc, unicode_form='NFC' if args.nfc else None, limits=limits)
         print(json.dumps(doc.to_dict(), ensure_ascii=False, allow_nan=False) if args.json else doc.text)

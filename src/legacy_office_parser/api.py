@@ -2,6 +2,7 @@ from pathlib import Path
 from ._ole import open_ole
 from .errors import EncryptedDocumentError, LimitExceededError, UnsupportedFormatError
 from .limits import Limits
+from .number_locale import NumberLocale, resolve_locale
 from .models import Document
 # Preserve the existing internal import used by regression tests and tooling.
 from ._validation import _validate_result as _validate_result
@@ -38,10 +39,12 @@ def parse_ppt(source: Source, *, limits: Limits | None = None) -> Document:
     limits = _limits(limits)
     return _validate_result(parse_ppt_bytes(_read(source, limits), limits), limits)
 
-def parse_xls(source: Source, *, limits: Limits | None = None) -> Document:
+def parse_xls(source: Source, *, limits: Limits | None = None,
+              display_locale: str | NumberLocale | None = None) -> Document:
     from .xls import parse_xls_bytes
     limits = _limits(limits)
-    return _validate_result(parse_xls_bytes(_read(source, limits), limits), limits)
+    locale = resolve_locale(display_locale)
+    return _validate_result(parse_xls_bytes(_read(source, limits), limits, display_locale=locale), limits)
 
 
 def parse_rtf(source: Source, *, limits: Limits | None = None) -> Document:
@@ -69,8 +72,10 @@ def parse_odp(source: Source, *, limits: Limits | None = None) -> Document:
     return _parse_odf(source, 'odp', limits)
 
 
-def parse(source: Source, *, limits: Limits | None = None) -> Document:
-    """Detect supported formats by content, never by filename extension."""
+def parse(source: Source, *, limits: Limits | None = None,
+          display_locale: str | NumberLocale | None = None) -> Document:
+    """Detect by content. display_locale affects XLS numeric display only."""
+    locale = resolve_locale(display_locale)
     limits = _limits(limits)
     data = _read(source, limits)
     signature = data.removeprefix(b'\xef\xbb\xbf').lstrip(b' \t\r\n')
@@ -86,4 +91,6 @@ def parse(source: Source, *, limits: Limits | None = None) -> Document:
             ('Workbook', parse_xls), ('Book', parse_xls)) if ole.exists(name)]
     if len(candidates) != 1:
         raise UnsupportedFormatError('expected exactly one DOC, XLS or PPT document stream')
+    if candidates[0] is parse_xls:
+        return parse_xls(data, limits=limits, display_locale=locale)
     return candidates[0](data, limits=limits)

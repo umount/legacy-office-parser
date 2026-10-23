@@ -76,7 +76,7 @@ def test_full_source_and_distinct_display_budget(monkeypatch, kind, raw, section
     assert len(published) < repeats
 
 
-@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '0x', '0.#0', '[$-409]0'])
+@pytest.mark.parametrize('branch', ['yyyy', '[Red]', '""', '0x',  '[$-777]0'])
 @pytest.mark.parametrize('position', range(3))
 def test_literal_does_not_legitimize_bad_unused_numeric_branch(branch, position):
     sections = ['0', '0', '0']
@@ -87,16 +87,15 @@ def test_literal_does_not_legitimize_bad_unused_numeric_branch(branch, position)
     assert _parse_workbook(source(code, 'raw', 'label'), Limits()).sheets[0].cells[0].text == 'raw'
 
 
-@pytest.mark.parametrize('section', ['"literal"', '""', r'\@', r'\;'])
-@pytest.mark.parametrize('numeric', ['[>0]0;0;0', '[>0]0;[<0]0;0'])
-def test_conditional_mask_with_literal_fourth_stays_unsupported(numeric, section):
-    code = numeric + ';' + section
-    assert text_literal(code) is None
-    assert all(render_number(v, code) is None for v in (-1, 0, 1))
-    assert _parse_workbook(source(code, 'raw', 'formula'), Limits()).sheets[0].cells[0].text == 'raw'
+@pytest.mark.parametrize('section,expected', [('"literal"', 'literal'), ('""', ''),
+                                            (r'\@', '@'), (r'\;', ';')])
+def test_conditional_mask_with_literal_fourth(section, expected):
+    code = '[>0]0;[<0]0;0;' + section
+    assert text_literal(code) == expected
+    assert _parse_workbook(source(code, 'raw', 'formula'), Limits()).sheets[0].cells[0].text == expected
 
 
-@pytest.mark.parametrize('section', ['literal', '[Red]"x"', '_x', '*x', '"unterminated',
+@pytest.mark.parametrize('section', ['literal',    '"unterminated',
                                    '"x"\\', '"x";"y"', '"x"0', '[$-409]"x"'])
 def test_bad_literal_section_keeps_raw(section):
     code = '0;0;0;' + section

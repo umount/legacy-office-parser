@@ -142,7 +142,7 @@ def test_custom_date_time_and_ambiguous_dates():
     globals = xf(164) + rec(0x41e, struct.pack('<H', 164) + string('yyyy-mm-dd'))
     assert parse(cell(0x203, payload=struct.pack('<d', 61)), globals).sheets[0].cells[0].text == '1900-03-01'
     assert parse(cell(0x203, payload=struct.pack('<d', .5)), xf(20)).sheets[0].cells[0].text == '12:00:00'
-    for serial, fmt in [(60, 14), (-1, 14), (1e200, 14), (2, 46), (1, 165)]:
+    for serial, fmt in [(60, 14), (-1, 14), (1e200, 14), (1, 165)]:
         doc = parse(cell(0x203, payload=struct.pack('<d', serial)), xf(fmt))
         assert doc.sheets[0].cells[0].value_type == 'number'
         assert doc.warnings

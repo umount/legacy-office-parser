@@ -54,6 +54,9 @@ def parse_number(value, fmt=0, custom=None, kind='number', **kwargs):
     (3, None, 12345.5, '12,346'), (4, None, 12345.5, '12,345.50'),
     (9, None, .125, '13%'), (10, None, -.25, '-25.00%'),
     (11, None, 12345, '1.23E+04'),
+    (37, None, 1234.5, '1,235 '), (37, None, -1234.5, '(1,235)'),
+    (38, None, -1234.5, '(1,235)'), (39, None, 1234.5, '1,234.50'),
+    (40, None, -1234.5, '(1,234.50)'),
     (165, '0.00%', .125, '12.50%'), (165, '0.00%', .25, '25.00%'),
     (165, '0.00%', 0, '0.00%'), (166, '0.00', 12.5, '12.50'),
     (167, '#,##0.00', 12345.5, '12,345.50'),
@@ -81,15 +84,13 @@ def test_numeric_and_cached_formula_rendering(fmt, custom, value, expected, kind
 
 @pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('custom', [
-    '"0.00%"',
-    '[$-409]0.00%', '[$-409]yyyy-mm-dd', '[>0]0%',
-    '0_%,', '0*%', '0.00yyyy', '0%yyyy',
-    '0.00"unfinished', '0.00\\', '[h]:mm', 'yyyy-mm-dd;0%',
-    '0,00', '#.##0,00', '0.#0', '# ???/???', '##0.0E+0', '0%%', '%0', '@',
+    '[$-777]0.00%', '[>0]0%',
+    '0_%,', '0.00yyyy', '0%yyyy',
+    '0.00"unfinished', '0.00\\', 'yyyy-mm-dd;0%',
+    '#.##0,00', '##0.0E+0', '0%%', '%0', '@',
     '0.0000000000000000', '0E+0000', '', '0.' + '0' * 1000,
     'm' * 63 + 'x', 'yyyyyyyy-mm-dd', '0\n', '0.00E+00%',
-    r'yyyy\%mm', 'yyyy"%"mm', 'yyyy"days"mm', r'yyyy\dmm',
-    'yyyy"0"mm', r'yyyy\0mm', 'yyyy"-mm', 'yyyy' + chr(92),
+    'yyyy"-mm', 'yyyy' + chr(92),
 ])
 def test_unsupported_is_raw_with_explicit_warning(custom, kind):
     doc = parse_number(.125, 164, custom, kind)
@@ -98,7 +99,7 @@ def test_unsupported_is_raw_with_explicit_warning(custom, kind):
     assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
 
 
-@pytest.mark.parametrize('fmt', [5, 23, 27, 37, 46, 48, 49, 50, 163, 164, 999])
+@pytest.mark.parametrize('fmt', [5, 23, 27, 48, 49, 50, 163, 164, 999])
 def test_unhandled_or_missing_format(fmt):
     doc = parse_number(.125, fmt)
     assert doc.sheets[0].cells[0].text == '0.125'
@@ -129,6 +130,30 @@ def test_integer_records_keep_integer_raw_type(kind):
 def test_dates_remain_in_existing_date_path(fmt, custom, value, expected, kind):
     cell = parse_number(value, fmt, custom, kind).sheets[0].cells[0]
     assert (cell.value, cell.value_type, cell.text) == (expected, 'date', expected)
+
+
+@pytest.mark.parametrize('fmt,custom,value,expected', [
+    (164, '[$-409]yyyy-mm-dd', 61, ('1900-03-01', 'date', '1900-03-01')),
+    (164, '[h]:mm', 1.5, (1.5, 'number', '36:00')),
+    (46, None, 2, (2, 'number', '48:00:00')),
+])
+def test_new_date_and_elapsed_formats(fmt, custom, value, expected):
+    doc = parse_number(value, fmt, custom)
+    cell = doc.sheets[0].cells[0]
+    assert (cell.value, cell.value_type, cell.text) == expected
+    assert not doc.warnings
+
+
+@pytest.mark.parametrize('custom', [
+    r'yyyy\%mm', 'yyyy"%"mm', 'yyyy"days"mm', r'yyyy\dmm',
+    'yyyy"0"mm', r'yyyy\0mm',
+])
+def test_date_literals_keep_normalized_values(custom):
+    doc = parse_number(.125, 164, custom)
+    cell = doc.sheets[0].cells[0]
+    expected = '1899-12-31T03:00:00'
+    assert (cell.value, cell.value_type, cell.text) == (expected, 'date', expected)
+    assert not doc.warnings
 
 
 @pytest.mark.parametrize('kind', ['number', 'formula'])

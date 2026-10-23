@@ -50,24 +50,18 @@ def test_public_scaled_display_preserves_raw_value(code, value, expected, kind):
     assert doc.to_dict()['sheets'][0]['cells'][0]['text'] == expected
 
 
-@pytest.mark.parametrize('code,value', [
-    ('0.##%', 0), ('0.##%', -0.0), ('0.##%', .01),
-    ('0.##%', .099999), ('0.##%', -.099999), ('0.##%', .000001),
-    ('0.##,', 1000), ('0.##,', -0.0), ('0.##,', 9999.9),
-    ('0.##,', -9999.9), ('0.##,', 1),
-    ('0.##,,', 1000000), ('0.##,,', 5e-324),
-    ('0.###############%', sys.float_info.max),
-    ('0.###############,', sys.float_info.max),
-    ('0.###############%', 5e-324),
-])
-@pytest.mark.parametrize('kind', ['number', 'formula'])
-def test_integral_after_scaling_falls_back_with_raw_bits(code, value, kind):
-    doc = parse_xls(ole_workbook(workbook(value, 164, code, kind)))
+@pytest.mark.parametrize('code,value,expected', [
+    ('0.##%', 0, '0.%'), ('0.##%', -0.0, '0.%'), ('0.##%', .01, '1.%'),
+    ('0.##%', .099999, '10.%'), ('0.##%', -.099999, '-10.%'),
+    ('0.##%', .000001, '0.%'), ('0.##,', 1000, '1.'),
+    ('0.##,', 9999.9, '10.'), ('0.##,', -9999.9, '-10.'),
+    ('0.##,,', 1000000, '1.'), ('0.##,,', 5e-324, '0.')])
+def test_integral_after_scaling_preserves_raw_bits(code, value, expected):
+    doc = parse_xls(ole_workbook(workbook(value, 164, code)))
     cell, = doc.sheets[0].cells
-    assert render_number(value, code) is None
-    assert cell.text == str(float(value))
+    assert render_number(value, code) == cell.text == expected
     assert struct.pack('<d', cell.value) == struct.pack('<d', value)
-    assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
+    assert not doc.warnings
 
 
 @pytest.mark.parametrize('kind', ['rk', 'mulrk'])
@@ -78,11 +72,10 @@ def test_integer_storage_preserved_on_scaled_success(kind):
 
 
 @pytest.mark.parametrize('code', [
-    '0.##,%', '0.##,,%', '0.##%,', '0.##%%', '0.0#%',
-    '[$$-409]0.##%', '[$$-409]0.##,', '[$-419]0.##%',
-    '0.##%;0.##,%', '0.##%;0.##%;0.##,%',
-    '0.##%;0.##%;0;0.##%', '[>=0]0.##%;0.##,%',
-    '0.################%', '0.################,', '#.##%',
+    '0.##%,', '0.##%%',
+    '[$-777]0.##%',
+    '0.##%;0.##%;0;0.##%',
+    '0.################%', '0.################,',
 ])
 def test_unsupported_masks_including_unused_sections(code):
     doc = parse_xls(ole_workbook(workbook(.125, 164, code)))
@@ -91,21 +84,20 @@ def test_unsupported_masks_including_unused_sections(code):
     assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
 
 
-@pytest.mark.parametrize('code,value', [
-    ('[>=0]0.##%;0.##%', -.125), ('[>=0]0.##,;0.##,', -1250),
-])
-def test_negative_condition_still_unsupported(code, value):
-    assert render_number(value, code) is None
+@pytest.mark.parametrize('code,value,expected', [
+    ('[>=0]0.##%;0.##%', -.125, '12.5%'), ('[>=0]0.##,;0.##,', -1250, '1.25')])
+def test_negative_condition_uses_magnitude(code, value, expected):
+    assert render_number(value, code) == expected
 
 
-def test_rounding_before_trimming_and_integral_gate():
-    assert render_number(1.25, '0.##,') is None  # scale then round, not vice versa
+def test_rounding_before_trimming_and_integral_display():
+    assert render_number(1.25, '0.##,') == '0.'  # scale then round, not vice versa
     assert render_number(.00005, '0.##%') == '0.01%'
     assert render_number(-.00005, '0.##%') == '-0.01%'
-    assert render_number(math.nextafter(.00005, 0), '0.##%') is None
+    assert render_number(math.nextafter(.00005, 0), '0.##%') == '0.%'
     assert render_number(math.nextafter(.00005, 1), '0.##%') == '0.01%'
     assert render_number(5, '0.##,') == '0.01'
-    assert render_number(math.nextafter(5, 0), '0.##,') is None
+    assert render_number(math.nextafter(5, 0), '0.##,') == '0.'
     assert render_number(math.nextafter(5, 6), '0.##,') == '0.01'
 
 
@@ -118,12 +110,12 @@ def test_context_and_resource_bounds():
         before = (dict(ctx.flags), dict(ctx.traps), ctx.prec, ctx.Emax, ctx.Emin, ctx.rounding)
         for code, value, expected in CASES:
             assert render_number(value, code) == expected
-        assert render_number(sys.float_info.max, '0.###############%') is None
+        assert render_number(sys.float_info.max, '0.###############%').endswith('.%')
         assert before == (dict(ctx.flags), dict(ctx.traps), ctx.prec, ctx.Emax, ctx.Emin, ctx.rounding)
     mask = '0.##%"' + 'x' * 57 + '"'
     assert len(mask) == 64 and render_number(.125, mask) == '12.5%' + 'x' * 57
     assert render_number(.125, mask[:-1] + 'x"') is None
-    assert render_number(1, '0.#' + ',' * 61) is None
+    assert render_number(1, '0.#' + ',' * 61) == '0.'
     assert render_number(1, '0.#' + ',' * 100000) is None
     data = ole_workbook(workbook(.125, 164, '0.##%'))
     # Five FORMAT characters, one sheet-name character, five display characters.
@@ -139,27 +131,14 @@ def test_literal_preserved_source_oracle(tmp_path):
     generate_preserved(tmp_path, CASES)
 
 
-@pytest.mark.parametrize('numeric', [
-    '0.###,;0.###,;0', '#,##0.###,;#,##0.###,;0',
-    '[Red]0.###,;[Blue](0.###,);0', '0.#######,,;0.#######,,;0',
-    '0.###%;0.###%;0', '0;0;0.###,',
-])
-@pytest.mark.parametrize('fourth', ['', '"prefix "@', '"literal"', '@'])
-@pytest.mark.parametrize('kind', ['label', 'formula'])
-def test_new_numeric_cores_do_not_enable_string_helpers(numeric, fourth, kind):
-    from legacy_office_parser._xls_formats import hides_text, text_affixes, text_literal
+@pytest.mark.parametrize('fourth,expected', [('', ''), ('"prefix "@', 'prefix retained'),
+                                             ('"literal"', 'literal'), ('@', 'retained')])
+def test_numeric_core_support_composes_with_string_helpers(fourth, expected):
     from test_xls_hidden_sections import string_workbook
-
-    code = numeric + ';' + fourth
-    assert not hides_text(code)
-    assert text_affixes(code) is None
-    assert text_literal(code) is None
-    doc = parse_xls(ole_workbook(string_workbook(code, kind)))
-    cell, = doc.sheets[0].cells
-    assert (cell.value, cell.text, cell.value_type) == ('retained', 'retained', 'string')
-    assert cell.is_formula == (kind == 'formula')
-    assert doc.to_dict()['sheets'][0]['cells'][0]['text'] == 'retained'
-    assert 'retained' in doc.text
+    code = '0.###,;0.###,;0;' + fourth
+    doc = parse_xls(ole_workbook(string_workbook(code)))
+    assert doc.sheets[0].cells[0].value == 'retained'
+    assert doc.sheets[0].cells[0].text == expected
 
 
 @pytest.mark.parametrize('fourth,expected', [

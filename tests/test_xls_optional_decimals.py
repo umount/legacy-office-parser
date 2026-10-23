@@ -55,33 +55,30 @@ def test_public_display_preserves_value_and_formula_cache(code, value, expected,
     assert parse(data).to_dict() == doc.to_dict()
 
 
-@pytest.mark.parametrize('value', [0, -0.0, 1, -1, .004, -.004, 9.999, -9.999,
-                                   999.999, sys.float_info.max, 5e-324])
-@pytest.mark.parametrize('kind', ['number', 'formula'])
-def test_integral_rounded_results_keep_raw_text_and_warning(value, kind):
-    code = '#,##0.##'
-    doc = parse_xls(ole_workbook(workbook(value, 164, code, kind)))
+@pytest.mark.parametrize('value,expected', [(0, '0.'), (-0.0, '0.'), (1, '1.'),
+    (-1, '-1.'), (.004, '0.'), (-.004, '0.'), (9.999, '10.'),
+    (-9.999, '-10.'), (999.999, '1,000.'), (5e-324, '0.')])
+def test_integral_rounded_results_preserve_explicit_decimal_point(value, expected):
+    doc = parse_xls(ole_workbook(workbook(value, 164, '#,##0.##')))
     cell, = doc.sheets[0].cells
-    assert render_number(value, code) is None
-    assert cell.text == str(value if isinstance(value, float) else float(value))
+    assert render_number(value, '#,##0.##') == cell.text == expected
     assert struct.pack('<d', cell.value) == struct.pack('<d', value)
-    assert cell.value_type == 'number' and cell.is_formula == (kind == 'formula')
-    assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
+    assert not doc.warnings
 
 
 @pytest.mark.parametrize('kind', ['rk', 'mulrk'])
-def test_integer_records_keep_integer_type_on_integral_fallback(kind):
+def test_integer_records_keep_integer_type_on_integral_display(kind):
     doc = parse_xls(ole_workbook(workbook(-3, 164, '0.##', kind)))
     cell, = doc.sheets[0].cells
     assert type(cell.value) is int and cell.value == -3
-    assert cell.text == '-3' and cell.value_type == 'number'
-    assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
+    assert cell.text == '-3.' and cell.value_type == 'number'
+    assert not doc.warnings
 
 
 @pytest.mark.parametrize('code', [
-    '0.#0', '0.0#0', '0.##0', '0.????????', '#.##', '00.##', '.##', '0.',
-    '0.################', '0.##,%', '0.##,,%', '0.0#%',
-    '0.##E+00', '[$$-409]0.##', '0.##[$USD-409]', '[$-409]0.##', '[$-419]0.##',
+    '.##',
+    '0.################',
+    '0.##E+00', '[$-777]0.##', '[$-777]0.##',
     '0.##"a"#', '0.##x', '0.##"unfinished', '0.##\\',
 ])
 def test_new_subset_does_not_enable_other_grammars(code):
@@ -92,9 +89,9 @@ def test_new_subset_does_not_enable_other_grammars(code):
 
 
 @pytest.mark.parametrize('code', [
-    '0.##;0.#0', '0.##;0.##;yyyy', '0.##;0.##;[$-419]0',
+    '0.##;0.##;yyyy', '0.##;0.##;[$-777]0',
     '0.##;0.##;0;@x', '0.##;0.##;0;0.##',
-    '[>=0]0.##;0.#0', '0.##;0.##;0;"unfinished',
+    '0.##;0.##;0;"unfinished',
 ])
 def test_unknown_unselected_sections_still_force_fallback(code):
     doc = parse_xls(ole_workbook(workbook(1.25, 164, code)))
@@ -115,9 +112,9 @@ def test_existing_section_routing_remains_before_rounding(code, value, expected)
     assert not any('Unsupported or ambiguous' in w for w in doc.warnings)
 
 
-@pytest.mark.parametrize('value', [-1.25, 1, 9.999])
-def test_conditional_negative_and_integral_cases_remain_unsupported(value):
-    assert render_number(value, '[>=0]0.##;0.00') is None
+@pytest.mark.parametrize('value,expected', [(-1.25, '1.25'), (1, '1.'), (9.999, '10.')])
+def test_conditional_negative_and_integral_cases(value, expected):
+    assert render_number(value, '[>=0]0.##;0.00') == expected
 
 
 def test_hostile_decimal_context_is_neither_used_nor_mutated():
@@ -129,8 +126,8 @@ def test_hostile_decimal_context_is_neither_used_nor_mutated():
         before = (ctx.prec, ctx.Emax, ctx.Emin, ctx.rounding, dict(ctx.traps), dict(ctx.flags))
         doc = parse_xls(ole_workbook(workbook(1234.125, 164, '#,##0.###')))
         assert doc.sheets[0].cells[0].text == '1,234.125'
-        assert render_number(9.999, '0.##') is None
-        assert render_number(sys.float_info.max, '0.###############') is None
+        assert render_number(9.999, '0.##') == '10.'
+        assert render_number(sys.float_info.max, '0.###############').endswith('.')
         assert before == (ctx.prec, ctx.Emax, ctx.Emin, ctx.rounding, dict(ctx.traps), dict(ctx.flags))
 
 
@@ -149,7 +146,7 @@ def test_mask_and_decimal_place_bounds():
     assert render_number(1.25, mask) == '1.25' + 'x' * 58
     assert render_number(1.25, mask[:-1] + 'x"') is None
     assert render_number(.000000000000001, '0.' + '#' * 15) == '0.000000000000001'
-    assert render_number(.0000000000000001, '0.' + '#' * 15) is None
+    assert render_number(.0000000000000001, '0.' + '#' * 15) == '0.'
     assert render_number(.125, '0.' + '#' * 16) is None
     assert render_number(.125, '0.' + '#' * 100000) is None
 
@@ -187,9 +184,9 @@ def test_supported_nonnegative_conditions_use_unrounded_value(op, threshold):
 
 
 @pytest.mark.parametrize('value,expected', [
-    (math.nextafter(.005, 0), None), (.005, '0.01'),
+    (math.nextafter(.005, 0), '0.'), (.005, '0.01'),
     (math.nextafter(.005, 1), '0.01'),
-    (math.nextafter(1, 0), None), (math.nextafter(1, 2), None),
+    (math.nextafter(1, 0), '1.'), (math.nextafter(1, 2), '1.'),
     (1000000.125, '1000000.13'),
 ])
 def test_rounding_boundary_and_large_fractional_value(value, expected):

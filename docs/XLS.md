@@ -3,29 +3,38 @@
 ## Supported
 
 - Sparse typed cells, ordered sheets, merges, hidden-sheet flags and stored
-  formula results. Both 1900 and 1904 date systems are supported within the
-  documented date subset; formulas are never recalculated.
+  formula results; formulas are never recalculated.
 - Segmented shared strings, Unicode continuation boundaries, NUMBER/RK/MULRK,
-  cached FORMULA/STRING values and their separate raw/display representations.
-- A bounded numeric grammar: decimals, grouping, percentages, scientific masks,
-  sign sections, literal affixes, selected conditions, text sections and fractions.
-- Optional fractional digits with percent OR comma scaling when the rounded
-  result is nonintegral; currency combinations remain restricted.
-- Exact variable fractions for `# ?/?` and `# ??/??`: denominator at most 9/99,
-  magnitude at most 1,000,000, and identical stored binary64 after conversion.
+  cached FORMULA/STRING values and separate raw/display representations.
+- Composable decimal, grouping, percentage, comma-scaling and scientific masks;
+  mandatory/optional/alignment digits, literal and currency affixes, sign and
+  conditional sections, and separate text sections. Alignment emits one space;
+  width-dependent fill characters are omitted.
+- Fixed-denominator fractions and nearest variable fractions with one to three
+  denominator digits. Raw numeric values remain unchanged by display rounding.
+- Explicit `display_locale` in `parse_xls`, `parse` and the CLI: named separators
+  or `NumberLocale` for custom separators. Defaults remain invariant; literal
+  punctuation is never translated and process locale is never consulted.
+- Normalized calendar/clock values in both 1900 and 1904 systems, including
+  date masks with literals and ordinary Gregorian locale tags. Elapsed masks
+  such as `[h]:mm:ss` preserve numeric serials and do not wrap at midnight.
 
-## Limits and remaining work
+## Boundaries
 
-General formatting is a width-free extraction policy: integral values below
-100000000000 lose `.0`; other values keep their numeric spelling. It is not an
-Excel screen renderer and does not round caches to fit a column.
+General formatting is width-free: integral values below 100000000000 lose `.0`;
+other values keep their numeric spelling. Decimal/fixed-fraction rounding uses
+half-up; optional decimal masks retain their explicit decimal point even when
+all optional digits disappear. These are documented extraction policies, not
+pixel-identical Excel or LibreOffice rendering.
 
-General localization, approximate fractions, negative conditional formats,
-integral optional-decimal results and wider alignment/text-section masks remain
-limited. Unsupported custom formats keep raw values with diagnostics. Hidden
-display text never removes the typed value. Print headers/footers, charts and
-macro sheets are not extracted. Older BIFF and encryption are unsupported.
-See [numeric/date contract](OUTPUT_FORMAT.md#xls-numeric-display-subsets).
+Masks are bounded to 64 characters, decimal precision to 15 places and fraction
+denominators to 999. Unsupported constructs (including engineering notation,
+alternative calendars, multi-section dates and implicit locale-specific built-ins)
+retain raw values with diagnostics. Conditional formatting rules in worksheet
+records are not applied; conditions inside number-format masks are supported.
+Hidden display text never removes the typed value. Print headers/footers, charts
+and macro sheets are not extracted. Older BIFF and encryption are unsupported.
+See the [numeric/date contract](OUTPUT_FORMAT.md#xls-numeric-display-subsets).
 
 ## References
 

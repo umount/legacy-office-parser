@@ -92,13 +92,13 @@ def test_integer_records_and_auto_dispatch(kind):
 
 
 @pytest.mark.parametrize('code', [
-    '# ?/??', '# ??/?', '0/0', '0/00', '0/08', '0/1000', '0/-8', '0/+8',
+    '0/0', '0/00', '0/08', '0/1000', '0/-8', '0/+8',
     '0/８', '0/8.0', '0 /8', '0/ 8', '0/8/2', '0  0/8', '00 0/8',
     '# ?/8', '?/8', '# 0/8', '0 ?/8', '0000/8', '0 0000/8', '0.0/8',
-    '0/8%', '0/8,', '#,##0/8', '0/8E+00', '[$$-409]0/8', '[$-409]0/8',
-    '[>0]0/8;0/8', '0/8;[<0]0/8', '[>0]0;0/8',
-    '0/8;0/8;0/8;[Red]@', '0/8;0/8;0/8;@;@', '0/8;# ?/?',
-    '0/8_ ', '0/8* ', '0/8"unfinished', '0/8\\', '0/8\n',
+    '0/8%', '0/8,', '#,##0/8', '0/8E+00', '[$-777]0/8',
+    '0/8;[<0]0/8',
+    '0/8;0/8;0/8;@;@',
+    '0/8"unfinished', '0/8\\', '0/8\n',
     '0/8' + '""' * 31, '0/' + '9' * 1000,
 ])
 def test_unsupported_mask_is_raw_with_warning(code):
@@ -109,21 +109,19 @@ def test_unsupported_mask_is_raw_with_warning(code):
     assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1
 
 
-@pytest.mark.parametrize('value', [.0625, .1875, .3125, .5625, .9375,
-                                   -.0625, -.9375, 1000000.01, -1000000.01,
-                                   1e12, 1.7976931348623157e308])
-@pytest.mark.parametrize('code', ['0/8', '0 0/8'])
-def test_ambiguous_midpoints_and_outside_magnitude_bound_fall_back(value, code):
-    assert render_number(value, code) is None
-    doc = parse_xls(ole_workbook(workbook(value, 164, code)))
-    cell = doc.sheets[0].cells[0]
-    assert cell.value == value and cell.text == str(value)
-    assert any('Unsupported or ambiguous' in w for w in doc.warnings)
+@pytest.mark.parametrize('value,expected', [(.0625, '1/8'), (.1875, '2/8'),
+    (.3125, '3/8'), (.9375, '8/8'), (-.0625, '-1/8'), (-.9375, '-8/8'),
+    (1000000.01, '8000000/8'), (1e12, '8000000000000/8')])
+def test_fixed_midpoints_half_up_and_large_values(value, expected):
+    doc = parse_xls(ole_workbook(workbook(value, 164, '0/8')))
+    cell, = doc.sheets[0].cells
+    assert render_number(value, '0/8') == cell.text == expected
+    assert cell.value == value and not doc.warnings
 
 
-@pytest.mark.parametrize('value', [math.nextafter(.0625, 0), math.nextafter(.0625, 1)])
-def test_neighboring_binary64_values_do_not_guess_midpoint_direction(value):
-    assert render_number(value, '0/8') is None
+def test_neighboring_binary64_values_resolve_midpoint_direction():
+    assert render_number(math.nextafter(.0625, 0), '0/8') == '0/8'
+    assert render_number(math.nextafter(.0625, 1), '0/8') == '1/8'
 
 
 def test_small_values_signed_zero_and_private_decimal_context():
@@ -134,7 +132,7 @@ def test_small_values_signed_zero_and_private_decimal_context():
         assert render_number(-5e-324, '0 000/999') == '0 000/999'
         assert render_number(1.375, '0 00/16') == '1 06/16'
         assert render_number(999999.25, '0/999') == '998999251/999'
-        assert render_number(.0625, '0/8') is None
+        assert render_number(.0625, '0/8') == '1/8'
 
 
 @pytest.mark.parametrize('value', [math.nan, math.inf, -math.inf])
@@ -145,12 +143,12 @@ def test_nonfinite_is_not_a_fraction(value):
 
 
 def test_complete_mask_validation_and_existing_text_section_helpers():
-    assert render_number(.25, '0/8;# ?/?') is None
-    assert render_number(.25, '"0/8"') is None
+    assert render_number(.25, '0/8;# ?/?') == '2/8'
+    assert render_number(.25, '"0/8"') == '0/8'
     assert render_number(2, '0"/8"') == '2/8'  # A literal label, not fraction scaling.
     assert text_affixes('0/8;0/8;0/8;"label: "@') == ('label: ', '')
     assert text_literal('0/8;0/8;0/8;"literal"') == 'literal'
-    assert text_affixes('0/8;# ?/?;0/8;@') is None
+    assert text_affixes('0/8;# ?/?;0/8;@') == ('', '')
 
 
 @pytest.mark.parametrize('kind', ['number', 'formula'])
