@@ -6,7 +6,7 @@ from .limits import Limits
 from .number_locale import NumberLocale
 from .models import AuxiliaryStory, Document, Paragraph, Table, Cell, Slide, SlideComment, SpreadsheetCell, CellRange, Sheet, Note, NoteBodyRange, Comment, CommentBodyRange
 
-__version__ = '0.31.0'
+__version__ = '0.32.0'
 __all__ = ['NumberLocale', 'AuxiliaryStory', 'Diagnostic', 'normalize_text', 'parse_xls', 'parse_rtf', 'parse_odt', 'parse_ods', 'parse_odp',
            'SpreadsheetCell', 'CellRange', 'Sheet', 'parse', 'parse_doc', 'parse_ppt', 'Limits', 'Document', 'Paragraph',
            'Table', 'Cell', 'Slide', 'SlideComment', 'Note', 'NoteBodyRange', 'Comment', 'CommentBodyRange', 'ParseError', 'InvalidDocumentError',

@@ -36,7 +36,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.31.0**. The package version is available as
+This reference describes package **0.32.0**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -64,6 +64,12 @@ limits, display locale, input hash and consumer normalization policy in cache pr
 whether to regenerate stored content from the release's affected formats and
 behavior changes; neither “patch” nor “unchanged fields” establishes that old
 results remain equivalent. Changes to defaults must be recorded explicitly.
+
+**0.32 output changes:** ODT retains cached index titles/entries and captions.
+ODS keeps grouped and cell-anchored labels in `sheet.drawings`, including labels
+anchored to covered cells; they no longer replace cell display values. Repeated
+cells do not duplicate their anchored shapes. ODP retains inline note bodies and
+paragraph drawings in the owning slide destination. No public fields were added.
 
 Format support and remaining exclusions are summarized in [DOC](DOC.md),
 [XLS](XLS.md), [PPT](PPT.md), [RTF](RTF.md), [ODT](ODT.md), [ODS](ODS.md)

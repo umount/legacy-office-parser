@@ -6,8 +6,10 @@ Format pages hold current support, exclusions and specification links:
 
 Prioritize reproducible losses of meaningful text in real documents:
 
-- PPT/ODF: additional passive embedded text with proven ownership; embedded
-  ODP notes and paragraph-anchored drawings.
+PPT and ODF are complete for the current text-extraction scope. Arbitrary OLE
+objects and unknown extensions are exclusions, not pending release tasks.
+Revisit them only with a concrete example of missing required text.
+
 - XLS: specialized masks and worksheet conditional-formatting rules; see
   [the supported numeric/date boundaries](XLS.md).
 
