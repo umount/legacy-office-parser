@@ -816,3 +816,17 @@ is inferred from these checks.
 - All **82** public fixtures parsed. The existing 80 retain status and text hashes;
   two original ODP/ODT object probes were added. No private integration files
   are included or counted in this run.
+
+
+## 0.27.1 optional-part regression validation
+
+- Full suite: **7352 passed, 82 optional skips**; Ruff and whitespace checks pass.
+- DOC empty-header recovery was independently reviewed, along with empty
+  note/comment-body handling and preservation of metadata validation and budgets.
+- **214** additional optional-part audit regressions cover XLS, PPT, RTF and ODF;
+  these paths required no runtime change. See OPTIONAL_PARTS.md for scope.
+- **8200** deterministic mutations produced no unexpected exception; all **12**
+  resource scenarios passed. All **82** public fixtures retain status/text hashes.
+- An isolated installed wheel passes the seven-format smoke checks. One private
+  reported DOC regression now parses successfully; its contents and identifiers
+  are not included in this repository or the public corpus.

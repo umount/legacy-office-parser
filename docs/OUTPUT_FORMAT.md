@@ -36,7 +36,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.27.0**. The package version is available as
+This reference describes package **0.27.1**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -67,6 +67,9 @@ results remain equivalent. Changes to defaults must be recorded explicitly.
 
 Recent output history:
 
+- **0.27.1:** empty DOC header/note/comment stories accept bounded zero-entry
+  service tables with diagnostics instead of rejecting available main content.
+  Nonempty-story validation and resource limits remain enforced.
 - **0.27.0:** ODP frames may select a direct inline ODF text document and
   project its supported body into the owning slide destination. DOC gains exact
   single complete depth-two comment-row ranges after enclosing-table validation.
@@ -882,7 +885,7 @@ it does not convert unsupported legacy versions through an external office suite
 ## Failures and exception boundaries
 
 Missing optional document parts do not, by themselves, invalidate available
-content. For DOC with an empty header story (`ccpHdd == 0`), an aligned header
+content. See [optional-part policy and audit](OPTIONAL_PARTS.md). For DOC with an empty header story (`ccpHdd == 0`), an aligned header
 PLC whose defined CPs are all zero is ignored with `doc_empty_header_plc_ignored`,
 even if its slot count does not match the section count. No header text or source
 identities are inferred. Empty footnote/endnote/comment body tables also recover
