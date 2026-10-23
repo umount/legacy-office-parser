@@ -39,3 +39,17 @@ embedded extraction remains deferred. DOC supports the verified same-section
 ordinary-text/complete-row comment subset. An integration-reported XLS General
 whole-number display issue is corrected without recalculating formula caches.
 See OUTPUT_FORMAT.md and TESTING.md for the precise contract and validation.
+
+## Next checkpoint (0.26)
+
+1. Correct ODF sheet/slide hidden metadata to use XML/document-owned styles and
+   family defaults, with diagnostics for unresolved definitions.
+2. Extend DOC comment ranges only across verified ordinary main-story section
+   boundaries; keep mixed table/section and nested-row ambiguity explicit.
+3. Prove a bounded DOC vertical-merge subset for row-only conditional visibility.
+4. Extend XLS optional-decimal display to percent or comma scaling, preserving
+   raw caches and fallback for integral-after-rounding ambiguity.
+
+Each change requires independent review and focused adversarial regressions.
+Combined acceptance uses the full suite, mutation/resource checks and public
+fixtures. Integration validation continues independently.
