@@ -138,14 +138,14 @@ def test_field_crossings_remain_conservative(monkeypatch, main):
     assert result.comment_text == 'Body'
 
 
-def test_section_crossing_is_not_an_ordinary_paragraph_crossing(monkeypatch):
+def test_verified_section_crossing_between_ordinary_paragraphs(monkeypatch):
     from test_doc_sections import with_sections
 
     d = ranged('A\rB\x05\r', 0, 3)
     mutate(d, 'WordDocument', 1026, b'\x0c\0')
     d = with_sections(d, [0, 2, 5])
     result = parse(monkeypatch, d)
-    assert selection(result) == (None, None)
+    assert selection(result) == (0, 3)
 
 
 def test_same_cell_multiple_paragraphs_are_proven(monkeypatch):

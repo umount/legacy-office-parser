@@ -893,8 +893,19 @@ class _Doc:
     def _comment_selection_ranges(self, paragraphs):
         # Prefix counts and source regions make overlapping range validation
         # O(log paragraphs) each, without walking each selected paragraph again.
-        # Regions break only on explicit cell/row/section marks or depth changes;
-        # they never infer table identity, output-grid positions, or page layout.
+        # Verified main-story section marks can join ordinary paragraphs.
+        # Table regions still break there; neither layout nor projected text
+        # establishes source continuity.
+        def ordinary_ending(mark, mark_cp, props):
+            if props.row_end or props.inner_cell or props.inner_ttp:
+                return False
+            if mark == 13:
+                return mark_cp not in self.section_ends
+            # _sections has verified this U+000C against an interior PLCSED CP.
+            # A manual page break or any table paragraph is not in this subset.
+            return (mark == 12 and mark_cp in self.section_ends
+                    and not (props.depth or props.in_table))
+
         self.budget.record(4 * len(paragraphs) + 1)
         starts = [p[0] for p in paragraphs]
         unsafe = [0]
@@ -920,8 +931,7 @@ class _Doc:
             if covered and ((depth == 1 and mark == 7 and not props.row_end)
                             or (depth > 1 and mark == 13 and props.inner_cell and not props.inner_ttp)):
                 completed_cells.add(region)
-            boundary = (mark != 13 or props.row_end or props.inner_cell or props.inner_ttp
-                        or mark_cp in self.section_ends)
+            boundary = not ordinary_ending(mark, mark_cp, props)
             previous_depth = depth
         for source in self.comment_ranges:
             begin, end = source.selection_start, source.selection_end
@@ -935,14 +945,13 @@ class _Doc:
             proven = not fields and i >= 0 and j >= i
             if proven:
                 _, last_end, mark, mark_cp, props, _, _ = paragraphs[j]
-                # Ordinary paragraph CR may be selected. Cell/TTP/section marks
-                # require further selection rules and are never included here.
-                include_cr = (mark == 13 and not (props.row_end or props.inner_cell or props.inner_ttp)
-                              and mark_cp not in self.section_ends)
+                # Include CR or a proven non-table section mark, without
+                # converting either source CP into a normalized text offset.
+                include_mark = ordinary_ending(mark, mark_cp, props)
                 depth = props.depth or (1 if props.in_table else 0)
                 proven = (regions[i] == regions[j] and unsafe[j + 1] == unsafe[i]
                           and (i == j or not depth or regions[i] in completed_cells)
-                          and end <= last_end + include_cr
+                          and end <= last_end + include_mark
                           and not 0xdc00 <= _u16(self.text, begin * 2) <= 0xdfff
                           and not 0xd800 <= _u16(self.text, (end - 1) * 2) <= 0xdbff)
             # Only try the supplementary proof when a row exists and an

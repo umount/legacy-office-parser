@@ -34,10 +34,10 @@ def test_ordinary_empty_paragraph_cr_and_exact_next_start(monkeypatch, begin, en
     assert selected(monkeypatch, 'A\r\rB\x05\r', begin, end) == (begin, end)
 
 
-@pytest.mark.parametrize('begin,end,want', [(0, 2, (0, 2)), (0, 3, None),
-                                           (2, 3, None), (3, 4, (3, 4)),
+@pytest.mark.parametrize('begin,end,want', [(0, 2, (0, 2)), (0, 3, (0, 3)),
+                                           (2, 3, (2, 3)), (3, 4, (3, 4)),
                                            (4, 5, (4, 5)), (3, 5, (3, 5)),
-                                           (0, 5, None)])
+                                           (0, 5, (0, 5))])
 def test_explicit_section_mark_and_empty_following_paragraph(monkeypatch, begin, end, want):
     # A CR FF CR B marker CR. Explicit section begins at CP 3, after FF.
     got = selected(monkeypatch, 'A\r\f\rB\x05\r', begin, end, sections=[0, 3, 7])

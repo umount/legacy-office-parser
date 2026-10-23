@@ -1,0 +1,89 @@
+{
+  "story_counts": [
+    44,
+    0,
+    0,
+    24,
+    0,
+    0,
+    0
+  ],
+  "main": "Lead 😀 Alpha\fBeta 🚀\u0005 tail.\fAfter section.\r",
+  "comment_story": "\u0005Review both sections.\r\r",
+  "owners": [
+    "Ada Section"
+  ],
+  "reference_sentinel": 45,
+  "text_cps": [
+    0,
+    23,
+    24
+  ],
+  "comments": [
+    {
+      "source_cp": 21,
+      "source_unit": 5,
+      "initials": "",
+      "owner_index": 0,
+      "tag": 0,
+      "body_cps": [
+        0,
+        23
+      ],
+      "body": "\u0005Review both sections.\r",
+      "selection_cps": [
+        8,
+        21
+      ],
+      "selection": "Alpha\fBeta 🚀"
+    }
+  ],
+  "marker_chpx": [
+    {
+      "cp": 21,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    },
+    {
+      "cp": 44,
+      "direct_chpx_hex": [
+        "550801"
+      ]
+    }
+  ],
+  "raw_parts_hex": {
+    "4": "150000002d000000000000000000000000000000000000000000000000000000000000000000",
+    "5": "000000001700000018000000",
+    "36": "0b004100640061002000530065006300740069006f006e00",
+    "37": "ffff01000a000000000100000000ffffffff",
+    "42": "080000002d00000000000000",
+    "43": "150000002d000000",
+    "112": "000be1870000000000000000000000000000"
+  },
+  "source_xml": [
+    {
+      "author": "Ada Section",
+      "body": [
+        "Review both sections."
+      ],
+      "selection": "Alpha\rBeta 🚀"
+    }
+  ],
+  "lo_readback_xml": [
+    {
+      "author": "Ada Section",
+      "body": [
+        "Review both sections."
+      ],
+      "selection": null
+    }
+  ],
+  "section_cps": [
+    0,
+    14,
+    29,
+    69
+  ],
+  "section_plc_hex": "000000000e0000001d000000450000000400000e00000000ffffffff04002f0e00000000ffffffff04006f0e00000000ffffffff"
+}
