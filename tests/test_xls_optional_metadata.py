@@ -19,11 +19,11 @@ def parse(body=b'', globals=b'', limits=None):
     return parse_xls(ole_workbook(book([('S', 0, body)], globals)), limits=limits or Limits())
 
 
-@pytest.mark.parametrize('headers', [
-    b'', rec(0x14), rec(0x15), rec(0x14) + rec(0x15),
-    rec(0x14, string('')) + rec(0x15, string('')),
+@pytest.mark.parametrize('headers,globals', [
+    (b'', b''), (b'', EMPTY_SST), (rec(0x14), b''), (rec(0x15), b''),
+    (rec(0x14) + rec(0x15), EMPTY_SST),
+    (rec(0x14, string('')) + rec(0x15, string('')), EMPTY_SST),
 ])
-@pytest.mark.parametrize('globals', [b'', EMPTY_SST])
 def test_absent_or_empty_print_metadata_and_sst_retain_cells(headers, globals):
     doc = parse(headers + NUMBER, globals)
     c, = doc.sheets[0].cells

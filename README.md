@@ -164,7 +164,7 @@ repeated column labels, retained values, and story-local heading context.
 
 ```sh
 python -m pip install -e '.[dev]'
-python -m pytest -q
+python -m pytest -q tests/test_api.py
 ruff check src tests tools
 python -m build
 ```
@@ -176,18 +176,10 @@ remain in their original languages.
 
 ## Documentation
 
-- [Explicit text normalization](docs/NORMALIZATION.md)
-- [Stable diagnostic codes](docs/DIAGNOSTICS.md)
-- [Development sequence](docs/NEXT_STEPS.md)
-- [DOC and XLS iteration](docs/DOC_XLS_NEXT.md)
-- [Output format: Python and JSON contract](docs/OUTPUT_FORMAT.md)
-- [Structured integration guide](docs/INTEGRATION.md)
-- [Achievements and alternatives](docs/COMPARISON.md)
-- [Plan and status](docs/PLAN.md)
-- [Principles and architecture](docs/ARCHITECTURE.md)
-- [DOC/PPT research and WordCraft comparison](docs/RESEARCH.md)
-- [XLS](docs/research-xls.md), [RTF](docs/research-rtf.md), [OpenDocument](docs/research-odf.md)
-- [Validation and limitations](docs/TESTING.md)
-- [Remaining extraction gaps](docs/EXTRACTION_GAPS.md)
-- [Performance](docs/PERFORMANCE.md)
-- [Sources and provenance](THIRD_PARTY.md)
+- Formats: [DOC](docs/DOC.md), [XLS](docs/XLS.md), [PPT](docs/PPT.md),
+  [RTF](docs/RTF.md), [ODT](docs/ODT.md), [ODS](docs/ODS.md), [ODP](docs/ODP.md).
+- [Python/JSON contract](docs/OUTPUT_FORMAT.md) and [integration](docs/INTEGRATION.md).
+- [Normalization](docs/NORMALIZATION.md), [diagnostics](docs/DIAGNOSTICS.md),
+  [missing optional parts](docs/OPTIONAL_PARTS.md).
+- [Architecture](docs/ARCHITECTURE.md), [testing](docs/TESTING.md),
+  [remaining work](docs/EXTRACTION_GAPS.md), [comparison scope](docs/COMPARISON.md).

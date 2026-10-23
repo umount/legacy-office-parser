@@ -1,4 +1,4 @@
-"""BIFF8 segmented Unicode strings. See docs/research-xls.md for provenance."""
+"""BIFF8 segmented Unicode strings. See docs/XLS.md for provenance."""
 import struct
 from .errors import InvalidDocumentError, LimitExceededError
 

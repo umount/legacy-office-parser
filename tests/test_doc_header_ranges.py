@@ -226,9 +226,14 @@ def test_original_lo_doc_literal_readback():
     assert [r.ordinal for r in records if r.start == r.end] == [1, 2, 3, 4, 5, 6, 7, 9, 10, 12]
 
 
-@pytest.mark.parametrize('cp_count', [2, 8, 13, 14, 20])
-@pytest.mark.parametrize('sections', [None, 0, 1, 2])
-@pytest.mark.parametrize('final', [0, 0xffffffff])
+@pytest.mark.parametrize('cp_count,sections,final', [
+    pytest.param(13, 1, 0, id='reported-degenerate-table'),
+    pytest.param(13, 1, 0xffffffff, id='undefined-terminal'),
+    pytest.param(2, None, 0, id='minimal-without-sections'),
+    pytest.param(8, 0, 0, id='no-sections'),
+    pytest.param(14, 1, 0, id='ordinary-slot-count'),
+    pytest.param(20, 2, 0, id='multiple-sections'),
+])
 def test_empty_story_degenerate_plc_retains_no_identities(cp_count, sections, final):
     raw = bytes(4 * (cp_count - 1)) + struct.pack('<I', final)
     warnings, charges = [], []

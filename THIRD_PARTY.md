@@ -22,10 +22,10 @@ Additional format references:
 
 - xlrd 2.0.2 (BSD), inspected for BIFF8 string continuation, record layouts,
   numeric/date interpretation and cached formulas. No xlrd runtime or whole
-  source module is bundled. See `docs/research-xls.md`.
+  source module is bundled. See `docs/XLS.md`.
 - striprtf v0.0.29 (BSD-3-Clause) and WordCraft's RTF module were consulted for
   format behavior. The RTF lexer and reader are independently written; neither
   the striprtf regex pipeline nor its source tables are included.
 - odfpy was consulted for behavior; no odfpy source is copied or imported.
   The ODF implementation follows OASIS package and XML specifications using
-  Python's standard library. See `docs/research-odf.md`.
+  Python's standard library. See `docs/ODT.md`.

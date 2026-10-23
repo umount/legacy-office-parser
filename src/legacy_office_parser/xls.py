@@ -1,6 +1,6 @@
 """Focused BIFF8 extraction with bounded numeric display; no calculation runtime.
 
-Protocol/reference provenance is recorded in docs/research-xls.md.
+Protocol/reference provenance is recorded in docs/XLS.md.
 """
 from __future__ import annotations
 

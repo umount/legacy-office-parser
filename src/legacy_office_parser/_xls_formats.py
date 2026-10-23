@@ -1,7 +1,7 @@
 """Bounded numeric display subset, not an Excel format interpreter.
 
 Return None for unsupported syntax; never strip literals into executable tokens.
-See docs/research-xls-formats.md for grammar, rounding, bounds and provenance.
+See docs/XLS.md for grammar, rounding, bounds and provenance.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ _FIXED = re.compile(r'(0|#,##0)(?:\.(0{1,15}#{0,14}|#{1,15}))?(,{0,63})(%)?')
 # Deliberate evidence-backed whitelist, not a general locale interpreter.
 _CURRENCY = {'[$$-409]': '$', '[$€-407]': '€', '[$USD-409]': 'USD'}
 # Fixed, unreduced fractions only; no best-fit denominator or layout placeholders.
-# MS-XLS 2.4.126; reference probes/bounds: docs/research-xls-fractions.md.
+# MS-XLS 2.4.126; reference probes/bounds: docs/XLS.md.
 _FRACTION = re.compile(r'(0 )?(0{1,3})/([1-9][0-9]{0,2})')
 _VARIABLE_FRACTIONS = {'# ?/?': 1, '# ??/??': 2}
 _FRACTION_MAX_VALUE = Decimal('1000000')

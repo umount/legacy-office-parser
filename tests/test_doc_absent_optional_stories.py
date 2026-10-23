@@ -19,8 +19,13 @@ def decode(kind, refs, texts, *, limits=None, record=None, warn=None, extra=None
 
 
 @pytest.mark.parametrize('kind', ['note', 'comment'])
-@pytest.mark.parametrize('refs', [b'', bytes(4), b'\xff' * 4])
-@pytest.mark.parametrize('terminal', [0, 1, 0x7fffffff, 0xffffffff])
+@pytest.mark.parametrize('refs,terminal', [
+    pytest.param(b'', 0, id='missing-references'),
+    pytest.param(bytes(4), 0, id='empty-references'),
+    pytest.param(b'\xff' * 4, 0xffffffff, id='undefined-sentinels'),
+    pytest.param(bytes(4), 1, id='terminal-is-not-a-boundary'),
+    pytest.param(bytes(4), 0x7fffffff, id='terminal-outside-source'),
+])
 def test_zero_entry_tables_have_no_source_relationships(kind, refs, terminal):
     warnings, charges = [], []
     assert decode(kind, refs, struct.pack('<II', 0, terminal),

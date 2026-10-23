@@ -7,5 +7,5 @@ objects are enabled on slides 1 and 3 and disabled on slide 2.
 
 Expected text is literal in `tests/test_ppt_master_text.py`. Independent UNO
 readback confirmed ordinary/placeholder classification and inheritance flags.
-See `docs/research-ppt-master-text.md` for generation steps and limitations.
+See `docs/PPT.md` for generation steps and limitations.
 No macro, external-resource or runtime office-application dependency is added.

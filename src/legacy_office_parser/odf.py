@@ -1,4 +1,4 @@
-"""Independent, stdlib-only ODT/ODS/ODP extraction (see docs/research-odf.md)."""
+"""Independent, stdlib-only ODT/ODS/ODP extraction (see docs/ODT.md)."""
 from __future__ import annotations
 
 import math

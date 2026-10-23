@@ -99,7 +99,6 @@ def test_sections_integer_records(kind, value, expected):
     assert not doc.warnings
 
 
-@pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('value', [12.5, -12.5, 0.0])
 @pytest.mark.parametrize('code', [
     '0;0;0;@;0',
@@ -116,9 +115,15 @@ def test_sections_integer_records(kind, value, expected):
     '0;0.0000000000000000', '0;0E+0000', '0;0.#0',
     '0;General"x"', '0;-General', '0;_(0)', '0;*0',
 ])
-def test_all_sections_validated_even_when_unused(code, value, kind):
+def test_all_sections_validated_even_when_unused(code, value):
     assert render_number(value, code) is None
-    doc = parse_number(value, 164, code, kind)
+
+
+@pytest.mark.parametrize('kind', ['number', 'formula'])
+@pytest.mark.parametrize('value', [12.5, -12.5, 0.0])
+def test_rejected_format_preserves_biff_value_and_warns(kind, value):
+    # Rejection of any section is independent of the numeric record type.
+    doc = parse_number(value, 164, '0;0;0;@;0', kind)
     cell = doc.sheets[0].cells[0]
     assert (cell.value, cell.value_type, cell.text) == (value, 'number', str(value))
     assert sum('Unsupported or ambiguous' in w for w in doc.warnings) == 1

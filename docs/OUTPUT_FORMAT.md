@@ -65,53 +65,9 @@ whether to regenerate stored content from the release's affected formats and
 behavior changes; neither “patch” nor “unchanged fields” establishes that old
 results remain equivalent. Changes to defaults must be recorded explicitly.
 
-Recent output history:
-
-- **0.27.1:** empty DOC header/note/comment stories accept bounded zero-entry
-  service tables with diagnostics instead of rejecting available main content.
-  Nonempty-story validation and resource limits remain enforced.
-- **0.27.0:** ODP frames may select a direct inline ODF text document and
-  project its supported body into the owning slide destination. DOC gains exact
-  single complete depth-two comment-row ranges after enclosing-table validation.
-  XLS General display behavior is unchanged; its width-free limits are clarified.
-- **0.26.0:** ODF sheet/slide hidden flags resolve document-owned styles and
-  family defaults, with a coded diagnostic for unresolved definitions. DOC gains
-  exact ordinary main-story comment ranges across verified section boundaries
-  and row-only conditional visibility for a proven vertical-merge subset. XLS
-  optional-decimal numeric displays accept percent or scaling separately; raw
-  caches and existing fourth-section string behavior remain unchanged.
-- **0.25.0:** explicit RTF WordArt gains CP1250/CP1253 decoding; ODP frames
-  select one supported text representation rather than concatenate alternatives;
-  integral XLS General values below twelve digits omit the decimal suffix; DOC
-  comment selection ranges can combine safe ordinary text with complete outer
-  rows in one section. Explicit `normalize_text` removes U+00AD by default, with
-  `drop_soft_hyphens=False` available; U+200B remains. Public model fields and raw
-  numeric values are unchanged.
-
-- **0.24.0:** DOC auxiliary-story identities, validated header inheritance,
-  complete-row comment selections, row-only conditional table visibility,
-  bounded variable-denominator fractions and optional-decimal displays.
-
-- **0.23.0:** supported inherited/stored visibility filtering, optional
-  display-text normalization, coded diagnostics, ODF templates and individual
-  RTF/ODT note bodies. Supported fixed-denominator XLS fraction displays are added.
-  See [development sequence](NEXT_STEPS.md) for validation and remaining limits.
-
-- **0.22.0:** `heading_level` is populated for supported RTF and ODT paragraphs,
-  including cells and auxiliary stories. These can gain `Cell.blocks` or
-  `story_blocks` where formerly only text projections were retained. RTF exact
-  built-in style-name inference and unrepresentable ODT heading levels produce
-  warnings. Existing plain-text results in the checked corpus are unchanged.
-- **0.21.1:** one terminal NUL after a complete RTF root is accepted with a
-  warning; arbitrary trailing data is still rejected. Reserved DOC textbox
-  sentinel coordinates no longer reject otherwise valid live text ranges.
-  Previously rejected documents can now produce output. Defaults are unchanged.
-- **0.21.0:** optional paragraph `heading_level` (1–9) for DOC, with supporting
-  cell/story blocks. Body paragraphs omit the JSON key.
-- **0.20.1–0.20.2:** internal refactoring; no intended output changes.
-
-Earlier feature history and measured limits are recorded in
-[the extraction register](EXTRACTION_GAPS.md) and [validation history](TESTING.md).
+Format support and remaining exclusions are summarized in [DOC](DOC.md),
+[XLS](XLS.md), [PPT](PPT.md), [RTF](RTF.md), [ODT](ODT.md), [ODS](ODS.md)
+and [ODP](ODP.md). Release history is available through Git tags.
 
 ## Python API and CLI JSON
 
@@ -319,7 +275,7 @@ display without a fractional suffix: raw `1.0` has text `"1"`. Both signed zeros
 display as `"0"`, retaining the sign in the raw value. Explicit `0.0` formatting
 continues to display `"1.0"`. Larger/fractional General values retain their
 existing raw text projection; width-dependent General rendering is not modeled.
-See [General evidence](research-xls-general-integers.md).
+See [General evidence](XLS.md).
 
 Supported XLS numeric masks use invariant decimal `.` and grouping `,`
 separators, independently of machine locale or document language. This is a
@@ -430,12 +386,12 @@ while table endpoints must coincide with proven row boundaries. One complete
 inner row at depth two is also supported if it has no deeper table and its entire
 enclosing outer table validates. Multiple inner rows and mixed inner/outer spans
 remain unsupported, as do partial rows and fields. See
-[inner-row evidence](research-doc-comment-inner-rows.md). Ordinary non-table main-story
+[inner-row evidence](DOC.md). Ordinary non-table main-story
 paragraphs may cross verified section boundaries; spans combining sections and
 tables remain unsupported. Manual page breaks do not establish section ownership.
-Source intervals are never widened. See [row evidence](research-doc-comment-complex-selections.md)
-and [mixed-selection evidence](research-doc-comment-mixed-selections.md), plus
-[ordinary-section evidence](research-doc-comment-section-selections.md).
+Source intervals are never widened. See [row evidence](DOC.md)
+and [mixed-selection evidence](DOC.md), plus
+[ordinary-section evidence](DOC.md).
 
 An `anchor_path` walks from the document through `blocks`, table `rows`, and
 cell `blocks`, using **zero-based list indices**. For example,
@@ -596,8 +552,8 @@ coverage is format- and construct-specific. Not every omission emits a warning.
   restart/continuation groups and empty continuation cells, with no horizontal
   merges. Origin text uses its own row conditions. Other vertical configurations
   and unproven column/corner contexts retain fallback.
-  See [row-condition evidence](research-doc-conditional-rows.md) and
-  [vertical-row evidence](research-doc-conditional-vertical-rows.md). Unproven conditional contexts
+  See [row-condition evidence](DOC.md) and
+  [vertical-row evidence](DOC.md). Unproven conditional contexts
   use the documented fallback and warnings. Hidden/deleted structural paragraph
   or cell marks can retain boundaries; revision-driven paragraph merging is not
   implemented. Inserted text is not removed merely because it is an insertion.
@@ -616,7 +572,7 @@ ODF sheet/slide flags resolve automatic styles within the owning XML part,
 common parent styles and same-family defaults. Embedded definitions cannot
 supply host styles. Missing, duplicate or cyclic definitions retain a false
 hidden flag with `odf_sheet_slide_visibility_style_unresolved`; unresolved chains
-do not inherit a hidden default. See [scope evidence](research-odf-hidden-style-scopes.md).
+do not inherit a hidden default. See [scope evidence](ODT.md).
 Consumers requiring complete exclusion of all hidden/deleted material must not
 assume that a successful parse or an empty warning list proves that condition.
 
@@ -692,7 +648,7 @@ and detached stories are collected. Common/default/automatic styles keep their
 scopes; embedded text documents do not redefine their host's visibility styles.
 The hidden-section filter applies to ODT, ODS and ODP. Explicit visible overrides
 are respected. Original regression cases and boundaries are described in
-[stored visibility](research-visibility.md).
+[stored visibility](OUTPUT_FORMAT.md).
 
 Conditional expressions are not evaluated. Unknown, duplicate or cyclic styles
 produce diagnostics; the parser uses available properties without claiming a
@@ -782,7 +738,7 @@ inside paragraphs keep the existing ODP diagnosed omissions. Object layout and
 identity are not represented. The projection has a stable diagnostic code.
 An original schema-valid example is retained; LibreOffice 7.4 does not import its
 ODP object, so no positive reader-parity claim is made. See
-[ODP object evidence](research-odp-inline-text-objects.md).
+[ODP object evidence](ODP.md).
 
 ## XLS numeric display subsets
 
@@ -797,7 +753,7 @@ to 9/99 that round to the identical stored binary64 value. The magnitude cap is
 alignment spaces, negative signs and integer padding remain in display text.
 Source numeric bits and cached-formula markers remain unchanged. Other masks,
 affixes and locale combinations retain fallback. See
-[fraction evidence](research-xls-variable-fractions.md).
+[fraction evidence](XLS.md).
 
 Fixed cores `0.#{1,15}` and `#,##0.#{1,15}` additionally retain a nonintegral
 rounded decimal result with trailing optional zeros removed. Integral results,
@@ -807,15 +763,15 @@ scaling commas are supported separately; the nonintegral-result rule is applied
 after scaling and rounding. Combining percent and scaling, currency/locale tokens
 and mixed mandatory/optional percent cores remains unsupported. Fourth-section
 string-helper acceptance is unchanged. See
-[optional-decimal evidence](research-xls-optional-decimals.md) and
-[scaling evidence](research-xls-optional-decimal-scaling.md).
+[optional-decimal evidence](XLS.md) and
+[scaling evidence](XLS.md).
 
 General uses a deterministic extraction projection rather than cell-width-driven
 rendering. Beyond the supported whole-number suffix cleanup, values retain their
 raw numeric spelling (including Python exponent spelling); this path currently
 emits no unsupported-format diagnostic. It does not silently round near-integers
 or cached values to fit a display width. See
-[General boundaries](research-xls-general-display-boundaries.md).
+[General boundaries](XLS.md).
 
 ## XLS dates and times
 

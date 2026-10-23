@@ -179,7 +179,7 @@ def test_original_libreoffice_ppt_geometry_only(monkeypatch):
 
 # Original, unmodified LibreOffice 7.4.7.2 PPT, generated for this regression.
 # zlib/base85 keeps the real CFB fixture inside the user-authorized test file.
-# Provenance and reproducible generation recipe: docs/research-ppt-wordart.md.
+# Provenance and reproducible generation recipe: docs/PPT.md.
 _ORIGINAL_PPT = (
     b'c-riJ1%MpKmG-P8+cG3l9K0l#=yJ&=mpF+NhcCG>-G#}vES7e)q+Mx+mYHp7nHj~*3`@hf%*@O@@PF0a)7wL<71)20d!OeU&CWDb'
     b'SH1e)dsWqKlko$MS*JhVBy+-l$rj42wg+YROTK#md~u=h$5NSW0sip<tu~v@zRk<vE8wf(YvAkP8=#HwcL|H|uT|iEXsi2$wq6WA'

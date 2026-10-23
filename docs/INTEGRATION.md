@@ -139,8 +139,8 @@ Heading metadata is supported for DOC, RTF and ODT paragraphs. This contract
 does not infer headings for spreadsheet cells or presentation slides. Do not guess levels
 from font size, boldness, numbering, capitalization, slide titles, or paragraph
 position. Missing metadata is also not evidence of a heading. Preserve
-warnings and consult [DOC heading coverage](research-doc-headings.md) and
-[RTF/ODT evidence](research-rtf-odt-headings.md). RTF can infer levels from exact
+warnings and consult [DOC heading coverage](DOC.md) and
+[RTF/ODT evidence](RTF.md). RTF can infer levels from exact
 built-in heading style names when outline metadata is absent; that fallback emits
 a warning and cannot recover an explicit body override lost by an upstream writer.
 

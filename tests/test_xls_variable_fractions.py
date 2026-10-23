@@ -72,14 +72,22 @@ CASES = [
 
 
 @pytest.mark.parametrize('code,value,expected', CASES)
+def test_exact_fraction_literal_display(code, value, expected):
+    assert render_number(value, code) == expected
+
+
+@pytest.mark.parametrize('code,value,expected', [
+    ('# ?/?', -0.0, '0    '), ('# ??/??', -0.0, '0      '),
+    ('# ?/?', -1.5, '-1 1/2'), ('# ??/??', -1.5, '-1  1/2 '),
+    ('# ?/?', 1 / 3, ' 1/3'), ('# ??/??', 1 / 99, '  1/99'),
+    ('# ?/?', 1000000, '1000000    '), ('# ??/??', 1000000, '1000000      '),
+])
 @pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('builtin', [False, True])
-def test_exact_fraction_preserves_value_type_cache_and_spaces(code, value, expected, kind, builtin):
+def test_fraction_biff_transport_preserves_value_cache_and_spaces(code, value, expected, kind, builtin):
     fmt = (12 if code == '# ?/?' else 13) if builtin else 164
-    data = ole_workbook(workbook(value, fmt, None if builtin else code, kind))
-    doc = parse_xls(data)
+    doc = parse_xls(ole_workbook(workbook(value, fmt, None if builtin else code, kind)))
     cell, = doc.sheets[0].cells
-    assert render_number(value, code) == expected
     assert struct.pack('<d', cell.value) == struct.pack('<d', value)
     assert cell.text == expected and cell.value_type == 'number'
     assert cell.is_formula == (kind == 'formula') and cell.formula is None

@@ -1,7 +1,7 @@
 """Optional-record audit: original wire cases, existing transport builder only.
 
 These are parser-component streams, not a claim of full PowerPoint conformance.
-See docs/research-ppt-optional-audit.md for primary contracts and boundaries.
+See docs/PPT.md for primary contracts and boundaries.
 """
 from dataclasses import replace
 from struct import pack

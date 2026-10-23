@@ -25,7 +25,7 @@ words. There is no broad deletion of Unicode format characters. Visible hyphens,
 nonbreaking hyphens, joiners, bidi characters and meaningful whitespace remain.
 The operation does not remove markup, hidden content or active instructions from
 a downstream prompt. See [Unicode line breaking](https://www.unicode.org/reports/tr14/)
-and [soft-hyphen tests](research-normalization-soft-hyphens.md).
+and [soft-hyphen tests](NORMALIZATION.md).
 
 Paragraphs, cell display strings, slide title/body/notes/comment text, sheet
 names/drawings and pooled text stories are normalized. Verified structured

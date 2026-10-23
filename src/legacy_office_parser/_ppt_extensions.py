@@ -1,7 +1,7 @@
 """Conservative classification of metadata-only slide programmable tags.
 
 MS-PPT 2.5.19–24 and 2.8; proof and deliberately narrow scope are documented in
-docs/research-ppt-extensions.md. This module never extracts extension text.
+docs/PPT.md. This module never extracts extension text.
 """
 from __future__ import annotations
 

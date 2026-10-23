@@ -28,6 +28,15 @@ CASES = [
 
 
 @pytest.mark.parametrize('value,expected', CASES)
+def test_general_projection_literal_boundaries(value, expected):
+    assert render_number(value, 'General') == expected
+
+
+@pytest.mark.parametrize('value,expected', [
+    (100000000000.0, '100000000000.0'),
+    (1.0000000000000002, '1.0000000000000002'),
+    (5e-324, '5e-324'),
+])
 @pytest.mark.parametrize('kind', ['number', 'formula'])
 @pytest.mark.parametrize('fmt,code', [(0, None), (164, 'General')])
 def test_general_projection_is_not_width_or_precision_inference(value, expected, kind, fmt, code):

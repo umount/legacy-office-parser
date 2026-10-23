@@ -1,6 +1,6 @@
 """Bounded RTF text/structure reader, not a layout engine.
 
-Original implementation; reference/research provenance: docs/research-rtf.md.
+Original implementation; reference/research provenance: docs/RTF.md.
 The lexer consumes bytes, including opaque binary payloads, before interpretation.
 """
 from __future__ import annotations

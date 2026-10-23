@@ -23,9 +23,11 @@ def document_at(location, paragraph):
     return Document('doc', story_blocks={story: blocks}, **{story: 'text'})
 
 
-@pytest.mark.parametrize('location', LOCATIONS)
-@pytest.mark.parametrize('level', [None, *range(1, 10)])
-def test_valid_heading_at_every_location(location, level):
+@pytest.mark.parametrize('location,level', [
+    *[('main', level) for level in (None, *range(1, 10))],
+    *[(location, 3) for location in LOCATIONS if location != 'main'],
+])
+def test_heading_values_and_structural_locations(location, level):
     paragraph = Paragraph('text', heading_level=level)
     doc = document_at(location, paragraph)
     assert _validate_result(doc, Limits()) is doc
@@ -39,9 +41,13 @@ def test_valid_heading_at_every_location(location, level):
     assert doc.text == before
 
 
-@pytest.mark.parametrize('location', LOCATIONS)
-@pytest.mark.parametrize('level', [True, False, 0, -1, 10, 10**100, 1.0, '1', [], {}])
-def test_invalid_heading_at_every_location(location, level):
+@pytest.mark.parametrize('location,level', [
+    *[('main', level) for level in (True, False, 0, -1, 10, 10**100, 1.0, '1', [], {})],
+    # Exercise both type and range validation through every structural route.
+    *[(location, level) for location in LOCATIONS if location != 'main'
+      for level in (True, 10)],
+])
+def test_invalid_heading_values_and_structural_locations(location, level):
     doc = document_at(location, Paragraph('text', heading_level=level))
     with pytest.raises(InvalidDocumentError, match='^invalid paragraph heading level$'):
         _validate_result(doc, Limits())

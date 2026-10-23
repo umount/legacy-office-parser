@@ -292,4 +292,4 @@ def test_many_empty_master_shapes_are_not_cached_or_revisited(monkeypatch):
 
 
 # Original LibreOffice-generated CFB, unmodified; no private or external file.
-# Provenance and regeneration: docs/research-ppt-master-text.md.
+# Provenance and regeneration: docs/PPT.md.
