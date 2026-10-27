@@ -16,8 +16,10 @@
   or `NumberLocale` for custom separators. Defaults remain invariant; literal
   punctuation is never translated and process locale is never consulted.
 - Normalized calendar/clock values in both 1900 and 1904 systems, including
-  date masks with literals and ordinary Gregorian locale tags. Elapsed masks
-  such as `[h]:mm:ss` preserve numeric serials and do not wrap at midnight.
+  date masks with literals and ordinary Gregorian locale tags. One date/time
+  mask may have a trailing text section with `@`, as in `DD.MM.YYYY;@` or
+  `[$-419]DD.MM.YYYY;@`. Elapsed masks such as `[h]:mm:ss` preserve numeric serials
+  and do not wrap at midnight; they also allow a trailing text section.
 
 ## Boundaries
 
@@ -29,7 +31,7 @@ pixel-identical Excel or LibreOffice rendering.
 
 Masks are bounded to 64 characters, decimal precision to 15 places and fraction
 denominators to 999. Unsupported constructs (including engineering notation,
-alternative calendars, multi-section dates and implicit locale-specific built-ins)
+alternative calendars, multiple numeric date sections and implicit locale-specific built-ins)
 retain raw values with diagnostics. Conditional formatting rules in worksheet
 records are not applied; conditions inside number-format masks are supported.
 Hidden display text never removes the typed value. Print headers/footers, charts

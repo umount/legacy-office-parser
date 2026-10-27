@@ -1,8 +1,8 @@
-"""Bounded XLS date recognition and elapsed display, independent of numeric formats.
+"""Bounded XLS date recognition and elapsed display, independent of numeric rendering.
 
 Calendar/clock values retain the legacy normalized ISO value == text contract.
 Elapsed formats retain the serial as a number and render only text. No locale
-names, source calendar display, section selection, or formula evaluation occurs.
+names, source calendar display, numeric section selection, or formula evaluation occurs.
 
 Grammar references: Microsoft 'Format numbers as dates or times', 'Review
  guidelines for customizing a number format', and Open XML NumberingFormat
@@ -16,6 +16,8 @@ from decimal import Context, Decimal, ROUND_DOWN, ROUND_HALF_UP, localcontext
 import math
 import re
 from typing import Literal
+
+from ._xls_formats import _split_sections, _text_parts
 
 
 MAX_FORMAT_LENGTH = 64
@@ -154,12 +156,13 @@ def _elapsed(value: float, tokens: list[tuple[str, str]]) -> str | None:
 
 
 def interpret_date(value: float, code: str | int, datemode: int) -> DateResult:
-    """Interpret one date mask/built-in ID; return status plus a safe cell triple.
+    """Interpret a date mask/built-in ID; return status plus a safe cell triple.
 
     Unsupported masks, negative serials and dates outside datetime's range
     retain `(value, 'number', str(value))`. Non-finite inputs are classified as
     out_of_range here; the public parser must still reject them as invalid XLS.
-    Multi-section masks are deliberately left to the parent, not stripped.
+    One date/time section may be followed by a validated text section with @.
+    Other multi-section masks remain unsupported, without choosing a branch.
     """
     raw = (value, 'number', str(value))
 
@@ -170,7 +173,13 @@ def interpret_date(value: float, code: str | int, datemode: int) -> DateResult:
         return fallback('unsupported', 'invalid date mode')
     if isinstance(code, int):
         code = BUILTIN_DATE.get(code, '')
-    tokens = _tokens(code)
+    # Validate the whole bounded format before ignoring a trailing text section.
+    # Shared splitting preserves semicolons inside quoted/escaped literals.
+    sections = _split_sections(code)
+    if (sections is None or len(sections) > 2
+            or (len(sections) == 2 and _text_parts(sections[1]) is None)):
+        return fallback('unsupported', 'unsupported date/time sections')
+    tokens = _tokens(sections[0])
     if tokens is None:
         return fallback('unsupported', 'unsupported date/time mask')
     fields = [(k, t) for k, t in tokens if k not in ('literal', 'fraction')]
@@ -210,4 +219,3 @@ def interpret_date(value: float, code: str | int, datemode: int) -> DateResult:
     except (ValueError, OverflowError):
         return fallback('out_of_range', 'date outside datetime range')
     return DateResult('ok', (text, 'date', text))
-

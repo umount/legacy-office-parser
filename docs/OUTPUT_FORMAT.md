@@ -36,7 +36,7 @@ Those are consumer policies, not additional output fields.
 
 ## Versioning and output changes
 
-This reference describes package **0.32.0**. The package version is available as
+This reference describes package **0.32.1**. The package version is available as
 `legacy_office_parser.__version__`; it is not embedded in `Document.to_dict()`.
 Store the exact package version alongside persisted results. Published version
 tags identify immutable releases; a branch name is not a reproducible dependency.
@@ -831,6 +831,8 @@ Examples from synthetic BIFF8 workbooks:
   `value == text == "1900-03-01"`, `value_type == "date"`.
 - 1904 mode, serial 0 with format 14: `"1904-01-01"`.
 - 1904 mode, serial 1.5 with format 14: `"1904-01-02T12:00:00"`.
+- 1900 mode, serial 45366 with `DD.MM.YYYY;@` or `[$-419]DD.MM.YYYY;@`:
+  `value == text == "2024-03-15"`, `value_type == "date"`.
 - Time-only format 20, serial 1.5: `"12:00:00"`, still with type `date`;
   the day component is discarded, not represented as an elapsed duration.
 
@@ -853,8 +855,14 @@ Supported built-in date/time IDs are 14–22, 45, and 47. Custom masks recognize
 calendar/clock tokens, quoted/escaped literals and ordinary locale tags for
 English, German, French and Russian Gregorian dates; output remains normalized.
 Minute/month interpretation follows surrounding time tokens, not letters inside
-literals. Multiple sections, alternative calendars and locale-dependent built-in
-IDs 27–36 and 50–58 remain unsupported.
+literals. A single date/time or elapsed section may be followed by one validated
+text section containing a single unquoted, unescaped `@`, optionally with the
+supported text literals, color, alignment and fill tokens. That text section does
+not affect numeric date interpretation. The 64-character limit applies to the
+whole format, including the text section. Multiple numeric sections, conditions,
+alternative calendars and locale-dependent built-in IDs 27–36 and 50–58 remain
+unsupported. This recognition does not extend text-cell formatting beyond the
+separately supported numeric/text formats described above.
 
 Elapsed masks such as `[h]:mm:ss` (built-in 46), `[m]:ss` and `[s].000` retain
 `value_type="number"` and the original serial in `value`; their `text` shows total
